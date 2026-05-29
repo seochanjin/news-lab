@@ -16,7 +16,7 @@ spec:
         workload: app
       containers:
         - name: news-api
-          image: seocj/news-api:0.1.0
+          image: seocj/news-api:latest
           ports:
             - containerPort: 8000
           env:
@@ -25,13 +25,13 @@ spec:
                 secretKeyRef:
                   name: news-api-secret
                   key: DATABASE_URL
-    resources:
-      requests:
-        cpu: "100m"
-        memory: "128Mi"
-      limits:
-        cpu: "500m"
-        memory: "512Mi"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
 ---
 apiVersion: v1
 kind: Service
