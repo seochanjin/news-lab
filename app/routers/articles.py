@@ -46,7 +46,7 @@ def get_articles(
         from articles a
         left join sources s on s.id = a.source_id
         {where_sql}
-        order by a.id
+        order by a.published_at desc nulls last, a.id desc
         limit :limit
     """)
 
