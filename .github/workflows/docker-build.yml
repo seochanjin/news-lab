@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "app/**"
+      - "scripts/**"
       - "requirements.txt"
       - "Dockerfile"
       - ".github/workflows/docker-build.yml"
