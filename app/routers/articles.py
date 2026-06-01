@@ -11,12 +11,15 @@ router = APIRouter(tags=["articles"])
 def get_articles(
     category: str | None = None,
     source: str | None = None,
-    limit: int = Query(default=10, ge=1, le=50),
+    keyword: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=50),
     connection: Connection = Depends(get_connection),
 ):
     where_clauses = []
     params = {
-        "limit": limit,
+        "limit": page_size,
+        "offset": (page - 1) * page_size,
     }
 
     if category:
@@ -27,9 +30,30 @@ def get_articles(
         where_clauses.append("lower(s.name) = lower(:source)")
         params["source"] = source
 
+    if keyword:
+        where_clauses.append("""
+            (
+                a.title ilike :keyword
+                or a.summary ilike :keyword
+                or a.category ilike :keyword
+                or s.name ilike :keyword
+            )
+        """)
+        params["keyword"] = f"%{keyword}%"
+
     where_sql = ""
     if where_clauses:
         where_sql = "where " + " and ".join(where_clauses)
+
+    count_query = text(f"""
+        select
+            count(*) as total
+        from articles a
+        left join sources s on s.id = a.source_id
+        {where_sql}
+    """)
+
+    total = connection.execute(count_query, params).scalar_one()
 
     query = text(f"""
         select
@@ -48,13 +72,19 @@ def get_articles(
         {where_sql}
         order by a.published_at desc nulls last, a.id desc
         limit :limit
+        offset :offset
     """)
 
     rows = connection.execute(query, params).mappings().all()
+    articles = [dict(row) for row in rows]
 
     return {
-        "count": len(rows),
-        "articles": [dict(row) for row in rows],
+        "page": page,
+        "page_size": page_size,
+        "count": len(articles),
+        "total": total,
+        "has_next": page * page_size < total,
+        "articles": articles,
     }
 
 
