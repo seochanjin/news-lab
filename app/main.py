@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.routers import articles, health, sources, version
+from app.routers import articles, collector, health, sources, version
 
 app = FastAPI(
     title="NewsLab API",
@@ -12,6 +12,7 @@ app.include_router(health.router)
 app.include_router(version.router)
 app.include_router(sources.router)
 app.include_router(articles.router)
+app.include_router(collector.router)
 
 @app.get("/")
 def root():

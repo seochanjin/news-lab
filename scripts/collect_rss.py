@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import timezone
 from email.utils import parsedate_to_datetime
 
 import feedparser
@@ -37,6 +37,40 @@ def parse_published_at(entry):
         return parsed
     except Exception:
         return None
+
+
+def create_crawl_run(connection):
+    query = text("""
+        insert into crawl_runs (status)
+        values ('running')
+        returning id
+    """)
+
+    return connection.execute(query).scalar_one()
+
+
+def finish_crawl_run(connection, run_id, status, inserted_count, skipped_count, error_message=None):
+    query = text("""
+        update crawl_runs
+        set
+            finished_at = now(),
+            status = :status,
+            inserted_count = :inserted_count,
+            skipped_count = :skipped_count,
+            error_message = :error_message
+        where id = :run_id
+    """)
+
+    connection.execute(
+        query,
+        {
+            "run_id": run_id,
+            "status": status,
+            "inserted_count": inserted_count,
+            "skipped_count": skipped_count,
+            "error_message": error_message,
+        },
+    )
 
 
 def get_enabled_sources(connection):
@@ -106,38 +140,67 @@ def collect():
     skipped_count = 0
 
     with engine.begin() as connection:
-        sources = get_enabled_sources(connection)
+        run_id = create_crawl_run(connection)
+        print(f"crawl run started: {run_id}")
 
-        print(f"enabled sources: {len(sources)}")
+        try:
+            sources = get_enabled_sources(connection)
 
-        for source in sources:
-            print(f"collecting: {source['name']} - {source['feed_url']}")
+            print(f"enabled sources: {len(sources)}")
 
-            feed = feedparser.parse(source["feed_url"])
+            for source in sources:
+                print(f"collecting: {source['name']} - {source['feed_url']}")
 
-            if feed.bozo:
-                print(f"feed parse warning: {feed.bozo_exception}")
+                feed = feedparser.parse(source["feed_url"])
 
-            entries = feed.entries[:10]
-            print(f"entries: {len(entries)}")
+                if feed.bozo:
+                    print(f"feed parse warning: {feed.bozo_exception}")
 
-            for entry in entries:
-                inserted = insert_article(
-                    connection=connection,
-                    source_id=source["id"],
-                    entry=entry,
-                )
+                entries = feed.entries[:10]
+                print(f"entries: {len(entries)}")
 
-                if inserted:
-                    inserted_count += 1
-                    print(f"inserted: {entry.get('title')}")
-                else:
-                    skipped_count += 1
-                    print(f"skipped: {entry.get('title')}")
+                for entry in entries:
+                    inserted = insert_article(
+                        connection=connection,
+                        source_id=source["id"],
+                        entry=entry,
+                    )
 
-    print("done")
-    print(f"inserted: {inserted_count}")
-    print(f"skipped: {skipped_count}")
+                    if inserted:
+                        inserted_count += 1
+                        print(f"inserted: {entry.get('title')}")
+                    else:
+                        skipped_count += 1
+                        print(f"skipped: {entry.get('title')}")
+
+            finish_crawl_run(
+                connection=connection,
+                run_id=run_id,
+                status="success",
+                inserted_count=inserted_count,
+                skipped_count=skipped_count,
+            )
+
+            print("done")
+            print(f"inserted: {inserted_count}")
+            print(f"skipped: {skipped_count}")
+
+        except Exception as error:
+            finish_crawl_run(
+                connection=connection,
+                run_id=run_id,
+                status="failed",
+                inserted_count=inserted_count,
+                skipped_count=skipped_count,
+                error_message=str(error),
+            )
+
+            print("failed")
+            print(f"inserted: {inserted_count}")
+            print(f"skipped: {skipped_count}")
+            print(f"error: {error}")
+
+            raise
 
 
 if __name__ == "__main__":
