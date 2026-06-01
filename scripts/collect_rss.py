@@ -141,9 +141,11 @@ def collect():
 
     with engine.begin() as connection:
         run_id = create_crawl_run(connection)
-        print(f"crawl run started: {run_id}")
 
-        try:
+    print(f"crawl run started: {run_id}")
+
+    try:
+        with engine.begin() as connection:
             sources = get_enabled_sources(connection)
 
             print(f"enabled sources: {len(sources)}")
@@ -173,6 +175,7 @@ def collect():
                         skipped_count += 1
                         print(f"skipped: {entry.get('title')}")
 
+        with engine.begin() as connection:
             finish_crawl_run(
                 connection=connection,
                 run_id=run_id,
@@ -181,11 +184,12 @@ def collect():
                 skipped_count=skipped_count,
             )
 
-            print("done")
-            print(f"inserted: {inserted_count}")
-            print(f"skipped: {skipped_count}")
+        print("done")
+        print(f"inserted: {inserted_count}")
+        print(f"skipped: {skipped_count}")
 
-        except Exception as error:
+    except Exception as error:
+        with engine.begin() as connection:
             finish_crawl_run(
                 connection=connection,
                 run_id=run_id,
@@ -195,12 +199,12 @@ def collect():
                 error_message=str(error),
             )
 
-            print("failed")
-            print(f"inserted: {inserted_count}")
-            print(f"skipped: {skipped_count}")
-            print(f"error: {error}")
+        print("failed")
+        print(f"inserted: {inserted_count}")
+        print(f"skipped: {skipped_count}")
+        print(f"error: {error}")
 
-            raise
+        raise
 
 
 if __name__ == "__main__":

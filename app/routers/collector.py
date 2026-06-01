@@ -9,10 +9,24 @@ router = APIRouter(prefix="/collector", tags=["collector"])
 
 @router.get("/runs")
 def get_crawl_runs(
+    status: str | None = None,
     limit: int = Query(default=10, ge=1, le=50),
     connection: Connection = Depends(get_connection),
 ):
-    query = text("""
+    where_clauses = []
+    params = {
+        "limit": limit,
+    }
+
+    if status:
+        where_clauses.append("status = :status")
+        params["status"] = status
+
+    where_sql = ""
+    if where_clauses:
+        where_sql = "where " + " and ".join(where_clauses)
+
+    query = text(f"""
         select
             id,
             started_at,
@@ -23,11 +37,12 @@ def get_crawl_runs(
             error_message,
             created_at
         from crawl_runs
+        {where_sql}
         order by id desc
         limit :limit
     """)
 
-    rows = connection.execute(query, {"limit": limit}).mappings().all()
+    rows = connection.execute(query, params).mappings().all()
 
     return {
         "count": len(rows),
