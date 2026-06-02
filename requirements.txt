@@ -4,3 +4,5 @@ sqlalchemy
 psycopg[binary]
 python-dotenv
 feedparser
+requests
+beautifulsoup4
