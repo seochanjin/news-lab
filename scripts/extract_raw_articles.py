@@ -25,6 +25,11 @@ HEADERS = {
     "User-Agent": "NewsLabBot/0.1 (+https://api.dev-scj.site)"
 }
 
+SKIP_TEXT_PREFIXES = (
+    "The first StrictlyVC",
+    "Get Disrupt Early Bird",
+)
+
 
 def normalize_text(value: str) -> str:
     value = re.sub(r"\s+", " ", value)
@@ -49,8 +54,13 @@ def extract_text_from_html(html: str) -> str:
     for paragraph in paragraphs:
         text = normalize_text(paragraph.get_text(" ", strip=True))
 
-        if len(text) >= 40:
-            texts.append(text)
+        if len(text) < 40:
+            continue
+
+        if text.startswith(SKIP_TEXT_PREFIXES):
+            continue
+
+        texts.append(text)
 
     raw_text = "\n\n".join(texts)
     return raw_text.strip()
