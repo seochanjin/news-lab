@@ -10,6 +10,21 @@ This project is intended to be operated and evolved over time, not just built on
 
 ## Components
 
+### Agent workflow artifacts
+
+NewsLab uses file-based artifacts to coordinate implementation, review, approved fixes, and verification across agents.
+
+Main workflow directories:
+
+- `docs/tasks/` - task specifications
+- `docs/reviews/` - Antigravity, CodeRabbit, and other review outputs
+- `docs/fixes/` - human-approved review fixes that were applied or deferred
+- `docs/verification/` - actual commands run, results, skipped checks, and human-provided verification logs
+- `docs/pr/` - PR drafts
+- `docs/devlog/` - worklog drafts
+
+PR and devlog drafts should be based on `docs/verification/` for test and verification claims.
+
 ### FastAPI API server
 
 Serves read APIs for article data, collector status, and raw article extraction results.
@@ -22,6 +37,7 @@ Main router files:
 - `app/routers/raw_articles.py`
 - `app/routers/health.py`
 - `app/routers/version.py`
+- `app/routers/extractor.py`
 
 ### PostgreSQL / Supabase database
 
@@ -33,6 +49,7 @@ Current tables:
 - `articles`
 - `crawl_runs`
 - `raw_articles`
+- `extraction_runs`
 
 ### RSS collector
 
@@ -117,6 +134,15 @@ articles.url
 → /raw-articles API
 ```
 
+### Raw article extractor run history flow
+
+```text
+scripts/extract_raw_articles.py
+→ extraction_runs table
+→ /extractor/status API
+→ /extractor/runs API
+```
+
 ## Database Tables
 
 ### sources
@@ -162,6 +188,19 @@ Main data:
 - `error_message`
 - `extracted_at`
 
+### extraction_runs
+
+Stores raw article extractor execution history.
+
+Main data:
+
+- `started_at`
+- `finished_at`
+- `status`
+- `success_count`
+- `failed_count`
+- `error_message`
+
 ## APIs
 
 ### Basic APIs
@@ -200,6 +239,14 @@ Supported query parameters include:
 - `GET /raw-articles?status=success`
 - `GET /raw-articles?status=failed`
 - `GET /raw-articles/{article_id}`
+
+### Extractor APIs
+
+- `GET /extractor/status`
+- `GET /extractor/runs`
+- `GET /extractor/runs?status=running`
+- `GET /extractor/runs?status=success`
+- `GET /extractor/runs?status=failed`
 
 ## Current Manual Operations
 

@@ -15,7 +15,7 @@ git checkout main
 git pull origin main
 git switch -c "$BRANCH_NAME"
 
-mkdir -p docs/tasks docs/pr docs/devlog docs/prompts
+mkdir -p docs/tasks docs/pr docs/devlog docs/prompts docs/reviews docs/fixes docs/verification
 
 cat > "docs/tasks/${SAFE_NAME}.md" <<TASK
 # Task: ${TASK_TITLE}
@@ -73,7 +73,71 @@ cat > "docs/devlog/${SAFE_NAME}.md" <<LOG
 ## 다음 단계
 LOG
 
+cat > "docs/reviews/${SAFE_NAME}-antigravity.md" <<REVIEW
+# Antigravity Review: ${TASK_TITLE}
+
+## Review Summary
+
+## Problems Found
+
+## Required Fixes Before PR
+
+## Optional Improvements
+
+## Suggested Test Commands
+
+## Risk Notes
+REVIEW
+
+cat > "docs/reviews/${SAFE_NAME}-coderabbit.md" <<REVIEW
+# CodeRabbit Review: ${TASK_TITLE}
+
+## Review Summary
+
+## Problems Found
+
+## Required Fixes Before PR
+
+## Optional Improvements
+
+## Suggested Test Commands
+
+## Risk Notes
+REVIEW
+
+cat > "docs/fixes/${SAFE_NAME}-approved-fixes.md" <<FIXES
+# Approved Fixes: ${TASK_TITLE}
+
+## Approved Fixes
+
+## Rejected or Deferred Suggestions
+
+## Applied Changes
+
+## Verification Required
+FIXES
+
+cat > "docs/verification/${SAFE_NAME}.md" <<VERIFY
+# Verification: ${TASK_TITLE}
+
+## Verification Scope
+
+## Commands Run
+
+## Results
+
+## Manual or Production Verification
+
+## Pending Verification
+
+## Evidence Notes
+VERIFY
+
 echo "Created branch: $BRANCH_NAME"
 echo "Task file: docs/tasks/${SAFE_NAME}.md"
 echo "PR draft: docs/pr/${SAFE_NAME}.md"
 echo "Worklog draft: docs/devlog/${SAFE_NAME}.md"
+echo "Antigravity review log: docs/reviews/${SAFE_NAME}-antigravity.md"
+echo "CodeRabbit review log: docs/reviews/${SAFE_NAME}-coderabbit.md"
+echo "Approved fixes log: docs/fixes/${SAFE_NAME}-approved-fixes.md"
+echo "Verification log: docs/verification/${SAFE_NAME}.md"

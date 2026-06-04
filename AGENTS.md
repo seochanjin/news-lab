@@ -54,6 +54,7 @@ Agents must not perform these actions unless explicitly instructed.
 - K3s deployment on Oracle Cloud A1
 - RSS collector CronJob
 - Tailscale-based remote operation path
+- Raw article extractor run history: extraction_runs
 
 ## Main API Areas
 
@@ -64,6 +65,8 @@ Agents must not perform these actions unless explicitly instructed.
 - /raw-articles
 - /health
 - /version
+- /extractor/status
+- /extractor/runs
 
 ## Commands
 
@@ -80,6 +83,7 @@ curl http://127.0.0.1:8000/health
 curl http://127.0.0.1:8000/articles
 curl http://127.0.0.1:8000/collector/status
 curl http://127.0.0.1:8000/raw-articles
+curl http://127.0.0.1:8000/extractor/status
 ```
 
 Run RSS collector manually:
@@ -111,6 +115,25 @@ After editing code:
 4. Mention risks and follow-up work.
 5. Do not push or merge unless explicitly asked.
 
+## Multi-Agent Review Workflow
+
+Agent workflow artifacts are stored by purpose:
+
+- Task specs: `docs/tasks/`
+- Review outputs: `docs/reviews/`
+- Human-approved review fixes: `docs/fixes/`
+- Actual verification logs: `docs/verification/`
+- PR drafts: `docs/pr/`
+- Worklog drafts: `docs/devlog/`
+
+Review findings from Antigravity, CodeRabbit, or other reviewers must be saved under `docs/reviews/`.
+
+Only fixes explicitly approved by the human should be recorded under `docs/fixes/`.
+
+Actual commands run, results, skipped checks, and human-provided production verification logs should be recorded under `docs/verification/`.
+
+PR and devlog drafts should use `docs/verification/` as the source of truth for test and verification results.
+
 ## Data and Migration Safety
 
 - Do not execute migration SQL against Supabase. Only create migration files under `db/migrations`.
@@ -134,6 +157,10 @@ When asked to prepare PR or worklog drafts:
 
 - PR drafts should be written under `docs/pr/`.
 - Worklog drafts should be written under `docs/devlog/`.
+- Review outputs should be written under `docs/reviews/`.
+- Approved review fixes should be written under `docs/fixes/`.
+- Verification logs should be written under `docs/verification/`.
 - Architecture decisions should be written under `docs/adr/`.
+- PR and worklog drafts must be grounded in `docs/verification/` for test and verification claims.
 - Do not claim production deployment is complete unless the human provides verification logs.
 - Do not claim PR merge is complete unless the human explicitly says it was merged.

@@ -1,10 +1,16 @@
 # Worklog Draft Prompt
 
-Read `AGENTS.md`, `docs/ARCHITECTURE.md`, the task file, PR draft, and human-provided verification logs.
+Read `AGENTS.md`, `docs/ARCHITECTURE.md`, the task file, PR draft, `docs/fixes/<safe-branch-name>-approved-fixes.md`, `docs/verification/<safe-branch-name>.md`, and human-provided verification logs.
 
 Create a worklog draft under `docs/devlog/`.
 
 The worklog must be suitable for Notion.
+
+Use `docs/verification/<safe-branch-name>.md` as the source of truth for actual test and verification results.
+
+Use `docs/fixes/<safe-branch-name>-approved-fixes.md` as the source of truth for approved review fixes that were applied.
+
+Do not use raw review files under `docs/reviews/` as proof that fixes were approved or verification passed.
 
 Include:
 

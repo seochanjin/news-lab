@@ -4,6 +4,31 @@ This document contains operational commands for local development and K3s produc
 
 Production-impacting commands must be run manually by the human operator.
 
+## Agent Task Workflow
+
+Create a new agent task from `main`:
+
+```bash
+scripts/new_agent_task.sh feature/<task-name> "<task title>"
+```
+
+The script creates a feature branch and task artifacts:
+
+- `docs/tasks/<safe-branch-name>.md`
+- `docs/reviews/<safe-branch-name>-antigravity.md`
+- `docs/reviews/<safe-branch-name>-coderabbit.md`
+- `docs/fixes/<safe-branch-name>-approved-fixes.md`
+- `docs/verification/<safe-branch-name>.md`
+- `docs/pr/<safe-branch-name>.md`
+- `docs/devlog/<safe-branch-name>.md`
+
+Use the artifact directories by purpose:
+
+- Save review results in `docs/reviews/`.
+- Record only human-approved fixes in `docs/fixes/`.
+- Record actual commands run and results in `docs/verification/`.
+- Draft PR and devlog entries from `docs/verification/`, not from assumptions or suggested commands.
+
 ## Local API
 
 Run the FastAPI application locally:
@@ -60,6 +85,15 @@ Check a specific raw article result:
 
 ```bash
 curl http://127.0.0.1:8000/raw-articles/<article_id>
+```
+
+Check extractor run history locally:
+
+```bash
+curl http://127.0.0.1:8000/extractor/status
+curl http://127.0.0.1:8000/extractor/runs
+curl "http://127.0.0.1:8000/extractor/runs?status=success"
+curl "http://127.0.0.1:8000/extractor/runs?status=failed"
 ```
 
 ## K3s Access through Tailscale SSH Tunnel
@@ -162,6 +196,16 @@ curl https://api.dev-scj.site/raw-articles
 curl "https://api.dev-scj.site/raw-articles?status=success"
 curl "https://api.dev-scj.site/raw-articles?status=failed"
 curl https://api.dev-scj.site/raw-articles/<article_id>
+```
+
+Check extractor APIs:
+
+```bash
+curl https://api.dev-scj.site/extractor/status
+curl https://api.dev-scj.site/extractor/runs
+curl "https://api.dev-scj.site/extractor/runs?status=success"
+curl "https://api.dev-scj.site/extractor/runs?status=failed"
+curl -i "https://api.dev-scj.site/extractor/runs?status=wrong"
 ```
 
 ## Production Rollout
