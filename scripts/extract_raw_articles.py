@@ -66,6 +66,40 @@ def extract_text_from_html(html: str) -> str:
     return raw_text.strip()
 
 
+def create_extraction_run(connection):
+    query = text("""
+        insert into extraction_runs (status)
+        values ('running')
+        returning id
+    """)
+
+    return connection.execute(query).scalar_one()
+
+
+def finish_extraction_run(connection, run_id, status, success_count, failed_count, error_message=None):
+    query = text("""
+        update extraction_runs
+        set
+            finished_at = now(),
+            status = :status,
+            success_count = :success_count,
+            failed_count = :failed_count,
+            error_message = :error_message
+        where id = :run_id
+    """)
+
+    connection.execute(
+        query,
+        {
+            "run_id": run_id,
+            "status": status,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "error_message": error_message,
+        },
+    )
+
+
 def get_target_articles(connection, limit: int):
     query = text("""
         select
@@ -172,44 +206,77 @@ def extract(limit: int = 5):
     failed_count = 0
 
     with engine.begin() as connection:
-        articles = get_target_articles(connection, limit)
+        run_id = create_extraction_run(connection)
 
-    print(f"target articles: {len(articles)}")
+    print(f"extraction run started: {run_id}")
 
-    for article in articles:
-        article_id = article["id"]
-        title = article["title"]
-        url = article["url"]
+    try:
+        with engine.begin() as connection:
+            articles = get_target_articles(connection, limit)
 
-        print(f"extracting article_id={article_id}: {title}")
+        print(f"target articles: {len(articles)}")
 
-        try:
-            raw_text = fetch_article_text(url)
+        for article in articles:
+            article_id = article["id"]
+            title = article["title"]
+            url = article["url"]
 
-            with engine.begin() as connection:
-                save_raw_article_success(
-                    connection=connection,
-                    article_id=article_id,
-                    raw_text=raw_text,
-                )
+            print(f"extracting article_id={article_id}: {title}")
 
-            success_count += 1
-            print(f"success article_id={article_id}, length={len(raw_text)}")
+            try:
+                raw_text = fetch_article_text(url)
 
-        except Exception as error:
-            with engine.begin() as connection:
-                save_raw_article_failed(
-                    connection=connection,
-                    article_id=article_id,
-                    error_message=str(error),
-                )
+                with engine.begin() as connection:
+                    save_raw_article_success(
+                        connection=connection,
+                        article_id=article_id,
+                        raw_text=raw_text,
+                    )
 
-            failed_count += 1
-            print(f"failed article_id={article_id}: {error}")
+                success_count += 1
+                print(f"success article_id={article_id}, length={len(raw_text)}")
 
-    print("done")
-    print(f"success: {success_count}")
-    print(f"failed: {failed_count}")
+            except Exception as error:
+                with engine.begin() as connection:
+                    save_raw_article_failed(
+                        connection=connection,
+                        article_id=article_id,
+                        error_message=str(error),
+                    )
+
+                failed_count += 1
+                print(f"failed article_id={article_id}: {error}")
+
+        with engine.begin() as connection:
+            finish_extraction_run(
+                connection=connection,
+                run_id=run_id,
+                status="success",
+                success_count=success_count,
+                failed_count=failed_count,
+            )
+
+        print("done")
+        print(f"success: {success_count}")
+        print(f"failed: {failed_count}")
+
+    except Exception as error:
+        with engine.begin() as connection:
+            finish_extraction_run(
+                connection=connection,
+                run_id=run_id,
+                status="failed",
+                success_count=success_count,
+                failed_count=failed_count,
+                error_message=str(error),
+            )
+
+        print("failed")
+        print(f"success: {success_count}")
+        print(f"failed: {failed_count}")
+        print(f"error: {error}")
+
+        raise
 
 
 if __name__ == "__main__":
