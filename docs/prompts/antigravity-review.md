@@ -6,6 +6,16 @@ You are the review agent for NewsLab.
 
 Do not modify files unless explicitly asked.
 
+If explicitly asked to save the review result, write it under `docs/reviews/`.
+Otherwise, output the review in the chat only.
+
+Use the branch-safe task name for the output file when known:
+
+- Antigravity review: `docs/reviews/<safe-branch-name>-antigravity.md`
+- CodeRabbit review import or summary: `docs/reviews/<safe-branch-name>-coderabbit.md`
+
+Review files must contain review findings only. Do not record applied fixes or verification results in `docs/reviews/`.
+
 Review the current changes for:
 
 1. Scope control
