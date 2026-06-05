@@ -319,6 +319,62 @@ curl https://api.dev-scj.site/collector/status
 curl "https://api.dev-scj.site/collector/runs?limit=5"
 ```
 
+## Raw Extractor CronJob
+
+Human-controlled operation.
+
+Apply the raw extractor CronJob manifest after review:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply -f k8s/news-raw-extractor-cronjob.yaml
+```
+
+Check CronJob:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob news-raw-extractor
+```
+
+Create a manual Job from the CronJob for verification:
+
+```bash
+JOB_NAME=news-raw-extractor-manual-$(date +%s)
+
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl create job \
+  --from=cronjob/news-raw-extractor \
+  $JOB_NAME
+```
+
+Check the manual Job pod:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods \
+  -l job-name=$JOB_NAME
+```
+
+Check the manual Job logs:
+
+```bash
+POD_NAME=$(KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods \
+  -l job-name=$JOB_NAME \
+  -o jsonpath='{.items[0].metadata.name}')
+
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs $POD_NAME
+```
+
+Check extractor API status after the manual Job finishes:
+
+```bash
+curl https://api.dev-scj.site/extractor/status
+curl "https://api.dev-scj.site/extractor/runs?limit=5"
+```
+
+Delete the manual verification Job:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl delete job $JOB_NAME
+```
+
 ## Kubernetes Secret Check
 
 Check that the API secret exists:
