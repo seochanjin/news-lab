@@ -135,9 +135,9 @@ https://127.0.0.1:6443
 Open an SSH tunnel to the K3s master node over Tailscale:
 
 ```bash
-ssh -i ~/Documents/oracle/ssh-key-2026-05-18.key \
+ssh -i <oracle-ssh-private-key-path> \
   -N -L 6443:127.0.0.1:6443 \
-  ubuntu@arm-master-node
+  ubuntu@<tailscale-node-name>
 ```
 
 Keep this terminal open.
