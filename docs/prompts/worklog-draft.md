@@ -22,9 +22,17 @@ Include:
 
 ## 구현 상세
 
+## 대안 검토
+
+## 선택한 접근과 근거
+
+## 트레이드오프
+
 ## 테스트
 
 ## 운영 반영
+
+## README 업데이트 판단
 
 ## 확인 결과
 
@@ -40,3 +48,5 @@ Rules:
 - Do not claim production deployment is complete unless the human provides rollout and curl verification logs.
 - Do not invent test results.
 - If something was not verified, mark it as pending.
+- Record alternatives considered, the selected approach, rationale, and tradeoffs.
+- Record whether README updates are needed. If not needed, explain why.

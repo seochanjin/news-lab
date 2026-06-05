@@ -364,6 +364,7 @@ PR draft rules:
 - Do not claim production deployment, K3s rollout, or production verification is complete unless the human provides actual logs.
 - If a command is suggested but not run, write it as pending or notes, not completed.
 - Do not use review files as proof that verification passed.
+- Mention README impact when relevant. If README changes are not needed, state that briefly.
 
 Required sections:
 
@@ -374,6 +375,8 @@ Required sections:
 ## 추가/변경된 API
 
 ## DB 변경 사항
+
+## README 영향
 
 ## 테스트
 
@@ -419,6 +422,7 @@ Devlog rules:
 - Do not invent test results.
 - If something was not verified, mark it as pending.
 - Do not use raw review files as proof that fixes were approved or verification passed.
+- Record alternatives considered, chosen approach and rationale, tradeoffs, README update decision, and portfolio-facing summary.
 
 Required sections:
 
@@ -430,9 +434,17 @@ Required sections:
 
 ## 구현 상세
 
+## 대안 검토
+
+## 선택한 접근과 근거
+
+## 트레이드오프
+
 ## 테스트
 
 ## 운영 반영
+
+## README 업데이트 판단
 
 ## 확인 결과
 
