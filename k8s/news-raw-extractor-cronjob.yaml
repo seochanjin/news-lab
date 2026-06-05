@@ -20,20 +20,26 @@ spec:
           nodeSelector:
             workload: app
           containers:
-          - name: news-raw-extractor
-            image: seocj/news-api:latest
-            imagePullPolicy: Always
-            command: ["python", "scripts/extract_raw_articles.py"]
-            env:
-            - name: DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: news-api-secret
-                  key: DATABASE_URL
-            resources:
-              requests:
-                cpu: "100m"
-                memory: "128Mi"
-              limits:
-                cpu: "500m"
-                memory: "512Mi"
+            - name: news-raw-extractor
+              image: seocj/news-api:latest
+              imagePullPolicy: Always
+              command: ["python", "scripts/extract_raw_articles.py"]
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+                seccompProfile:
+                  type: RuntimeDefault
+              env:
+                - name: DATABASE_URL
+                  valueFrom:
+                    secretKeyRef:
+                      name: news-api-secret
+                      key: DATABASE_URL
+              resources:
+                requests:
+                  cpu: "100m"
+                  memory: "128Mi"
+                limits:
+                  cpu: "500m"
+                  memory: "512Mi"
