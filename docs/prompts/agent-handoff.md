@@ -175,6 +175,8 @@ PR draft prompt에는 다음을 포함한다.
 - `docs/fixes/<safe-branch>-approved-fixes.md`를 applied approved fixes의 source of truth로 사용한다.
 - PR merge, production deployment, K3s rollout, production verification을 human log 없이 완료로 쓰지 않는다.
 - 실행하지 않은 명령은 pending 또는 notes로 기록한다.
+- README 영향이 있는지 판단한다.
+- README 변경이 필요하면 주요 내용을 적고, 필요하지 않으면 이유를 짧게 적는다.
 
 ## Devlog Draft Prompt
 
@@ -184,6 +186,20 @@ Devlog draft prompt에는 다음을 포함한다.
 - `docs/fixes/<safe-branch>-approved-fixes.md`만 approved fixes 근거로 사용한다.
 - Notion에 옮기기 쉬운 구조로 작성한다.
 - 검증되지 않은 항목은 pending으로 남긴다.
+- alternatives considered를 기록한다.
+- chosen approach and rationale을 기록한다.
+- tradeoffs를 기록한다.
+- README update decision을 기록한다.
+- portfolio-facing summary를 구현 요약이 아니라 engineering decision documentation 관점으로 작성한다.
+
+## Portfolio Documentation Handoff
+
+모든 task는 README/portfolio 문서화 영향을 검토한다.
+
+- README 업데이트는 모든 작업에 필수는 아니다.
+- README가 사용자 사용법, architecture, 운영 절차, 공개 포트폴리오 설명에 영향을 받으면 업데이트 후보로 기록한다.
+- README 변경이 필요하지 않은 내부 workflow 작업도 devlog에 그 판단 근거를 남긴다.
+- Devlog는 구현 내역뿐 아니라 대안, 선택 이유, 트레이드오프를 남기는 engineering decision record 역할을 한다.
 
 ## Helper Usage
 

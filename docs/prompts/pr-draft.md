@@ -18,6 +18,8 @@ The PR draft must include:
 
 ## DB 변경 사항
 
+## README 영향
+
 ## 테스트
 
 ## 확인 결과
@@ -33,3 +35,4 @@ Rules:
 - If a command is only suggested but not run, put it in pending or notes, not in completed results.
 - If production verification is not done yet, write it as pending.
 - Do not use review files as proof that verification passed.
+- Mention README impact when relevant. If README changes are not needed, state that briefly.

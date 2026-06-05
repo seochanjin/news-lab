@@ -57,6 +57,13 @@ Standard prompt handoff rules are documented in:
 docs/prompts/agent-handoff.md
 ```
 
+For each task, evaluate README and portfolio documentation impact before drafting the PR or devlog:
+
+- Record alternatives considered, chosen approach, rationale, and tradeoffs in the devlog.
+- Decide whether README updates are needed.
+- If README changes are not needed, briefly record why in the devlog or PR draft.
+- README updates are not mandatory for every internal workflow task, but the decision should be explicit.
+
 ## Local API
 
 Run the FastAPI application locally:
