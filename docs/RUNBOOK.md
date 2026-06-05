@@ -29,6 +29,34 @@ Use the artifact directories by purpose:
 - Record actual commands run and results in `docs/verification/`.
 - Draft PR and devlog entries from `docs/verification/`, not from assumptions or suggested commands.
 
+Print the current branch's workflow file paths:
+
+```bash
+scripts/agent_next_step.sh files
+```
+
+Print reusable handoff prompts for each workflow step:
+
+```bash
+scripts/agent_next_step.sh codex-implement
+scripts/agent_next_step.sh antigravity-review
+scripts/agent_next_step.sh antigravity-review-write
+scripts/agent_next_step.sh fixes-draft
+scripts/agent_next_step.sh codex-apply-fixes
+scripts/agent_next_step.sh pr-draft
+scripts/agent_next_step.sh devlog-draft
+```
+
+The helper derives the safe branch name from the current git branch. For example, `feature/raw-extractor-cronjob` becomes `feature-raw-extractor-cronjob`.
+
+The helper only prints file paths and prompt templates for the human operator to copy. It does not run Codex, Gemini/Antigravity, GitHub, CodeRabbit, `kubectl`, Supabase SQL, production verification, `git push`, or `git merge`.
+
+Standard prompt handoff rules are documented in:
+
+```text
+docs/prompts/agent-handoff.md
+```
+
 ## Local API
 
 Run the FastAPI application locally:
@@ -107,9 +135,9 @@ https://127.0.0.1:6443
 Open an SSH tunnel to the K3s master node over Tailscale:
 
 ```bash
-ssh -i ~/Documents/oracle/ssh-key-2026-05-18.key \
+ssh -i <oracle-ssh-private-key-path> \
   -N -L 6443:127.0.0.1:6443 \
-  ubuntu@arm-master-node
+  ubuntu@<tailscale-node-name>
 ```
 
 Keep this terminal open.
