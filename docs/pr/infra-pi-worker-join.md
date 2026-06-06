@@ -15,14 +15,14 @@
 ## 주요 변경 사항
 
 - `arm-master-node`
-  - InternalIP: `10.0.0.107` → `100.79.184.11`
+  - InternalIP: `10.x.x.x` → `100.x.x.x`
   - `flannel-iface: tailscale0` 적용
 - `arm-worker-node`
-  - InternalIP: `10.0.0.173` → `100.117.78.65`
+  - InternalIP: `10.x.x.x` → `100.x.x.x`
   - Tailscale IP 기준으로 K3s agent 재조인
   - `workload=app` label 복구
 - `pi-worker-node`
-  - InternalIP: `100.92.105.106`
+  - InternalIP: `100.x.x.x`
   - `flannel-iface: tailscale0`
   - `node-role=news-edge-worker:NoSchedule` taint 추가
 

@@ -11,9 +11,9 @@
 최종 목표는 다음 상태를 만드는 것이었다.
 
 ```text
-arm-master-node   InternalIP: 100.79.184.11
-arm-worker-node   InternalIP: 100.117.78.65
-pi-worker-node    InternalIP: 100.92.105.106
+arm-master-node   InternalIP: 100.x.x.x
+arm-worker-node   InternalIP: 100.x.x.x
+pi-worker-node    InternalIP: 100.x.x.x
 ```
 
 즉, Oracle Cloud 내부 private IP와 집 LAN IP가 섞이는 구조를 피하고, 모든 K3s node 간 통신 기준을 Tailscale로 통일하는 것이 이번 작업의 핵심이었다.
@@ -23,17 +23,17 @@ pi-worker-node    InternalIP: 100.92.105.106
 기존 NewsLab K3s 클러스터는 Oracle Cloud ARM 인스턴스 2대로 구성되어 있었다.
 
 ```text
-arm-master-node   10.0.0.107
-arm-worker-node   10.0.0.173
+arm-master-node   10.x.x.x
+arm-worker-node   10.x.x.x
 ```
 
 이때는 두 노드가 같은 OCI VCN 안에 있었기 때문에 private IP 기반 통신에 문제가 없었다.
 
-하지만 Raspberry Pi는 집 네트워크에 있는 장비이므로 OCI private subnet인 `10.0.0.0/24`에 직접 접근할 수 없다. 처음 Raspberry Pi를 worker로 join했을 때 node 자체는 `Ready`가 되었지만, 테스트 Pod의 로그 조회가 실패했다.
+하지만 Raspberry Pi는 집 네트워크에 있는 장비이므로 OCI private subnet인 `10.x.x.x`에 직접 접근할 수 없다. 처음 Raspberry Pi를 worker로 join했을 때 node 자체는 `Ready`가 되었지만, 테스트 Pod의 로그 조회가 실패했다.
 
-초기 실패 원인은 Pi node의 `InternalIP`가 집 LAN IP인 `192.168.1.121`로 잡힌 것이었다. Oracle master 입장에서는 이 주소로 Pi kubelet `10250` 포트에 접근할 수 없었다.
+초기 실패 원인은 Pi node의 `InternalIP`가 집 LAN IP인 `192.x.x.x`로 잡힌 것이었다. Oracle master 입장에서는 이 주소로 Pi kubelet `10250` 포트에 접근할 수 없었다.
 
-이후 Pi를 Tailscale IP 기준으로 재join해 `InternalIP`를 `100.92.105.106`으로 변경했지만, K3s agent 로그에서 master의 기존 OCI private IP인 `10.0.0.107:6443`으로 remotedialer proxy 연결을 계속 시도하는 문제가 남아 있었다.
+이후 Pi를 Tailscale IP 기준으로 재join해 `InternalIP`를 `100.x.x.x`으로 변경했지만, K3s agent 로그에서 master의 기존 OCI private IP인 `10.x.x.x:6443`으로 remotedialer proxy 연결을 계속 시도하는 문제가 남아 있었다.
 
 ```text
 Failed to connect to proxy
@@ -47,35 +47,35 @@ dial tcp 10.0.0.107:6443: connect: connection timed out
 먼저 Raspberry Pi의 네트워크 상태를 확인했다. Pi는 Ubuntu Server가 설치된 상태였고, Wi-Fi로 접속 중이었다. 이후 Ethernet 케이블을 연결해 `eth0`에 DHCP 주소가 정상 할당되는지 확인했다.
 
 ```text
-eth0   192.168.1.121/24
-wlan0  192.168.1.120/24
+eth0   192.x.x.x
+wlan0  192.x.x.x
 ```
 
 라우팅 우선순위는 Ethernet이 더 높게 잡혔다.
 
 ```text
-default via 192.168.1.1 dev eth0 metric 100
-default via 192.168.1.1 dev wlan0 metric 600
+default via 192.x.x.x dev eth0 metric 100
+default via 192.x.x.x dev wlan0 metric 600
 ```
 
 이후 Raspberry Pi에 Tailscale을 설치하고 tailnet에 연결했다.
 
 ```text
-pi-worker-node Tailscale IP: 100.92.105.106
+pi-worker-node Tailscale IP: 100.x.x.x
 ```
 
 Raspberry Pi를 K3s worker로 join할 때는 node name, node IP, flannel interface를 Tailscale 기준으로 지정했다.
 
 ```text
 --node-name pi-worker-node
---node-ip 100.92.105.106
+--node-ip 100.x.x.x
 --flannel-iface tailscale0
 ```
 
 그 결과 Pi node는 다음과 같이 등록되었다.
 
 ```text
-pi-worker-node   Ready   InternalIP: 100.92.105.106
+pi-worker-node   Ready   InternalIP: 100.x.x.x
 ```
 
 하지만 이 상태에서도 master가 기존 OCI private IP를 계속 사용하려는 문제가 있었기 때문에, master node의 K3s 설정도 Tailscale 기준으로 변경했다.
@@ -83,25 +83,25 @@ pi-worker-node   Ready   InternalIP: 100.92.105.106
 master에 `/etc/rancher/k3s/config.yaml`을 생성했다.
 
 ```yaml
-node-ip: 100.79.184.11
+node-ip: 100.x.x.x
 flannel-iface: tailscale0
 tls-san:
-  - 100.79.184.11
+  - 100.x.x.x
   - arm-master-node
 ```
 
 재시작 후 master의 `InternalIP`가 Tailscale IP로 변경되었다.
 
 ```text
-arm-master-node   InternalIP: 100.79.184.11
+arm-master-node   InternalIP: 100.x.x.x
 ```
 
-이후 Pi의 K3s agent 로그에서 기존 `10.0.0.107:6443` 경로가 제거되고, Tailscale IP 기준으로 remotedialer proxy가 연결되는 것을 확인했다.
+이후 Pi의 K3s agent 로그에서 기존 `10.x.x.x:6443` 경로가 제거되고, Tailscale IP 기준으로 remotedialer proxy가 연결되는 것을 확인했다.
 
 ```text
-Connected to proxy url="wss://100.79.184.11:6443/v1-k3s/connect"
-Removing server from load balancer: 10.0.0.107:6443
-Stopped tunnel to 10.0.0.107:6443
+Connected to proxy url="wss://100.x.x.x:6443/v1-k3s/connect"
+Removing server from load balancer: 10.x.x.x:6443
+Stopped tunnel to 10.x.x.x:6443
 ```
 
 다음으로 Oracle ARM worker도 동일한 기준으로 재join했다.
@@ -109,13 +109,13 @@ Stopped tunnel to 10.0.0.107:6443
 변경 전:
 
 ```text
-arm-worker-node   InternalIP: 10.0.0.173
+arm-worker-node   InternalIP: 10.x.x.x
 ```
 
 변경 후:
 
 ```text
-arm-worker-node   InternalIP: 100.117.78.65
+arm-worker-node   InternalIP: 100.x.x.x
 ```
 
 worker 재join 이후 role label을 복구했다.
@@ -169,9 +169,9 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get nodes -o wide
 최종 결과:
 
 ```text
-arm-master-node   Ready   control-plane   100.79.184.11
-arm-worker-node   Ready   worker          100.117.78.65
-pi-worker-node    Ready   worker          100.92.105.106
+arm-master-node   Ready   control-plane   100.x.x.x
+arm-worker-node   Ready   worker          100.x.x.x
+pi-worker-node    Ready   worker          100.x.x.x
 ```
 
 Pi worker에 테스트 Pod를 생성하고 로그 조회를 확인했다.
@@ -274,19 +274,19 @@ traefik                   Running
 ```text
 arm-master-node
 - role: control-plane
-- InternalIP: 100.79.184.11
+- InternalIP: 100.x.x.x
 - flannel interface: tailscale0
 
 arm-worker-node
 - role: worker
-- InternalIP: 100.117.78.65
+- InternalIP: 100.x.x.x
 - flannel interface: tailscale0
 - workload=app
 - news-api 실행 위치
 
 pi-worker-node
 - role: worker
-- InternalIP: 100.92.105.106
+- InternalIP: 100.x.x.x
 - flannel interface: tailscale0
 - hardware=raspberry-pi
 - location=home-lab
@@ -303,9 +303,9 @@ pi-worker-node
 최종적으로 모든 K3s node의 `InternalIP`가 Tailscale IP 기준으로 통일되었다.
 
 ```text
-arm-master-node   100.79.184.11
-arm-worker-node   100.117.78.65
-pi-worker-node    100.92.105.106
+arm-master-node   100.x.x.x
+arm-worker-node   100.x.x.x
+pi-worker-node    100.x.x.x
 ```
 
 Pi worker와 Oracle ARM worker 모두 테스트 Pod 실행 및 `kubectl logs` 조회가 성공했다. 이는 K3s API server에서 각 worker node의 kubelet으로 접근하는 경로가 정상화되었다는 의미다.

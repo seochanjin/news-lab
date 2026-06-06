@@ -8,8 +8,8 @@ Add a Raspberry Pi worker node to the NewsLab K3s cluster and standardize hybrid
 
 The cluster originally used OCI private IPs for Oracle nodes:
 
-- `arm-master-node`: `10.0.0.107`
-- `arm-worker-node`: `10.0.0.173`
+- `arm-master-node`: `10.x.x.x`
+- `arm-worker-node`: `10.x.x.x`
 
 When the Raspberry Pi worker was added from a home network, the cluster became a hybrid environment. The first Pi join succeeded, but kubelet log access failed because node/control-plane traffic tried to use addresses that were not consistently reachable across networks.
 

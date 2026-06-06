@@ -27,9 +27,9 @@ sudo k3s kubectl get nodes -o wide
 sudo /usr/local/bin/k3s-agent-uninstall.sh
 
 curl -sfL https://get.k3s.io | \
-  K3S_URL=https://100.79.184.11:6443 \
+  K3S_URL=https://100.x.x.x.x:6443 \
   K3S_TOKEN='<NODE_TOKEN>' \
-  INSTALL_K3S_EXEC='agent --node-name arm-worker-node --node-ip 100.117.78.65 --flannel-iface tailscale0 --node-label node-role=oracle-arm-worker --node-label network=tailscale --node-label location=oci' \
+  INSTALL_K3S_EXEC='agent --node-name arm-worker-node --node-ip 100.x.x.x --flannel-iface tailscale0 --node-label node-role=oracle-arm-worker --node-label network=tailscale --node-label location=oci' \
   sh -
 
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl label node arm-worker-node node-role.kubernetes.io/worker= --overwrite
@@ -60,9 +60,9 @@ curl https://api.dev-scj.site/extractor/status
 ### Final node state
 
 ```text
-arm-master-node   Ready   control-plane   INTERNAL-IP 100.79.184.11
-arm-worker-node   Ready   worker          INTERNAL-IP 100.117.78.65
-pi-worker-node    Ready   worker          INTERNAL-IP 100.92.105.106
+arm-master-node   Ready   control-plane   INTERNAL-IP 100.x.x.x
+arm-worker-node   Ready   worker          INTERNAL-IP 100.x.x.x
+pi-worker-node    Ready   worker          INTERNAL-IP 100.x.x.x
 ```
 
 ### Pi worker test
@@ -164,7 +164,7 @@ Result:
 
 Initial Pi kubelet log access failure
 
-The Pi worker initially joined with home LAN IP 192.168.1.121, causing kubectl logs to fail because the Oracle control plane could not reach the home LAN address.
+The Pi worker initially joined with home LAN IP 192.x.x.x, causing kubectl logs to fail because the Oracle control plane could not reach the home LAN address.
 
 Remotedialer attempted OCI private IP
 
@@ -173,7 +173,7 @@ After rejoining the Pi with Tailscale IP, the K3s remotedialer still attempted t
 The master was updated to use Tailscale IP and tailscale0, after which the Pi agent connected to:
 
 ```text
-wss://100.79.184.11:6443/v1-k3s/connect
+wss://100.x.x.x:6443/v1-k3s/connect
 ```
 
 Lost workload label after worker rejoin
