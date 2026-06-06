@@ -1,0 +1,48 @@
+# Monitoring core components run on the labeled Oracle ARM worker.
+alertmanager:
+  enabled: false
+
+grafana:
+  nodeSelector:
+    observability: "true"
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 300m
+      memory: 512Mi
+
+kube-state-metrics:
+  nodeSelector:
+    observability: "true"
+
+prometheus-node-exporter:
+  tolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role.kubernetes.io/master
+      operator: Exists
+      effect: NoSchedule
+    - key: node-role
+      operator: Equal
+      value: news-edge-worker
+      effect: NoSchedule
+
+prometheusOperator:
+  nodeSelector:
+    observability: "true"
+
+prometheus:
+  prometheusSpec:
+    retention: 1d
+    nodeSelector:
+      observability: "true"
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
