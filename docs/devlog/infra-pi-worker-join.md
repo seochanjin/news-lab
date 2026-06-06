@@ -37,7 +37,7 @@ arm-worker-node   10.x.x.x
 
 ```text
 Failed to connect to proxy
-dial tcp 10.0.0.107:6443: connect: connection timed out
+dial tcp 10.x.x.x:6443: connect: connection timed out
 ```
 
 즉, Raspberry Pi worker join은 표면적으로 성공했지만, K3s 내부 통신 경로가 OCI private IP와 Tailscale IP 사이에서 섞여 운영에 필요한 `kubectl logs` 검증이 실패하는 상태였다.

@@ -39,7 +39,7 @@ When the Raspberry Pi worker was added from a home network, the cluster became a
 
 ### Alternative B: Add Tailscale subnet route for OCI private subnet
 
-- Pros: Minimal fix for Pi access to `10.0.0.107:6443`.
+- Pros: Minimal fix for Pi access to `10.x.x.x:6443`.
 - Cons: Mixed node networking remains: OCI nodes use VCN IPs, Pi uses Tailscale IP.
 
 ### Alternative C: Standardize all K3s node IPs and flannel interface on Tailscale
