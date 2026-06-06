@@ -168,7 +168,7 @@ The Pi worker initially joined with home LAN IP 192.x.x.x, causing kubectl logs 
 
 Remotedialer attempted OCI private IP
 
-After rejoining the Pi with Tailscale IP, the K3s remotedialer still attempted to connect to 10.0.0.107:6443, which is not reachable from the home network.
+After rejoining the Pi with Tailscale IP, the K3s remotedialer still attempted to connect to 10.x.x.x:6443, which is not reachable from the home network.
 
 The master was updated to use Tailscale IP and tailscale0, after which the Pi agent connected to:
 
