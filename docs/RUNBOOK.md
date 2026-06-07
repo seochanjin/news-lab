@@ -1,8 +1,291 @@
 # NewsLab Runbook
 
+이 문서는 현재 통합 Runbook 역할을 한다. 문서가 더 커지면 routine check, K3s operations, CronJobs, troubleshooting을 `docs/runbooks/` 하위 문서로 분리한다.
+
 This document contains operational commands for local development and K3s production operations.
 
 Production-impacting commands must be run manually by the human operator.
+
+## Routine Operation Check
+
+Use this procedure to decide whether the NewsLab cluster, monitoring stack,
+API, RSS collector, and raw extractor are operating normally.
+
+All commands in this section are read-only unless explicitly marked otherwise.
+The human operator must open the Tailscale SSH tunnel described below before
+running `kubectl` commands. Do not record credentials, kubeconfig contents,
+private addresses, or unredacted application data in operation logs.
+
+### Quick Health Check
+
+Run these checks in order. Continue to the detailed section for any failed or
+unexpected result.
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get nodes
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -A
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl top nodes
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl top pods -A
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get jobs
+curl https://api.dev-scj.site/health
+curl https://api.dev-scj.site/collector/status
+curl https://api.dev-scj.site/extractor/status
+```
+
+Normal baseline:
+
+- Every expected node is `Ready`.
+- Required application and monitoring Pods are `Running` or completed Job Pods
+  are `Completed`; restart counts are not unexpectedly increasing.
+- Node and Pod CPU/memory usage has no sustained saturation or sudden increase.
+- `news-api` Deployment has `2/2` available replicas.
+- Both CronJobs exist, are not suspended, and have recent successful Jobs:
+  - `news-rss-collector`: `03:00 Asia/Seoul`
+  - `news-raw-extractor`: `03:30 Asia/Seoul`
+- `/health` succeeds, and collector/extractor status responses show an expected
+  recent run without an unexplained failure or long-running state.
+
+### Cluster Checks
+
+Check node readiness, placement, Pod status, resource usage, and recent events:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get nodes -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -A -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl top nodes
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl top pods -A
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get events -A \
+  --sort-by=.lastTimestamp
+```
+
+Investigate when:
+
+- A node is not `Ready`, or a previously running Pod is not `Running`.
+- Pod restart counts increase between checks.
+- CPU or memory remains near a resource limit, or usage differs sharply from
+  the recent Grafana trend.
+- Recent events include repeated scheduling, image pull, mount, probe, eviction,
+  or OOM failures.
+
+Use `describe` and logs for the affected object:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl describe node <node-name>
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl describe pod -n <namespace> <pod-name>
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs -n <namespace> <pod-name> \
+  --all-containers --tail=200
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs -n <namespace> <pod-name> \
+  --all-containers --previous --tail=200
+```
+
+`--previous` is useful only when a container has restarted. Redact sensitive or
+article data before saving logs.
+
+### Monitoring Checks
+
+Check the monitoring components in the `monitoring` namespace:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -n monitoring -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get svc -n monitoring
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl top pods -n monitoring
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get events -n monitoring \
+  --sort-by=.lastTimestamp
+```
+
+Normal baseline:
+
+- Grafana, Prometheus, Prometheus Operator, and kube-state-metrics Pods are
+  `Running`.
+- A node-exporter Pod is `Running` on every expected node.
+- Restart counts are stable, and Grafana/Prometheus memory remains below the
+  configured `512Mi` limits.
+
+Open Grafana through a local port-forward. Credential retrieval and login are
+human operator actions; never record the credential value.
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl port-forward \
+  -n monitoring svc/monitoring-grafana 3000:80
+```
+
+Then open `http://127.0.0.1:3000` and review the bundled dashboards. Dashboard
+names may vary slightly with the installed kube-prometheus-stack version.
+
+| Dashboard                                         | Check                                     | Investigate when                                                                        |
+| ------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| Kubernetes / Compute Resources / Cluster          | Overall CPU, memory, and workload count   | Sustained saturation, unexpected workload drop, or a sharp change from the recent trend |
+| Kubernetes / Compute Resources / Node (Pods)      | Per-node and per-Pod CPU/memory           | A node is missing, a Pod approaches its limit, or usage is concentrated unexpectedly    |
+| Kubernetes / Compute Resources / Namespace (Pods) | `default` and `monitoring` workload usage | A namespace has unexpected growth or repeated restarts                                  |
+| Node Exporter / Nodes                             | Node CPU, memory, filesystem, and network | Missing node metrics, filesystem pressure, or sustained resource pressure               |
+
+Prometheus retention is `1d` and storage is ephemeral. Missing older history
+does not by itself indicate an outage; missing current targets or recent
+metrics does.
+
+### Application Checks
+
+Check Kubernetes objects that route traffic to `news-api`:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment news-api
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -l app=news-api -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get service news-api
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get ingress news-api-ingress
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get certificate news-api-tls
+```
+
+Run the external read-only API checks only when the human operator chooses to
+perform production verification:
+
+```bash
+curl -i https://api.dev-scj.site/health
+curl https://api.dev-scj.site/version
+curl https://api.dev-scj.site/collector/status
+curl https://api.dev-scj.site/extractor/status
+```
+
+Normal baseline:
+
+- `news-api` Deployment is `2/2` available and its Pods are `Running`.
+- Service, Ingress, and certificate exist; the certificate is ready.
+- `/health` returns a successful HTTP response.
+- Collector and extractor status responses show the latest known run. Compare
+  timestamps with the configured CronJob schedules before deciding a run is
+  stale.
+
+### CronJob Checks
+
+Check schedule, suspension, last schedule, Jobs, Pods, and recent run APIs:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob \
+  news-rss-collector news-raw-extractor
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get jobs \
+  --sort-by=.metadata.creationTimestamp
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods \
+  -l app=news-rss-collector
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods \
+  -l app=news-raw-extractor
+curl "https://api.dev-scj.site/collector/runs?limit=5"
+curl "https://api.dev-scj.site/extractor/runs?limit=5"
+```
+
+Normal baseline:
+
+- `SUSPEND` is `False`, `ACTIVE` is normally `0`, and `LAST SCHEDULE` advances
+  after the configured daily schedule.
+- Recent scheduled Jobs are `Complete`; failed Jobs are investigated even when
+  a later retry succeeded.
+- Collector/extractor run history timestamps and statuses agree with the
+  corresponding Job.
+
+Inspect a failed Job without creating, deleting, or rerunning it:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl describe job <job-name>
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -l job-name=<job-name>
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs job/<job-name> --tail=200
+```
+
+### First-Response Troubleshooting
+
+Use read-only evidence first. Any label change, manifest apply, Pod deletion,
+rollout, node restart, or manual Job creation requires an explicit human
+operator decision.
+
+#### Node NotReady
+
+1. Run `kubectl describe node <node-name>` and review conditions, taints, and
+   recent events.
+2. Check whether Pods on that node are unavailable and whether other nodes have
+   enough capacity.
+3. Compare the node's last Grafana metrics with the other nodes.
+4. Have the human operator inspect K3s, host resource, network, and Tailscale
+   status on the affected node before choosing a restart or rejoin action.
+
+#### Pod Pending
+
+1. Run `kubectl describe pod -n <namespace> <pod-name>` and read scheduling
+   events.
+2. Check node readiness, allocatable resources, labels, taints, and the Pod's
+   node selector.
+3. Confirm whether the cause is capacity, placement, image pull, mount, or
+   missing configuration.
+4. Require human approval before changing labels, taints, resources, or
+   manifests.
+
+#### Pod CrashLoopBackOff
+
+1. Run `kubectl describe pod` and both current and `--previous` container logs.
+2. Check exit code, restart count, recent events, image, and configuration
+   references without exposing secret values.
+3. Compare with recent deployment or image changes.
+4. Require human approval before rollback, rollout, or Pod deletion.
+
+#### OOMKilled
+
+1. Confirm `Reason: OOMKilled` and the exit code using `kubectl describe pod`.
+2. Check current `kubectl top pod` values and the recent Grafana memory trend.
+3. Compare observed usage with the container request and limit.
+4. Require human approval before changing resource values or restarting the
+   workload.
+
+#### news-api Unavailable
+
+1. Check Deployment replicas, API Pods, Service, Ingress, certificate, and
+   recent events.
+2. Check API Pod logs and whether `/health` fails from the external endpoint.
+3. Distinguish Pod/application failure from Service, Ingress, certificate, DNS,
+   or external network failure.
+4. Require human approval before rollout, manifest, certificate, DNS, or
+   network changes.
+
+#### CronJob Failure
+
+1. Check CronJob schedule/suspension, the failed Job description, its Pod, and
+   logs.
+2. Compare the Job time and result with `/collector/runs` or `/extractor/runs`.
+3. Determine whether the failure is scheduling, image pull, configuration,
+   database access, or script execution.
+4. Require human approval before creating a manual Job, deleting a Job, or
+   changing the CronJob.
+
+#### Grafana or Prometheus Unavailable
+
+1. Check monitoring Pods, Services, events, resource usage, and restart counts.
+2. Describe and inspect logs for the affected Grafana, Prometheus, operator, or
+   sidecar container.
+3. If Grafana alone is unavailable, use `kubectl top` and object status while
+   investigating. If Prometheus is unavailable, expect Grafana metrics gaps.
+4. Require human approval before a restart, Helm change, resource change, or
+   reinstall.
+
+### Routine Check Record
+
+Copy this checklist into an operation record. Record the check time, operator,
+actual command results, and links to sanitized evidence. Do not mark production
+verification complete without actual operator-provided results.
+
+```text
+NewsLab routine operation check
+- Checked at:
+- Operator:
+- Cluster access available: [ ] yes [ ] no
+- Nodes Ready: [ ] yes [ ] no
+- Unexpected Pod state/restarts: [ ] none [ ] found
+- Node/Pod resource pressure: [ ] none [ ] found
+- Monitoring Pods and node-exporters healthy: [ ] yes [ ] no
+- Grafana current metrics visible: [ ] yes [ ] no [ ] not checked
+- news-api Deployment 2/2 available: [ ] yes [ ] no
+- /health successful: [ ] yes [ ] no [ ] not checked
+- RSS collector latest scheduled run healthy: [ ] yes [ ] no
+- Raw extractor latest scheduled run healthy: [ ] yes [ ] no
+- Recent warning events or failed Jobs: [ ] none [ ] found
+- Follow-up owner/action:
+- Sanitized evidence:
+```
 
 ## Agent Task Workflow
 
