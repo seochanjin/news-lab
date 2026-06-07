@@ -2,7 +2,21 @@
 
 ## Approved Fixes
 
-None.
+### Move verification results out of review artifact
+
+Approved.
+
+Reason:
+
+- Review files should contain review findings only.
+- Detailed verification commands and results belong in `docs/verification/*`.
+- CodeRabbit correctly identified that `docs/reviews/docs-operation-check-runbook-antigravity.md` included verification outcome details.
+
+Action:
+
+- Shorten the `## Verification Review` section in `docs/reviews/docs-operation-check-runbook-antigravity.md`.
+- Keep only a reference to `docs/verification/docs-operation-check-runbook.md`.
+- Do not duplicate command results in the review artifact.
 
 ## Rejected or Deferred Suggestions
 
@@ -18,7 +32,7 @@ Reason:
 
 ## Applied Changes
 
-- None.
+- Updated `docs/reviews/docs-operation-check-runbook-antigravity.md` to keep verification details in `docs/verification/docs-operation-check-runbook.md`.
 
 ## Verification Required
 
