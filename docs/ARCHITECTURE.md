@@ -67,7 +67,9 @@ Purpose:
 Execution:
 
 - Runs manually in local development
-- Runs automatically in K3s through RSS collector CronJob
+- Runs automatically in K3s through the `news-rss-collector` CronJob
+- Scheduled daily at 03:00 Asia/Seoul
+- CronJob command: `python scripts/collect_rss.py`
 
 ### Raw article extractor
 
@@ -84,8 +86,10 @@ Purpose:
 
 Execution:
 
-- Currently manual
-- Not yet automated as a K3s CronJob
+- Runs manually in local development
+- Runs automatically in K3s through the `news-raw-extractor` CronJob
+- Scheduled daily at 03:30 Asia/Seoul
+- CronJob command: `python scripts/extract_raw_articles.py`
 
 ### K3s deployment
 
@@ -266,7 +270,6 @@ The following are not implemented yet:
 
 - Automated tests
 - Lint / formatter setup
-- Raw article extraction CronJob
 - Article summarization
 - Keyword extraction
 - Embedding / RAG search
