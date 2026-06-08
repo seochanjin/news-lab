@@ -2,6 +2,8 @@
 
 ## Approved Fixes
 
+### Antigravity review approved fixes
+
 Antigravity review에서 docs/ARCHITECTURE.md와 27차 task 문서 사이에 raw extractor CronJob 상태 불일치가 확인되었다.
 
 현재 27차 task와 실제 K3s 운영 구조에서는 다음 CronJob이 존재하는 것으로 정리되어 있다.
@@ -22,7 +24,17 @@ Antigravity review에서 docs/ARCHITECTURE.md와 27차 task 문서 사이에 raw
 - 이번 fix는 문서 정합성 수정만 수행한다.
 - K8s manifest, collector code, extractor code, DB migration은 변경하지 않는다.
 
+### CodeRabbit review approved fixes
+
+- Replace local file URI links with repository-relative paths or plain repository paths.
+- Remove data-writing collector execution from default review verification commands.
+- Validate `RSS_MAX_ENTRIES_PER_SOURCE` before use.
+- Fix collector inserted/skipped counters so they are only applied after a successful source transaction commit.
+- Clean up repetitive approved-fix bullet wording where practical.
+
 ## Rejected or Deferred Suggestions
+
+### Antigravity deferred suggesions
 
 Deferred 1. Article 단위 transaction isolation 개선
 
@@ -44,7 +56,13 @@ Antigravity review에서 현재 collector가 source 단위 transaction을 사용
 - failed entry count를 source-level telemetry에 반영할지 검토한다.
 - DB constraint error, malformed URL, published_at parsing failure를 어떻게 분리할지 검토한다.
 
+### CodeRabbit deferred suggestions
+
+- Add dedicated unit tests for environment parsing: deferred unless the current test structure supports it cleanly.
+
 ## Applied Changes
+
+### Applied from Antigravity review
 
 Codex가 다음 범위 안에서만 변경했다.
 
@@ -66,6 +84,14 @@ Codex가 다음 범위 안에서만 변경했다.
 - k8s/
 - frontend files
 - GitHub Actions workflow
+
+### Applied from CodeRabbit review
+
+- Replaced feature RSS review docs' local file URI links with repository-relative or plain repository paths.
+- Moved data-writing collector execution out of default review verification commands and labeled it as human-approved data-writing verification.
+- Added positive integer validation for `RSS_MAX_ENTRIES_PER_SOURCE`; invalid or non-positive values fall back to the default with a warning.
+- Updated collector counters so per-source inserted/skipped counts are promoted to global counts only after the source transaction commits successfully.
+- Cleaned up repetitive approved-fix bullet spacing and wording where practical.
 
 ## Verification Required
 

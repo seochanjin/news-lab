@@ -15,7 +15,28 @@ from app.config.rss_sources import RSS_SOURCES
 load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-MAX_ENTRIES_PER_SOURCE = int(os.getenv("RSS_MAX_ENTRIES_PER_SOURCE", "30"))
+
+
+def get_positive_int_env(name, default):
+    raw_value = os.getenv(name)
+
+    if raw_value is None:
+        return default
+
+    try:
+        value = int(raw_value)
+    except ValueError:
+        print(f"warning: invalid {name}={raw_value!r}; using default {default}")
+        return default
+
+    if value <= 0:
+        print(f"warning: {name} must be positive; using default {default}")
+        return default
+
+    return value
+
+
+MAX_ENTRIES_PER_SOURCE = get_positive_int_env("RSS_MAX_ENTRIES_PER_SOURCE", 30)
 
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL environment variable is not set")
@@ -278,6 +299,10 @@ def collect():
                 source_result["parsed_count"] = len(entries)
                 print(f"entries: {len(entries)}")
 
+                source_inserted_count = 0
+                source_skipped_count = 0
+                source_events = []
+
                 with engine.begin() as connection:
                     for entry in entries:
                         inserted = insert_article(
@@ -287,13 +312,19 @@ def collect():
                         )
 
                         if inserted:
-                            inserted_count += 1
-                            source_result["inserted_count"] += 1
-                            print(f"inserted: {entry.get('title')}")
+                            source_inserted_count += 1
+                            source_events.append(("inserted", entry.get("title")))
                         else:
-                            skipped_count += 1
-                            source_result["skipped_count"] += 1
-                            print(f"skipped: {entry.get('title')}")
+                            source_skipped_count += 1
+                            source_events.append(("skipped", entry.get("title")))
+
+                inserted_count += source_inserted_count
+                skipped_count += source_skipped_count
+                source_result["inserted_count"] = source_inserted_count
+                source_result["skipped_count"] = source_skipped_count
+
+                for event, title in source_events:
+                    print(f"{event}: {title}")
 
             except Exception as error:
                 error_count += 1

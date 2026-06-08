@@ -10,7 +10,7 @@ Overall, the branch meets all task requirements with high code quality and opera
 
 ## Requirement Coverage
 
-The code changes satisfy all scope items specified in [feature-rss-source-db-ingest.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/feature-rss-source-db-ingest.md):
+The code changes satisfy all scope items specified in `docs/tasks/feature-rss-source-db-ingest.md`:
 - **RSS source registry**: Defined in `app/config/rss_sources.py` with 8 default enabled sources.
 - **Source metadata**: Fields `name`, `feed_url`, `url`, `category`, `country`, `language`, `enabled`, and `trust_level` are fully specified.
 - **Looping over enabled sources**: `scripts/collect_rss.py` correctly queries and processes each enabled source.
@@ -42,7 +42,7 @@ The code changes satisfy all scope items specified in [feature-rss-source-db-ing
 
 ## Verification Review
 
-- The local verification executed and logged in [feature-rss-source-db-ingest.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/feature-rss-source-db-ingest.md) shows:
+- The local verification executed and logged in `docs/verification/feature-rss-source-db-ingest.md` shows:
   - Compilation checks succeeded.
   - Collector sandbox execution completed successfully (crawl run `11` inserted 190 items and skipped 20).
   - API validation calls returned correct structures.
@@ -50,7 +50,7 @@ The code changes satisfy all scope items specified in [feature-rss-source-db-ing
 
 ## Documentation Review
 
-- **Inconsistency**: [docs/ARCHITECTURE.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/ARCHITECTURE.md#L269) lists the "Raw article extraction CronJob" under *Not Yet Implemented*, but the task specification [feature-rss-source-db-ingest.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/feature-rss-source-db-ingest.md#L98) explicitly lists `CronJob: news-raw-extractor` as an active K3s workload.
+- **Inconsistency**: `docs/ARCHITECTURE.md` listed the "Raw article extraction CronJob" under *Not Yet Implemented*, but the task specification `docs/tasks/feature-rss-source-db-ingest.md` explicitly lists `CronJob: news-raw-extractor` as an active K3s workload.
 
 ## Problems Found
 
@@ -64,19 +64,15 @@ The code changes satisfy all scope items specified in [feature-rss-source-db-ing
 ## Optional Improvements
 
 1. **Transaction Isolation per Entry**: Wrap individual article insertions in sub-transactions or handle exceptions inside the feed loop so a single corrupted article does not abort the entire source collection.
-2. **Resolve Documentation Conflict**: Update [docs/ARCHITECTURE.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/ARCHITECTURE.md) to reflect the correct deployment status of the `news-raw-extractor` CronJob.
+2. **Resolve Documentation Conflict**: Update `docs/ARCHITECTURE.md` to reflect the correct deployment status of the `news-raw-extractor` CronJob.
 
 ## Suggested Test Commands
 
-1. **Execute collector script**:
-   ```bash
-   .venv/bin/python scripts/collect_rss.py
-   ```
-2. **Launch API server**:
+1. **Launch API server**:
    ```bash
    .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
    ```
-3. **Verify API outputs**:
+2. **Verify API outputs**:
    ```bash
    curl http://127.0.0.1:8000/health
    curl http://127.0.0.1:8000/sources
@@ -84,6 +80,12 @@ The code changes satisfy all scope items specified in [feature-rss-source-db-ing
    curl http://127.0.0.1:8000/collector/status
    curl "http://127.0.0.1:8000/collector/runs?limit=5"
    ```
+
+Human-approved data-writing verification only when explicitly intended:
+
+```bash
+.venv/bin/python scripts/collect_rss.py
+```
 
 ## Verdict
 
