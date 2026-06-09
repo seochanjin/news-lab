@@ -19,6 +19,12 @@ from app.utils.article_embeddings import (
     estimate_tokens,
 )
 from app.utils.topic_grouping import group_articles
+from app.utils.topic_quality import (
+    compare_thresholds,
+    parse_thresholds,
+    render_markdown_report,
+    summarize_comparisons,
+)
 
 
 SUPPORTED_WINDOWS = (24, 72, 168)
@@ -108,6 +114,7 @@ ARTICLE_QUERIES = {
 
 
 def parse_args(argv=None):
+    load_dotenv()
     parser = argparse.ArgumentParser(
         description="Read-only embedding topic grouping candidate analysis.",
     )
@@ -138,6 +145,16 @@ def parse_args(argv=None):
         type=float,
         default=DEFAULT_SIMILARITY_THRESHOLD,
     )
+    parser.add_argument(
+        "--thresholds",
+        type=str,
+        help="Comma-separated thresholds for quality comparison.",
+    )
+    parser.add_argument(
+        "--report-path",
+        type=Path,
+        help="Optional markdown path for a human-reviewable quality report.",
+    )
     parser.add_argument("--use-embedding-provider", action="store_true")
     parser.add_argument(
         "--dry-run",
@@ -151,6 +168,13 @@ def parse_args(argv=None):
         parser.error("--max-articles must be greater than zero")
     if not 0 <= args.similarity_threshold <= 1:
         parser.error("--similarity-threshold must be between zero and one")
+    if args.thresholds:
+        try:
+            args.quality_thresholds = parse_thresholds(args.thresholds)
+        except ValueError as error:
+            parser.error(str(error))
+    else:
+        args.quality_thresholds = (args.similarity_threshold,)
     if args.use_embedding_provider:
         if args.max_articles is None:
             parser.error(
@@ -257,11 +281,27 @@ def analyze(rows, args, provider=None):
         else None
     )
     embeddings = embedding_provider.embed(texts)
+    quality_thresholds = getattr(
+        args,
+        "quality_thresholds",
+        (args.similarity_threshold,),
+    )
+    threshold_comparison = compare_thresholds(
+        articles,
+        embeddings,
+        quality_thresholds,
+    )
     topics = group_articles(
         articles,
         embeddings,
         similarity_threshold=args.similarity_threshold,
     )
+    deterministic_hash_comparison = None
+    if args.use_embedding_provider:
+        local_embeddings = DeterministicHashEmbeddingProvider().embed(texts)
+        deterministic_hash_comparison = summarize_comparisons(
+            compare_thresholds(articles, local_embeddings, quality_thresholds)
+        )
     return {
         "analysis": {
             "dry_run": True,
@@ -271,11 +311,14 @@ def analyze(rows, args, provider=None):
             "article_count": len(articles),
             "topic_candidate_count": len(topics),
             "similarity_threshold": args.similarity_threshold,
+            "quality_thresholds": list(quality_thresholds),
             "embedding_model": embedding_provider.model,
             "embedding_provider_enabled": args.use_embedding_provider,
             "db_write_performed": False,
         },
         "provider_call_estimate": provider_estimate,
+        "threshold_comparison": threshold_comparison,
+        "deterministic_hash_comparison": deterministic_hash_comparison,
         "topic_candidates": topics,
     }
 
@@ -296,6 +339,12 @@ def main():
         print(json.dumps({"provider_call_estimate": estimate}, ensure_ascii=False))
 
     result = analyze(rows, args)
+    if args.report_path:
+        args.report_path.parent.mkdir(parents=True, exist_ok=True)
+        args.report_path.write_text(
+            render_markdown_report(result),
+            encoding="utf-8",
+        )
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
 
 
