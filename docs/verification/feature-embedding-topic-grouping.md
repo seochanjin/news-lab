@@ -107,3 +107,44 @@ implementation and workflow files.
 - Candidate DB structures remain documentation-only:
   `article_embeddings`, `topics`, `topic_articles`, `topic_runs`, and
   `topic_grouping_runs`.
+
+## Approved Fix 1 Verification
+
+Applied fix:
+
+- Empty OpenAI embedding input now returns `[]` without an HTTP request.
+- Provider response and ordered embedding counts are validated against the
+  input text count.
+- Missing or extra response embeddings raise a clear `RuntimeError`.
+
+Commands actually run after the approved fix:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m py_compile app/utils/article_embeddings.py app/utils/topic_grouping.py scripts/analyze_topic_groups.py
+.venv/bin/python scripts/analyze_topic_groups.py --help
+git status --short --branch
+git diff --stat
+git diff --check
+git diff -- k8s
+git diff -- app scripts db tests
+git grep -n -i -E "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env"
+rg -n -i "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env" app/utils/article_embeddings.py app/utils/topic_grouping.py scripts/analyze_topic_groups.py tests/test_article_embeddings.py tests/test_topic_grouping.py tests/test_analyze_topic_groups.py
+```
+
+Results:
+
+- Final full unittest suite: 36 tests passed.
+- Empty provider input returned `[]` without calling `requests.post`.
+- Missing and extra response embedding tests raised `RuntimeError`.
+- Existing normal response index-ordering test passed.
+- Python compile: passed.
+- CLI help: passed; existing options were preserved.
+- `git diff --check`: passed.
+- `git diff -- k8s`: no changes.
+- Security grep matched existing safe references, environment variable names,
+  provider plumbing, and test placeholders; no credential value was found.
+- No DB dry-run was repeated because the approved fix only changes mocked
+  provider response handling.
+- No real OpenAI provider call, DB write, migration, API change, K8s change,
+  production command, push, or merge was performed.

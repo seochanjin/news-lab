@@ -94,16 +94,33 @@ class OpenAIEmbeddingProvider:
         self.timeout_seconds = timeout_seconds
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
+        input_texts = list(texts)
+        if not input_texts:
+            return []
+
         response = requests.post(
             self.endpoint,
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-            json={"model": self.model, "input": list(texts)},
+            json={"model": self.model, "input": input_texts},
             timeout=self.timeout_seconds,
         )
         response.raise_for_status()
         data = response.json()["data"]
+        if len(data) != len(input_texts):
+            raise RuntimeError(
+                "embedding response count mismatch: "
+                f"expected {len(input_texts)}, got {len(data)}"
+            )
+
         ordered = sorted(data, key=lambda item: item["index"])
-        return [item["embedding"] for item in ordered]
+        embeddings = [item["embedding"] for item in ordered]
+        if len(embeddings) != len(input_texts):
+            raise RuntimeError(
+                "ordered embedding count mismatch: "
+                f"expected {len(input_texts)}, got {len(embeddings)}"
+            )
+
+        return embeddings

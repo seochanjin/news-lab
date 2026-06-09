@@ -47,6 +47,34 @@ class ArticleEmbeddingTests(unittest.TestCase):
         self.assertEqual(result, [[1.0, 0.0], [0.0, 1.0]])
         post.assert_called_once()
 
+    @patch("app.utils.article_embeddings.requests.post")
+    def test_openai_provider_skips_request_for_empty_input(self, post):
+        result = OpenAIEmbeddingProvider(api_key="test-key").embed([])
+
+        self.assertEqual(result, [])
+        post.assert_not_called()
+
+    @patch("app.utils.article_embeddings.requests.post")
+    def test_openai_provider_rejects_missing_response_embedding(self, post):
+        post.return_value.json.return_value = {
+            "data": [{"index": 0, "embedding": [1.0, 0.0]}]
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "response count mismatch"):
+            OpenAIEmbeddingProvider(api_key="test-key").embed(["a", "b"])
+
+    @patch("app.utils.article_embeddings.requests.post")
+    def test_openai_provider_rejects_extra_response_embedding(self, post):
+        post.return_value.json.return_value = {
+            "data": [
+                {"index": 0, "embedding": [1.0, 0.0]},
+                {"index": 1, "embedding": [0.0, 1.0]},
+            ]
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "response count mismatch"):
+            OpenAIEmbeddingProvider(api_key="test-key").embed(["a"])
+
 
 if __name__ == "__main__":
     unittest.main()

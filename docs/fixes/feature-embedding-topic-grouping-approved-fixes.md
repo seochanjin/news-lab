@@ -2,10 +2,93 @@
 
 ## Approved Fixes
 
-- None.
-- Antigravity review에서 PR 제출 전 반드시 수정해야 할 required fix는 발견되지 않았다.
-- Human operator가 명시적으로 승인한 코드 수정 항목은 없다.
-- Review output만으로는 optional suggestion 적용 승인이 성립하지 않으므로, batching 개선은 이번 PR에 적용하지 않는다.
+### Fix 1. Empty embedding input 방지 및 provider 응답 개수 검증
+
+CodeRabbit review에서 `app/utils/article_embeddings.py`의 `OpenAIEmbeddingProvider.embed()`가 `texts`가 빈 sequence인 경우에도 외부 OpenAI embeddings endpoint로 HTTP POST를 수행할 수 있다는 major issue가 확인되었다.
+
+문제 위치:
+
+- `app/utils/article_embeddings.py`
+- `OpenAIEmbeddingProvider.embed()`
+
+현재 구현은 다음과 같이 입력 비어 있음 여부를 확인하지 않고 요청을 보낸다.
+
+```python
+def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    response = requests.post(
+        self.endpoint,
+        headers={
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        },
+        json={"model": self.model, "input": list(texts)},
+        timeout=self.timeout_seconds,
+    )
+    response.raise_for_status()
+    data = response.json()["data"]
+    ordered = sorted(data, key=lambda item: item["index"])
+    return [item["embedding"] for item in ordered]
+```
+
+문제점:
+
+- `texts`가 빈 리스트일 때도 외부 API 호출이 발생할 수 있다.
+- 빈 입력에 대한 외부 호출은 비용/네트워크/오류 리스크를 만든다.
+- provider 응답의 embedding 개수가 입력 text 개수와 같은지 검증하지 않는다.
+- 응답 개수가 다르면 topic grouping 입력과 embedding vector가 어긋날 수 있다.
+
+수정 기준:
+
+- `texts`를 함수 초기에 `list(texts)`로 고정한다.
+- `texts`가 비어 있으면 외부 API를 호출하지 않고 즉시 `[]`를 반환한다.
+- OpenAI 응답의 `data` 길이가 입력 text 개수와 다르면 `RuntimeError` 또는 명확한 예외를 발생시킨다.
+- 정렬된 embedding 결과 개수도 입력 text 개수와 일치하는지 확인한다.
+- 기존 provider opt-in safety gate는 변경하지 않는다.
+- 기존 model/env var 정책은 변경하지 않는다.
+- classification, topic grouping, similarity threshold, JSON 출력 구조는 변경하지 않는다.
+- DB schema, API, K8s manifest, collector/extractor는 변경하지 않는다.
+
+예상 구현 방향:
+
+```python
+def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    input_texts = list(texts)
+    if not input_texts:
+        return []
+
+    response = requests.post(
+        self.endpoint,
+        headers={
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        },
+        json={"model": self.model, "input": input_texts},
+        timeout=self.timeout_seconds,
+    )
+    response.raise_for_status()
+    data = response.json()["data"]
+
+    if len(data) != len(input_texts):
+        raise RuntimeError(
+            f"Embedding response count mismatch: expected {len(input_texts)}, got {len(data)}"
+        )
+
+    ordered = sorted(data, key=lambda item: item["index"])
+    embeddings = [item["embedding"] for item in ordered]
+
+    if len(embeddings) != len(input_texts):
+        raise RuntimeError(
+            f"Ordered embedding count mismatch: expected {len(input_texts)}, got {len(embeddings)}"
+        )
+
+    return embeddings
+```
+
+테스트 기준:
+
+- `OpenAIEmbeddingProvider.embed([])`는 `requests.post`를 호출하지 않고 `[]`를 반환해야 한다.
+- OpenAI mock response의 `data` 개수가 입력 text 개수보다 적거나 많으면 명확한 예외가 발생해야 한다.
+- 정상 mock response에서는 기존처럼 `index` 기준 정렬 후 embedding list를 반환해야 한다.
 
 ## Rejected or Deferred Suggestions
 
@@ -32,16 +115,39 @@ Antigravity review에서 현재 `OpenAIEmbeddingProvider`가 최대 200건의 ar
 
 ## Applied Changes
 
-- None.
-- 이 fix drafting 단계에서는 코드, 테스트, DB, API, K8s manifest를 변경하지 않았다.
-- DB migration, Supabase SQL, production command, push, merge를 실행하지 않았다.
-- Optional batching/chunking suggestion은 이번 PR에 적용하지 않았다.
+Applied:
+
+- `app/utils/article_embeddings.py`
+  - `OpenAIEmbeddingProvider.embed()` 시작 시 입력을 list로 고정했다.
+  - Empty input은 외부 HTTP 요청 없이 즉시 `[]`를 반환하도록 변경했다.
+  - Provider 응답 `data` 개수가 입력 text 개수와 다르면 `RuntimeError`를
+    발생시키도록 변경했다.
+  - 정렬된 embedding 결과 개수도 입력 text 개수와 일치하는지 검증한다.
+- `tests/test_article_embeddings.py`
+  - Empty input에서 `requests.post`가 호출되지 않음을 확인하는 테스트를
+    추가했다.
+  - 응답 embedding이 입력보다 적거나 많은 경우 명확한 예외가 발생하는
+    테스트를 추가했다.
+  - 기존 정상 응답 index 정렬 테스트를 유지했다.
+
+Not changed:
+
+- Provider opt-in safety gate, model/env var 정책
+- Classification, topic grouping, similarity threshold, JSON 출력 구조
+- `scripts/analyze_topic_groups.py`, `app/utils/topic_grouping.py`
+- DB schema/migration, API, K8s, collector/extractor, frontend
+- Deferred batching/chunking suggestion
+
+Not performed:
+
+- DB migration, Supabase SQL, DB write
+- Real OpenAI embedding provider call
+- K8s apply/rollout, production curl verification
+- Git push, git merge
 
 ## Verification Required
 
-추가 code fix가 없으므로 별도 fix verification은 필요하지 않다.
-
-PR 제출 전 기존 verification 명령의 최종 상태만 확인한다.
+Fix 적용 후 다음 명령을 실행하고 실제 결과를 `docs/verification/feature-embedding-topic-grouping.md`에 기록한다.
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
@@ -60,11 +166,21 @@ git diff -- app scripts db tests
 .venv/bin/python scripts/analyze_topic_groups.py --window-hours 24 --max-articles 100 --dry-run
 ```
 
+보안 검사:
+
+```bash
+git grep -n -i -E "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env"
+rg -n -i "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env" app/utils/article_embeddings.py app/utils/topic_grouping.py scripts/analyze_topic_groups.py tests/test_article_embeddings.py tests/test_topic_grouping.py tests/test_analyze_topic_groups.py
+```
+
 검증 기준:
 
 - 단위 테스트가 통과해야 한다.
 - Python compile이 통과해야 한다.
 - CLI help가 정상 출력되어야 한다.
+- `OpenAIEmbeddingProvider.embed([])`는 외부 HTTP 요청 없이 `[]`를 반환해야 한다.
+- OpenAI mock response의 embedding 개수가 입력 개수와 다르면 명확한 예외가 발생해야 한다.
+- 정상 OpenAI mock response는 `index` 기준으로 정렬된 embedding list를 반환해야 한다.
 - K8s manifest 변경이 없어야 한다.
 - DB migration이 없어야 한다.
 - DB write path가 없어야 한다.
