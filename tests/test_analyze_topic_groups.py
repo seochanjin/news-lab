@@ -34,6 +34,12 @@ class FakeConnection:
 
 
 class AnalyzeTopicGroupsTests(unittest.TestCase):
+    @patch("scripts.analyze_topic_groups.load_dotenv")
+    def test_parse_args_loads_dotenv_before_validation(self, load_dotenv):
+        parse_args([])
+
+        load_dotenv.assert_called_once_with()
+
     def test_get_articles_uses_bound_window_and_limit_parameters(self):
         connection = FakeConnection()
         args = SimpleNamespace(
@@ -68,10 +74,13 @@ class AnalyzeTopicGroupsTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 parse_args(["--use-embedding-provider"])
 
-    def test_provider_requires_api_key(self):
+    @patch("scripts.analyze_topic_groups.load_dotenv")
+    def test_provider_requires_api_key(self, load_dotenv):
         with patch.dict(os.environ, {}, clear=True):
             with self.assertRaises(SystemExit):
                 parse_args(["--use-embedding-provider", "--max-articles", "10"])
+
+        load_dotenv.assert_called_once_with()
 
     def test_provider_rejects_excessive_max_articles(self):
         with patch.dict(os.environ, {"OPENAI_EMBEDDING_API_KEY": "test"}, clear=False):
@@ -79,6 +88,19 @@ class AnalyzeTopicGroupsTests(unittest.TestCase):
                 parse_args(
                     ["--use-embedding-provider", "--max-articles", "201"]
                 )
+
+    def test_parse_args_accepts_quality_thresholds_and_report_path(self):
+        args = parse_args(
+            [
+                "--thresholds",
+                "0.65,0.70,0.72,0.75,0.80",
+                "--report-path",
+                "docs/reports/test.md",
+            ]
+        )
+
+        self.assertEqual(args.quality_thresholds, (0.65, 0.7, 0.72, 0.75, 0.8))
+        self.assertEqual(str(args.report_path), "docs/reports/test.md")
 
     @patch("app.utils.article_embeddings.requests.post")
     def test_analyze_uses_fake_embeddings_without_external_api(self, post):
@@ -111,6 +133,7 @@ class AnalyzeTopicGroupsTests(unittest.TestCase):
             time_basis="published",
             effective_max_articles=10,
             similarity_threshold=0.8,
+            quality_thresholds=(0.7, 0.8),
             use_embedding_provider=False,
         )
 
@@ -122,6 +145,39 @@ class AnalyzeTopicGroupsTests(unittest.TestCase):
         self.assertEqual(result["analysis"]["article_count"], 2)
         self.assertEqual(result["analysis"]["topic_candidate_count"], 1)
         self.assertEqual(result["topic_candidates"][0]["article_count"], 2)
+        self.assertEqual(len(result["threshold_comparison"]), 2)
+        self.assertIsNone(result["deterministic_hash_comparison"])
+        post.assert_not_called()
+
+    @patch("app.utils.article_embeddings.requests.post")
+    def test_provider_analysis_includes_deterministic_hash_comparison(self, post):
+        now = datetime.now(timezone.utc)
+        rows = [
+            {
+                "id": 1,
+                "source": "TechCrunch",
+                "title": "AI startup update",
+                "summary": "New artificial intelligence model",
+                "source_category": "tech",
+                "published_at": now,
+                "created_at": now,
+                "analysis_time": now,
+            }
+        ]
+        args = SimpleNamespace(
+            all=False,
+            window_hours=24,
+            time_basis="published",
+            effective_max_articles=10,
+            similarity_threshold=0.72,
+            quality_thresholds=(0.65, 0.72),
+            use_embedding_provider=True,
+        )
+
+        result = analyze(rows, args, provider=FakeEmbeddingProvider())
+
+        self.assertIsNotNone(result["provider_call_estimate"])
+        self.assertEqual(len(result["deterministic_hash_comparison"]), 2)
         post.assert_not_called()
 
 
