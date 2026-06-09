@@ -100,7 +100,8 @@
 - DB schema, API, collector/extractor, frontend, K8s manifest는 변경하지
   않았습니다.
 - LLM, embedding, topic grouping, AI summary는 구현하지 않았습니다.
-- 인간 승인되어 적용된 review fix는 없습니다.
+- 승인된 SQL query construction fix를 적용해 `get_articles()`가 네 개의
+  고정 `text()` template과 bind parameter만 사용하도록 변경했습니다.
 - Category keyword 및 importance weight 설정 외부화는 candidate fix이며
   아직 승인 또는 적용되지 않았습니다.
 - Source/rule mismatch 예시와 top importance 후보에 대한 human review,

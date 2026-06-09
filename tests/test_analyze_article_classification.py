@@ -2,10 +2,52 @@ import unittest
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
-from scripts.analyze_article_classification import analyze
+from scripts.analyze_article_classification import analyze, get_articles
+
+
+class FakeMappingResult:
+    def mappings(self):
+        return self
+
+    def all(self):
+        return []
+
+
+class FakeConnection:
+    def __init__(self):
+        self.query = None
+        self.params = None
+
+    def execute(self, query, params):
+        self.query = query
+        self.params = params
+        return FakeMappingResult()
 
 
 class AnalyzeArticleClassificationTests(unittest.TestCase):
+    def test_get_articles_uses_fixed_query_and_bound_window_parameter(self):
+        connection = FakeConnection()
+
+        get_articles(
+            connection=connection,
+            all_articles=False,
+            window_hours=72,
+            time_basis="published",
+        )
+
+        self.assertIn(":window_hours", str(connection.query))
+        self.assertIn("coalesce(a.published_at, a.created_at)", str(connection.query))
+        self.assertEqual(connection.params, {"window_hours": 72})
+
+    def test_get_articles_rejects_unsupported_time_basis(self):
+        with self.assertRaisesRegex(ValueError, "unsupported time_basis"):
+            get_articles(
+                connection=FakeConnection(),
+                all_articles=False,
+                window_hours=24,
+                time_basis="unexpected",
+            )
+
     def test_reports_counts_mismatches_and_importance_candidates(self):
         now = datetime.now(timezone.utc)
         articles = [

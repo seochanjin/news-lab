@@ -100,3 +100,54 @@ titles and candidate details were not printed:
 - New implementation files are untracked, so `git status --short` is the
   source of truth for their current file list.
 - No human-provided production verification logs were available.
+
+## Approved Fix 1 Verification
+
+Applied fix:
+
+- Replaced `get_articles()` SQL fragment interpolation with four fixed
+  SQLAlchemy `text()` query templates.
+- Kept `window_hours` as a bind parameter.
+- Added `ValueError` handling for unsupported `time_basis`.
+- Added focused query-selection and invalid-input tests.
+
+Commands actually run after the approved fix:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m py_compile app/utils/article_classification.py scripts/analyze_article_classification.py tests/test_article_classification.py
+.venv/bin/python scripts/analyze_article_classification.py --help
+git status --short
+git diff --stat
+git diff --check
+git diff -- k8s
+git diff -- app scripts db tests
+rg -n "text\\(f|timestamp_expression|where_sql|ARTICLE_QUERIES|window_hours" scripts/analyze_article_classification.py tests/test_analyze_article_classification.py
+git grep -n -i -E "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env"
+.venv/bin/python scripts/analyze_article_classification.py --window-hours 24 --max-examples 0
+.venv/bin/python scripts/analyze_article_classification.py --window-hours 72 --max-examples 0
+.venv/bin/python scripts/analyze_article_classification.py --window-hours 168 --max-examples 0
+.venv/bin/python scripts/analyze_article_classification.py --all --max-examples 0
+.venv/bin/python scripts/analyze_article_classification.py --window-hours 24 --time-basis created --max-examples 0
+```
+
+Results:
+
+- Full unit test suite: 21 tests passed.
+- Python compile: passed.
+- CLI help: passed; existing options were preserved.
+- `git diff --check`: passed.
+- `get_articles()` no longer contains `text(f"""...""")`,
+  `timestamp_expression`, or `where_sql`.
+- Fixed query selection and bound `window_hours` behavior passed focused tests.
+- Unsupported `time_basis` raises `ValueError`.
+- Security grep matched existing safe references/documentation; no credential
+  value was found.
+- `git diff -- k8s` returned no changes.
+- All five approved-fix DB dry-runs succeeded read-only.
+- All-time result remained 376 articles, 112 mismatches, rule category counts
+  unchanged, and languages `en` 373 / `ko` 3.
+- The all-time importance average changed from 4.0 to 3.99 because recency is
+  based on execution time; this is not a classification rule change.
+- No DB write, migration, API change, K8s change, production command, push, or
+  merge was performed.

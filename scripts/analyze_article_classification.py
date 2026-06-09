@@ -21,6 +21,80 @@ SOURCE_LANGUAGE_BY_NAME = {
     if source.get("language")
 }
 
+PUBLISHED_WINDOW_QUERY = text("""
+    select
+        a.id,
+        a.source_id,
+        s.name as source,
+        a.title,
+        a.summary,
+        a.category as source_category,
+        a.published_at,
+        a.created_at,
+        coalesce(a.published_at, a.created_at) as analysis_time
+    from articles a
+    left join sources s on s.id = a.source_id
+    where coalesce(a.published_at, a.created_at) >=
+        now() - (:window_hours * interval '1 hour')
+    order by coalesce(a.published_at, a.created_at) desc nulls last, a.id desc
+""")
+
+PUBLISHED_ALL_QUERY = text("""
+    select
+        a.id,
+        a.source_id,
+        s.name as source,
+        a.title,
+        a.summary,
+        a.category as source_category,
+        a.published_at,
+        a.created_at,
+        coalesce(a.published_at, a.created_at) as analysis_time
+    from articles a
+    left join sources s on s.id = a.source_id
+    order by coalesce(a.published_at, a.created_at) desc nulls last, a.id desc
+""")
+
+CREATED_WINDOW_QUERY = text("""
+    select
+        a.id,
+        a.source_id,
+        s.name as source,
+        a.title,
+        a.summary,
+        a.category as source_category,
+        a.published_at,
+        a.created_at,
+        a.created_at as analysis_time
+    from articles a
+    left join sources s on s.id = a.source_id
+    where a.created_at >= now() - (:window_hours * interval '1 hour')
+    order by a.created_at desc nulls last, a.id desc
+""")
+
+CREATED_ALL_QUERY = text("""
+    select
+        a.id,
+        a.source_id,
+        s.name as source,
+        a.title,
+        a.summary,
+        a.category as source_category,
+        a.published_at,
+        a.created_at,
+        a.created_at as analysis_time
+    from articles a
+    left join sources s on s.id = a.source_id
+    order by a.created_at desc nulls last, a.id desc
+""")
+
+ARTICLE_QUERIES = {
+    ("published", False): PUBLISHED_WINDOW_QUERY,
+    ("published", True): PUBLISHED_ALL_QUERY,
+    ("created", False): CREATED_WINDOW_QUERY,
+    ("created", True): CREATED_ALL_QUERY,
+}
+
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -77,38 +151,12 @@ def create_database_engine():
 
 
 def get_articles(connection, all_articles: bool, window_hours: int, time_basis: str):
-    timestamp_expression = (
-        "coalesce(a.published_at, a.created_at)"
-        if time_basis == "published"
-        else "a.created_at"
-    )
-    where_sql = ""
-    params = {}
+    try:
+        query = ARTICLE_QUERIES[(time_basis, all_articles)]
+    except KeyError as error:
+        raise ValueError(f"unsupported time_basis: {time_basis!r}") from error
 
-    if not all_articles:
-        where_sql = (
-            f"where {timestamp_expression} >= "
-            "now() - (:window_hours * interval '1 hour')"
-        )
-        params["window_hours"] = window_hours
-
-    query = text(f"""
-        select
-            a.id,
-            a.source_id,
-            s.name as source,
-            a.title,
-            a.summary,
-            a.category as source_category,
-            a.published_at,
-            a.created_at,
-            {timestamp_expression} as analysis_time
-        from articles a
-        left join sources s on s.id = a.source_id
-        {where_sql}
-        order by {timestamp_expression} desc nulls last, a.id desc
-    """)
-
+    params = {} if all_articles else {"window_hours": window_hours}
     return connection.execute(query, params).mappings().all()
 
 
