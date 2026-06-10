@@ -4,7 +4,7 @@ import re
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, text
+from sqlalchemy import bindparam, create_engine, text
 
 load_dotenv()
 
@@ -120,6 +120,39 @@ def get_target_articles(connection, limit: int):
     return connection.execute(query, {"limit": limit}).mappings().all()
 
 
+def get_selected_articles(connection, article_ids, limit: int):
+    query = text("""
+        select
+            a.id,
+            a.title,
+            a.url,
+            s.name as source
+        from articles a
+        left join sources s on s.id = a.source_id
+        left join raw_articles r on r.article_id = a.id
+        where a.id in :article_ids
+          and (
+              r.id is null
+              or (
+                  r.extraction_status = 'pending'
+                  and coalesce(length(r.raw_text), 0) = 0
+              )
+          )
+          and a.url is not null
+          and a.url not like 'https://example.com/%'
+        limit :limit
+    """).bindparams(bindparam("article_ids", expanding=True))
+
+    rows = connection.execute(
+        query,
+        {"article_ids": list(article_ids), "limit": limit},
+    ).mappings().all()
+    by_id = {row["id"]: row for row in rows}
+    return [by_id[article_id] for article_id in article_ids if article_id in by_id][
+        :limit
+    ]
+
+
 def save_raw_article_success(connection, article_id: int, raw_text: str):
     query = text("""
         insert into raw_articles (
@@ -199,6 +232,67 @@ def fetch_article_text(url: str) -> str:
         raise ValueError("extracted text is too short")
 
     return raw_text
+
+
+def extract_selected_article_ids(article_ids, *, limit: int):
+    if not 1 <= limit <= 5:
+        raise ValueError("limit must be between 1 and 5")
+    selected_ids = list(dict.fromkeys(article_ids))[:limit]
+    if not selected_ids:
+        return []
+
+    with engine.begin() as connection:
+        run_id = create_extraction_run(connection)
+
+    try:
+        with engine.begin() as connection:
+            articles = get_selected_articles(connection, selected_ids, limit)
+
+        results = []
+        for article in articles:
+            article_id = article["id"]
+            try:
+                raw_text = fetch_article_text(article["url"])
+                with engine.begin() as connection:
+                    save_raw_article_success(connection, article_id, raw_text)
+                results.append({"article_id": article_id, "status": "success"})
+            except Exception as error:
+                with engine.begin() as connection:
+                    save_raw_article_failed(connection, article_id, str(error))
+                results.append(
+                    {
+                        "article_id": article_id,
+                        "status": "failed",
+                        "error_message": str(error),
+                    }
+                )
+
+        selected_article_ids = {article["id"] for article in articles}
+        results.extend(
+            {"article_id": article_id, "status": "skipped"}
+            for article_id in selected_ids
+            if article_id not in selected_article_ids
+        )
+        with engine.begin() as connection:
+            finish_extraction_run(
+                connection,
+                run_id,
+                "success",
+                sum(result["status"] == "success" for result in results),
+                sum(result["status"] == "failed" for result in results),
+            )
+        return results
+    except Exception as error:
+        with engine.begin() as connection:
+            finish_extraction_run(
+                connection,
+                run_id,
+                "failed",
+                0,
+                0,
+                str(error),
+            )
+        raise
 
 
 def extract(limit: int = 5):
