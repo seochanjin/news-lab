@@ -13,7 +13,7 @@
 [feature-topic-summary-report.md](~/news-lab/docs/tasks/feature-topic-summary-report.md)에 기술된 모든 기능 요건이 충족되었습니다.
 
 - **원문 대상 요약 추출**: 확보된 `raw_text` 기사만 요약용 입력값으로 사용하도록 선별 처리됩니다.
-- ** deterministic/mock 요약 우선**: 기본 CLI 실행은 어떠한 외부 LLM/OpenAI 호출 없이 로컬 deterministic 요약기([DeterministicSummaryProvider](~/news-lab/app/utils/topic_summary.py#L66))를 이용해 처리됩니다.
+- **deterministic/mock 요약 우선**: 기본 CLI 실행은 어떠한 외부 LLM/OpenAI 호출 없이 로컬 deterministic 요약기([DeterministicSummaryProvider](~/news-lab/app/utils/topic_summary.py#L66))를 이용해 처리됩니다.
 - **Provider Opt-in 게이트**: 실제 API 호출은 `--use-summary-provider` 옵션과 `OPENAI_SUMMARY_API_KEY` 환경변수가 주어질 때만 허용됩니다.
 - **다양한 한도 제어(Limit Flags)**: `--max-topics`, `--max-articles-per-topic`, `--max-raw-chars-per-article` 인수를 지원하여 실행 비용 및 대량 처리를 안전하게 예방합니다.
 - **보고서 수치 표기**: 생성된 마크다운 리포트에 DB 쓰기 여부(`db_write_performed=false`) 및 원문 추출 여부(`raw_extraction_performed=false`)가 정확히 기재됩니다.

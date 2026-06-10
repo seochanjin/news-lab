@@ -1,6 +1,7 @@
 """Topic summary input, provider, and report helpers."""
 
 import json
+import math
 import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
@@ -175,15 +176,33 @@ def parse_provider_response(payload: dict) -> dict:
         raise ValueError("summary provider response did not contain output text")
 
     result = json.loads(output_text)
+    if not isinstance(result, dict):
+        raise ValueError("summary provider response must be a JSON object")
+
     required = {"title_ko", "summary_ko", "key_points", "keywords", "confidence"}
     missing = required - result.keys()
     if missing:
         raise ValueError(f"summary provider response missing fields: {sorted(missing)}")
-    if not isinstance(result["key_points"], list) or not isinstance(
-        result["keywords"], list
-    ):
-        raise ValueError("summary provider list fields are invalid")
-    result["confidence"] = float(result["confidence"])
+    for field in ("title_ko", "summary_ko"):
+        if not isinstance(result[field], str):
+            raise ValueError(f"summary provider field `{field}` must be a string")
+    for field in ("key_points", "keywords"):
+        if not isinstance(result[field], list) or not all(
+            isinstance(value, str) for value in result[field]
+        ):
+            raise ValueError(
+                f"summary provider field `{field}` must be a list of strings"
+            )
+
+    confidence = result["confidence"]
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)):
+        raise ValueError("summary provider field `confidence` must be a number")
+    confidence = float(confidence)
+    if not math.isfinite(confidence):
+        raise ValueError("summary provider field `confidence` must be finite")
+    if not 0 <= confidence <= 1:
+        raise ValueError("summary provider field `confidence` must be between 0 and 1")
+    result["confidence"] = confidence
     return result
 
 

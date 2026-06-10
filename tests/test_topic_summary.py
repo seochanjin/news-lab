@@ -168,6 +168,76 @@ class TopicSummaryTests(unittest.TestCase):
         self.assertEqual(parsed["title_ko"], "제목")
         self.assertEqual(parsed["confidence"], 0.8)
 
+    def test_parse_provider_response_rejects_non_object_json(self):
+        for output_text in ('["summary"]', '"summary"', "null"):
+            with self.subTest(output_text=output_text):
+                with self.assertRaises(ValueError):
+                    parse_provider_response({"output_text": output_text})
+
+    def test_parse_provider_response_rejects_non_finite_confidence(self):
+        for confidence in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(confidence=confidence):
+                with self.assertRaises(ValueError):
+                    parse_provider_response(
+                        {
+                            "output_text": (
+                                '{"title_ko":"제목","summary_ko":"요약",'
+                                '"key_points":[],"keywords":[],'
+                                f'"confidence":{confidence}' + "}"
+                            )
+                        }
+                    )
+
+    def test_parse_provider_response_rejects_out_of_range_confidence(self):
+        for confidence in (-0.1, 1.1):
+            with self.subTest(confidence=confidence):
+                with self.assertRaises(ValueError):
+                    parse_provider_response(
+                        {
+                            "output_text": json.dumps(
+                                {
+                                    "title_ko": "제목",
+                                    "summary_ko": "요약",
+                                    "key_points": [],
+                                    "keywords": [],
+                                    "confidence": confidence,
+                                }
+                            )
+                        }
+                    )
+
+    def test_parse_provider_response_rejects_non_string_list_item(self):
+        with self.assertRaises(ValueError):
+            parse_provider_response(
+                {
+                    "output_text": json.dumps(
+                        {
+                            "title_ko": "제목",
+                            "summary_ko": "요약",
+                            "key_points": ["핵심", 1],
+                            "keywords": ["키워드"],
+                            "confidence": 0.8,
+                        }
+                    )
+                }
+            )
+
+    def test_parse_provider_response_rejects_non_string_text_field(self):
+        with self.assertRaises(ValueError):
+            parse_provider_response(
+                {
+                    "output_text": json.dumps(
+                        {
+                            "title_ko": ["제목"],
+                            "summary_ko": "요약",
+                            "key_points": [],
+                            "keywords": [],
+                            "confidence": 0.8,
+                        }
+                    )
+                }
+            )
+
     @patch("app.utils.topic_summary.requests.post")
     def test_openai_provider_parses_mock_response(self, post):
         post.return_value.json.return_value = {

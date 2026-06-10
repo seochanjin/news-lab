@@ -240,3 +240,43 @@ Result:
   - automatic fallback/retry policy: not implemented in this task
   - before DB/API promotion, additional factuality and quality checks are required
 - Factuality check is still required before promoting provider output to user-facing DB/API output.
+
+## Approved Fix 2 Verification
+
+### Commands Run
+
+```bash
+.venv/bin/python -m py_compile app/utils/topic_summary.py scripts/generate_topic_summary_report.py
+.venv/bin/python -m unittest tests.test_topic_summary tests.test_generate_topic_summary_report -v
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/generate_topic_summary_report.py --window-hours 24 --max-topics 3 --max-articles-per-topic 2 --max-raw-chars-per-article 3000 --report-path docs/reports/feature-topic-summary-report-deterministic.md
+git status --short --branch
+git diff --stat
+git diff --check
+git diff -- k8s
+git status --short -- app/routers app/main.py db k8s frontend Dockerfile .github .env
+git grep -n -i -E "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env" -- app scripts tests docs ':!docs/reviews/feature-topic-summary-report-antigravity.md' ':!docs/reviews/feature-topic-summary-report-coderabbit.md'
+rg -n -i "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env" app scripts tests docs -g '!docs/reviews/feature-topic-summary-report-antigravity.md' -g '!docs/reviews/feature-topic-summary-report-coderabbit.md'
+```
+
+### Results
+
+- Python compile: passed.
+- Focused unittest: passed, 20 tests.
+- Full unittest: passed, 95 tests.
+- New tests confirm invalid provider payloads raise controlled `ValueError` for
+  non-object JSON, invalid text/list types, non-finite confidence, and
+  confidence outside `0~1`.
+- Deterministic report regeneration: failed before DB access because
+  `DATABASE_URL` is not set in the current process environment. The existing
+  human-approved actual-data report was not overwritten.
+- `git diff --check`: failed only on pre-existing, unrelated trailing
+  whitespace in `docs/reviews/feature-topic-summary-report-coderabbit.md`.
+  Review files were intentionally not modified.
+- K8s/protected scope: no changes.
+- Security checks matched existing safe references, environment-variable names,
+  test-only values, and documented command strings; no credential value was
+  found in the approved-fix changes.
+- No raw extraction, raw extraction execute command, DB write, provider call,
+  migration, manual SQL, production verification, deployment, or rollout was
+  performed.
