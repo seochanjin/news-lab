@@ -74,8 +74,9 @@ def _build_group(topic_number: int, member_scores: list[tuple[int, float]], arti
         {
             **articles[index],
             "similarity_to_seed": round(similarity, 4),
+            "is_topic_seed": position == 0,
         }
-        for index, similarity in member_scores
+        for position, (index, similarity) in enumerate(member_scores)
     ]
     representative = min(
         members,
@@ -106,12 +107,14 @@ def _serialize_article(article: dict) -> dict:
         "id": article["id"],
         "source": article["source"],
         "title": article["title"],
+        "summary": article.get("summary"),
         "source_category": article["source_category"],
         "rule_category": article["rule_category"],
         "topic_category": article["topic_category"],
         "detected_language": article["detected_language"],
         "importance_score": article["importance_score"],
         "similarity_to_seed": article["similarity_to_seed"],
+        "is_topic_seed": article["is_topic_seed"],
         "published_at": article["published_at"],
         "created_at": article["created_at"],
     }
