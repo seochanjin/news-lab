@@ -2,15 +2,15 @@
 
 ## Review Summary
 
-이 리뷰는 [feature/raw-extraction-target-runner](file:///Users/seochanjin/workspace/NewsLab/news-lab) 브랜치에 구현된 Raw Extraction Target 기반 제한 실행 CLI 기능의 품질, 안정성 및 요구사항 충족 여부를 검증합니다.
+이 리뷰는 [feature/raw-extraction-target-runner](~/news-lab) 브랜치에 구현된 Raw Extraction Target 기반 제한 실행 CLI 기능의 품질, 안정성 및 요구사항 충족 여부를 검증합니다.
 
-구현된 시스템은 33차의 대표 타겟 선정 결과를 바탕으로, 실제 원문 추출기([extract_raw_articles.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/extract_raw_articles.py))와 안전하게 연동되는 제한 실행 CLI([run_raw_extraction_targets.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/run_raw_extraction_targets.py))를 추가하였습니다. 기본 실행을 안전하게 dry-run으로 격리하고, 운영자의 명시적 승인 하에 소수(1~5개)의 타겟만 제한적으로 실제 원문 추출을 연동할 수 있도록 설계되었습니다.
+구현된 시스템은 33차의 대표 타겟 선정 결과를 바탕으로, 실제 원문 추출기([extract_raw_articles.py](~/news-lab/scripts/extract_raw_articles.py))와 안전하게 연동되는 제한 실행 CLI([run_raw_extraction_targets.py](~/news-lab/scripts/run_raw_extraction_targets.py))를 추가하였습니다. 기본 실행을 안전하게 dry-run으로 격리하고, 운영자의 명시적 승인 하에 소수(1~5개)의 타겟만 제한적으로 실제 원문 추출을 연동할 수 있도록 설계되었습니다.
 
 정밀 검증 결과, 기존 CronJob의 기본 실행 엔트리포인트를 완벽하게 보존하면서 신규 선택 추출 로직을 안전한 Opt-in 구조로 결합하였으며, 요구사항에 명시된 예외 케이스 처리와 안전 게이트가 빈틈없이 구현되었음을 확인하여 **PASS** 판정을 내립니다.
 
 ## Requirement Coverage
 
-[feature-raw-extraction-target-runner.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/feature-raw-extraction-target-runner.md)에 정의된 모든 설계 요건이 정상적으로 충족되었습니다.
+[feature-raw-extraction-target-runner.md](~/news-lab/docs/tasks/feature-raw-extraction-target-runner.md)에 정의된 모든 설계 요건이 정상적으로 충족되었습니다.
 
 - **기본 dry-run 동작 및 가드**: `--execute`가 제공되지 않는 한 실제 추출기 실행 및 DB 쓰기가 차단됩니다.
 - **제한 조건(Limit & Execute) 강제**: 실제 실행을 의미하는 `--execute` 사용 시 `--limit` 입력이 필수이며, 허용치 범위는 `1~5`로 엄격히 제한됩니다. (유효 범위를 벗어나면 CLI 파서가 차단합니다.)
@@ -22,10 +22,10 @@
 
 구현된 연동 코드와 신규 스크립트는 높은 수준의 구조적 안정성을 유지하고 있습니다.
 
-- **기존 동작의 비파괴 보존**: [extract_raw_articles.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/extract_raw_articles.py)의 기존 CronJob 호출 엔트리포인트(`extract()`) 및 기본 구동 흐름을 일절 훼손하지 않고, 선택적 ID 리스트 추출 API(`extract_selected_article_ids()`)만 추가 정의하여 영향도를 완벽하게 제어했습니다.
+- **기존 동작의 비파괴 보존**: [extract_raw_articles.py](~/news-lab/scripts/extract_raw_articles.py)의 기존 CronJob 호출 엔트리포인트(`extract()`) 및 기본 구동 흐름을 일절 훼손하지 않고, 선택적 ID 리스트 추출 API(`extract_selected_article_ids()`)만 추가 정의하여 영향도를 완벽하게 제어했습니다.
 - **순서 및 Limit 준수**: `get_selected_articles()` 쿼리에서 입력받은 `article_ids` 순서를 리스트 컴프리헨션을 이용해 그대로 유지하도록 처리하였고, Limit 범위 슬라이싱 처리가 올바르게 작용합니다.
 - **안전한 스킵 정책**: 이미 본문 텍스트가 채워져 있는 기사, 이전에 추출 실패한 기사, 유효하지 않은 URL 혹은 `example.com` 등의 테스트 URL은 SQL 쿼리 레벨에서 사전 필터링되어 중복 시도 및 리소스를 낭비하지 않습니다.
-- **단위 테스트 품질**: [test_run_raw_extraction_targets.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/tests/test_run_raw_extraction_targets.py)에서 Mock을 통한 실행기 연동 및 CLI 파서 유효성 에러 등을 상세히 검증하고 있어 회귀 결함을 강력하게 방어합니다.
+- **단위 테스트 품질**: [test_run_raw_extraction_targets.py](~/news-lab/tests/test_run_raw_extraction_targets.py)에서 Mock을 통한 실행기 연동 및 CLI 파서 유효성 에러 등을 상세히 검증하고 있어 회귀 결함을 강력하게 방어합니다.
 
 ## Security Review
 
@@ -44,14 +44,14 @@
 
 ## Verification Review
 
-[feature-raw-extraction-target-runner.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/feature-raw-extraction-target-runner.md)의 실행 명령과 단위 테스트 실행을 대조 확인하였습니다.
+[feature-raw-extraction-target-runner.md](~/news-lab/docs/verification/feature-raw-extraction-target-runner.md)의 실행 명령과 단위 테스트 실행을 대조 확인하였습니다.
 
 - **안전 검증 준수**: 검증자가 실제 `--execute` 명령을 포함한 프로덕션 영향 명령을 임의 실행하지 않고 Mock 및 CLI Validation 테스트로만 안전하게 검증 결과를 통과시켰음이 확인되었습니다.
 - **단위 테스트 커버리지**: 단위 테스트 전체 자동 실행(75개 통과) 결과가 로그와 정확히 일치하며 신뢰할 수 있습니다.
 
 ## Documentation Review
 
-- [feature-raw-extraction-target-runner.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/feature-raw-extraction-target-runner.md)(요구사항 명세서), [feature-raw-extraction-target-runner-dry-run.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/reports/feature-raw-extraction-target-runner-dry-run.md)(계획서), [feature-raw-extraction-target-runner.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/feature-raw-extraction-target-runner.md)(검증 로그), [feature-raw-extraction-target-runner.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/pr/feature-raw-extraction-target-runner.md)(PR 초안) 간에 기재된 내용의 정밀도와 일관성이 완벽하게 부합합니다.
+- [feature-raw-extraction-target-runner.md](~/news-lab/docs/tasks/feature-raw-extraction-target-runner.md)(요구사항 명세서), [feature-raw-extraction-target-runner-dry-run.md](~/news-lab/docs/reports/feature-raw-extraction-target-runner-dry-run.md)(계획서), [feature-raw-extraction-target-runner.md](~/news-lab/docs/verification/feature-raw-extraction-target-runner.md)(검증 로그), [feature-raw-extraction-target-runner.md](~/news-lab/docs/pr/feature-raw-extraction-target-runner.md)(PR 초안) 간에 기재된 내용의 정밀도와 일관성이 완벽하게 부합합니다.
 
 ## Problems Found
 
