@@ -1,5 +1,6 @@
 """Topic summary input, provider, and report helpers."""
 
+import hashlib
 import json
 import math
 import re
@@ -136,6 +137,7 @@ def summarize_topic_inputs(
     summaries = []
     for topic_input in summary_inputs:
         public_input = _public_topic_input(topic_input)
+        public_input["summary_input_hash"] = build_summary_input_hash(topic_input)
         if topic_input["status"] == "insufficient_raw_text":
             summaries.append(
                 {
@@ -160,6 +162,26 @@ def summarize_topic_inputs(
             }
         )
     return summaries
+
+
+def build_summary_input_hash(topic_input: dict) -> str:
+    payload = sorted(
+        (
+            {
+                "article_id": article["article_id"],
+                "raw_text": article["raw_text"],
+            }
+            for article in topic_input["used_articles"]
+        ),
+        key=lambda item: (item["article_id"], item["raw_text"]),
+    )
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def parse_provider_response(payload: dict) -> dict:
