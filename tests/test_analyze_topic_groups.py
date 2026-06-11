@@ -52,6 +52,7 @@ class AnalyzeTopicGroupsTests(unittest.TestCase):
         get_articles(connection, args)
 
         self.assertIn(":window_hours", str(connection.query))
+        self.assertIn("a.url", str(connection.query))
         self.assertIn("limit :max_articles", str(connection.query))
         self.assertEqual(
             connection.params,
