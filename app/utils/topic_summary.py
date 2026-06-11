@@ -165,13 +165,16 @@ def summarize_topic_inputs(
 
 
 def build_summary_input_hash(topic_input: dict) -> str:
-    payload = [
-        {
-            "article_id": article["article_id"],
-            "raw_text": article["raw_text"],
-        }
-        for article in topic_input["used_articles"]
-    ]
+    payload = sorted(
+        (
+            {
+                "article_id": article["article_id"],
+                "raw_text": article["raw_text"],
+            }
+            for article in topic_input["used_articles"]
+        ),
+        key=lambda item: (item["article_id"], item["raw_text"]),
+    )
     encoded = json.dumps(
         payload,
         ensure_ascii=False,

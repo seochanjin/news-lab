@@ -186,18 +186,22 @@ def render_save_report(plan: dict) -> str:
     return "\n".join(lines)
 
 
+def run_save(engine, args):
+    with engine.connect() as connection:
+        connection.execute(text("set transaction read only"))
+        result = _generate_with_connection(connection, args)
+    plan = build_save_plan(result, args)
+
+    if args.execute:
+        with engine.begin() as connection:
+            plan = execute_save_plan(plan, connection)
+    return plan
+
+
 def main():
     args = parse_args()
     engine = create_database_engine()
-    if args.execute:
-        with engine.begin() as connection:
-            result = _generate_with_connection(connection, args)
-            plan = execute_save_plan(build_save_plan(result, args), connection)
-    else:
-        with engine.connect() as connection:
-            connection.execute(text("set transaction read only"))
-            result = _generate_with_connection(connection, args)
-        plan = build_save_plan(result, args)
+    plan = run_save(engine, args)
 
     if args.report_path:
         args.report_path.parent.mkdir(parents=True, exist_ok=True)

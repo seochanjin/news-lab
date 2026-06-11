@@ -1,5 +1,6 @@
 import unittest
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from scripts.save_topic_summaries import (
     UPSERT_TOPIC_QUERY,
@@ -7,6 +8,7 @@ from scripts.save_topic_summaries import (
     execute_save_plan,
     parse_args,
     render_save_report,
+    run_save,
 )
 from app.utils.topic_summary import build_summary_input_hash
 
@@ -62,11 +64,36 @@ class FakeConnection:
     def __init__(self):
         self.calls = []
 
-    def execute(self, query, params):
+    def execute(self, query, params=None):
         self.calls.append((str(query), params))
         if "returning id" in str(query).lower():
             return ScalarResult(42)
         return ScalarResult(None)
+
+
+class RecordingContext:
+    def __init__(self, events, name):
+        self.events = events
+        self.name = name
+        self.connection = FakeConnection()
+
+    def __enter__(self):
+        self.events.append(f"{self.name}_enter")
+        return self.connection
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.events.append(f"{self.name}_exit")
+
+
+class RecordingEngine:
+    def __init__(self, events):
+        self.events = events
+
+    def connect(self):
+        return RecordingContext(self.events, "read")
+
+    def begin(self):
+        return RecordingContext(self.events, "write")
 
 
 class SaveTopicSummariesTests(unittest.TestCase):
@@ -96,16 +123,108 @@ class SaveTopicSummariesTests(unittest.TestCase):
         self.assertEqual(plan["analysis"]["skipped_topic_count"], 1)
         self.assertEqual(plan["topics"][0]["articles"][0]["article_id"], 10)
 
-    def test_summary_input_hash_is_stable_and_changes_with_raw_input(self):
-        first = {"used_articles": [{"article_id": 1, "raw_text": "raw text"}]}
-        duplicate = {"used_articles": [{"article_id": 1, "raw_text": "raw text"}]}
-        changed = {"used_articles": [{"article_id": 1, "raw_text": "changed"}]}
+    def test_summary_input_hash_is_order_insensitive_and_input_sensitive(self):
+        first = {
+            "used_articles": [
+                {"article_id": 1, "raw_text": "first"},
+                {"article_id": 2, "raw_text": "second"},
+            ]
+        }
+        reordered = {
+            "used_articles": [
+                {"article_id": 2, "raw_text": "second"},
+                {"article_id": 1, "raw_text": "first"},
+            ]
+        }
+        changed_raw_text = {
+            "used_articles": [
+                {"article_id": 1, "raw_text": "changed"},
+                {"article_id": 2, "raw_text": "second"},
+            ]
+        }
+        changed_article_id = {
+            "used_articles": [
+                {"article_id": 3, "raw_text": "first"},
+                {"article_id": 2, "raw_text": "second"},
+            ]
+        }
 
         self.assertEqual(
             build_summary_input_hash(first),
-            build_summary_input_hash(duplicate),
+            build_summary_input_hash(reordered),
         )
-        self.assertNotEqual(build_summary_input_hash(first), build_summary_input_hash(changed))
+        self.assertNotEqual(
+            build_summary_input_hash(first),
+            build_summary_input_hash(changed_raw_text),
+        )
+        self.assertNotEqual(
+            build_summary_input_hash(first),
+            build_summary_input_hash(changed_article_id),
+        )
+
+    def test_execute_generation_and_plan_happen_before_write_transaction(self):
+        events = []
+        engine = RecordingEngine(events)
+        args = SimpleNamespace(execute=True)
+
+        with (
+            patch(
+                "scripts.save_topic_summaries._generate_with_connection",
+                side_effect=lambda connection, args: (
+                    events.append("generate"),
+                    generation_result(),
+                )[1],
+            ),
+            patch(
+                "scripts.save_topic_summaries.build_save_plan",
+                side_effect=lambda result, args: (
+                    events.append("build_plan"),
+                    {"plan": True},
+                )[1],
+            ),
+            patch(
+                "scripts.save_topic_summaries.execute_save_plan",
+                side_effect=lambda plan, connection: (
+                    events.append("execute_save_plan"),
+                    plan,
+                )[1],
+            ),
+        ):
+            result = run_save(engine, args)
+
+        self.assertEqual(result, {"plan": True})
+        self.assertEqual(
+            events,
+            [
+                "read_enter",
+                "generate",
+                "read_exit",
+                "build_plan",
+                "write_enter",
+                "execute_save_plan",
+                "write_exit",
+            ],
+        )
+
+    def test_dry_run_does_not_open_write_transaction(self):
+        events = []
+        engine = RecordingEngine(events)
+        args = SimpleNamespace(execute=False)
+
+        with (
+            patch(
+                "scripts.save_topic_summaries._generate_with_connection",
+                return_value=generation_result(),
+            ),
+            patch(
+                "scripts.save_topic_summaries.execute_save_plan"
+            ) as execute_save_plan_mock,
+        ):
+            result = run_save(engine, args)
+
+        self.assertFalse(result["analysis"]["db_write_performed"])
+        self.assertNotIn("write_enter", events)
+        execute_save_plan_mock.assert_not_called()
 
     def test_execute_save_plan_uses_injected_connection(self):
         connection = FakeConnection()

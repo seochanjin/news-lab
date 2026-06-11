@@ -327,3 +327,53 @@ curl "http://127.0.0.1:8000/topics/1"
 - Production deployment, K3s rollout, and production verification.
 - Production HTTP verification of `/topics` and `/topics/{topic_id}` after deployment.
 - Optional provider-based save verification remains deferred.
+
+## Approved Hash and Transaction Fix Verification
+
+### Commands Run
+
+```bash
+.venv/bin/python -m py_compile app/utils/topic_summary.py scripts/save_topic_summaries.py tests/test_save_topic_summaries.py
+.venv/bin/python -m unittest tests.test_save_topic_summaries -v
+.venv/bin/python -m py_compile app/utils/topic_summary.py scripts/generate_topic_summary_report.py scripts/save_topic_summaries.py app/routers/topics.py app/main.py
+.venv/bin/python -m unittest tests.test_topic_summary_migration tests.test_save_topic_summaries tests.test_topics_api tests.test_topic_summary -v
+.venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/save_topic_summaries.py --help
+git diff --check
+git diff --check -- app/utils/topic_summary.py scripts/save_topic_summaries.py tests/test_topic_summary.py tests/test_save_topic_summaries.py tests/test_topic_summary_migration.py docs/verification/feature-topic-summary-api.md docs/fixes/feature-topic-summary-api-approved-fixes.md
+git diff -- k8s
+git diff -- .github
+git diff -- frontend
+git diff -- Dockerfile
+git grep -n -i -E "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env"
+rg -n -i "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\\.env" app scripts tests docs db
+```
+
+### Results
+
+- Initial changed-file Python compile: passed.
+- Initial save-focused test run: failed, 8 tests run with 2 errors because the new fake connection did not accept parameter-less `execute()` calls.
+  - The test helper signature was corrected to match SQLAlchemy connection usage.
+- Approved-fix focused tests: passed, 27 tests.
+- Full unittest discovery: passed, 108 tests.
+- Full requested Python compile: passed.
+- Save CLI help: passed; dry-run default and explicit `--execute` option remain available.
+- `summary_input_hash` tests confirm:
+  - equivalent article/raw_text sets produce the same hash regardless of order;
+  - changing raw_text changes the hash;
+  - changing article_id changes the hash.
+- Transaction-boundary tests confirm:
+  - generation and save plan creation complete before the write transaction opens;
+  - only `execute_save_plan()` runs inside the write transaction;
+  - dry-run does not open a write transaction or call `execute_save_plan()`.
+- `git diff --check`: failed because `docs/reviews/feature-topic-summary-api-coderabbit.md` contains pre-existing trailing whitespace in the human-provided review artifact.
+- Initial targeted `git diff --check`: failed because the human-provided approved-fixes document also contained trailing whitespace; those allowed-file formatting issues were removed while recording applied changes.
+- Final targeted `git diff --check` for implementation, tests, fixes, and verification files: passed.
+- Scope checks for `k8s`, `.github`, `frontend`, and `Dockerfile`: no changes.
+- Security grep checks matched existing safe references, test-only values, documented commands, and `engine.begin()` false positives. No credential value was found in the approved-fix changes.
+
+### Safety
+
+- Supabase SQL and manual SQL were not executed.
+- `scripts/save_topic_summaries.py --execute` was not run.
+- No real DB write, raw extraction, provider call, production curl verification, deployment, rollout, git push, or git merge was performed.
