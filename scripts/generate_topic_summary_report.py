@@ -44,10 +44,10 @@ RAW_TEXT_QUERY = text("""
 """).bindparams(bindparam("article_ids", expanding=True))
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        description="Read-only raw text topic summary report generator.",
-    )
+def create_argument_parser(
+    description="Read-only raw text topic summary report generator.",
+):
+    parser = argparse.ArgumentParser(description=description)
     window_group = parser.add_mutually_exclusive_group()
     window_group.add_argument(
         "--window-hours",
@@ -80,6 +80,11 @@ def parse_args(argv=None):
     )
     parser.add_argument("--use-summary-provider", action="store_true")
     parser.add_argument("--report-path", type=Path)
+    return parser
+
+
+def parse_args(argv=None, *, parser=None):
+    parser = parser or create_argument_parser()
     args = parser.parse_args(argv)
 
     if args.max_articles <= 0:
