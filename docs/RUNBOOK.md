@@ -637,9 +637,65 @@ curl https://api.dev-scj.site/collector/status
 curl "https://api.dev-scj.site/collector/runs?limit=5"
 ```
 
+## Daily Topic Pipeline Threshold Comparison
+
+The following provider dry-runs are human-approved manual verification commands.
+They do not include `--execute`, but they call embedding and summary providers.
+Use `0.70` to inspect wider grouping and `0.72` as the initial operating
+candidate. `0.78` remains a conservative comparison value.
+
+```bash
+.venv/bin/python scripts/run_daily_topic_pipeline.py \
+  --window-hours 24 \
+  --max-articles 300 \
+  --similarity-threshold 0.70 \
+  --max-topics 3 \
+  --max-reference-topics 10 \
+  --max-articles-per-topic 3 \
+  --max-raw-chars-per-article 3000 \
+  --use-embedding-provider \
+  --use-summary-provider \
+  --summary-model gpt-5-nano \
+  --report-path docs/reports/feature-daily-topic-pipeline-dry-run-070.md
+```
+
+```bash
+.venv/bin/python scripts/run_daily_topic_pipeline.py \
+  --window-hours 24 \
+  --max-articles 300 \
+  --similarity-threshold 0.72 \
+  --max-topics 3 \
+  --max-reference-topics 10 \
+  --max-articles-per-topic 3 \
+  --max-raw-chars-per-article 3000 \
+  --use-embedding-provider \
+  --use-summary-provider \
+  --summary-model gpt-5-nano \
+  --report-path docs/reports/feature-daily-topic-pipeline-dry-run-072.md
+```
+
 ## Raw Extractor CronJob
 
 Human-controlled operation.
+
+Suspend the existing raw extractor CronJob only after the daily topic pipeline
+has been verified and the human operator decides to stop broad scheduled raw
+extraction:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl patch cronjob news-raw-extractor \
+  -n default \
+  -p '{"spec":{"suspend":true}}'
+```
+
+Verify the suspend state:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob news-raw-extractor -n default
+```
+
+This is a human-controlled operation. Do not delete the existing CronJob
+manifest or raw extractor code.
 
 Apply the raw extractor CronJob manifest after review:
 
