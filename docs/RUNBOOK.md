@@ -674,6 +674,83 @@ candidate. `0.78` remains a conservative comparison value.
   --report-path docs/reports/feature-daily-topic-pipeline-dry-run-072.md
 ```
 
+## Daily Topic Pipeline CronJob
+
+The `news-daily-topic-pipeline` CronJob runs at `04:00 Asia/Seoul`, after the
+RSS collector and raw extractor schedules. It includes `--execute`, provider
+flags, and bounded topic/article limits. Applying, manually running, disabling,
+or deleting this CronJob is a human-controlled production operation.
+
+Apply the CronJob after review:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply \
+  -f k8s/news-daily-topic-pipeline-cronjob.yaml
+```
+
+Check the CronJob:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob \
+  news-daily-topic-pipeline -n default
+```
+
+Create a manual verification Job:
+
+```bash
+JOB_NAME=news-daily-topic-pipeline-manual-$(date +%Y%m%d%H%M%S)
+
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl create job \
+  --from=cronjob/news-daily-topic-pipeline \
+  $JOB_NAME \
+  -n default
+```
+
+Check the manual Job and logs:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get job $JOB_NAME -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs -n default job/$JOB_NAME
+```
+
+After reviewing the logs, verify the existing read API with a real topic ID:
+
+```bash
+curl -sS "https://api.dev-scj.site/topics?page=1&page_size=10"
+curl -sS "https://api.dev-scj.site/topics/<integer-topic-id>"
+```
+
+Clean up the manual Job:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl delete job $JOB_NAME -n default
+```
+
+Disable or re-enable the schedule without deleting the manifest:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl patch cronjob \
+  news-daily-topic-pipeline \
+  -n default \
+  -p '{"spec":{"suspend":true}}'
+
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl patch cronjob \
+  news-daily-topic-pipeline \
+  -n default \
+  -p '{"spec":{"suspend":false}}'
+```
+
+Rollback by disabling the schedule first. Delete the CronJob only when the
+human operator explicitly decides to remove the automation:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl delete cronjob \
+  news-daily-topic-pipeline -n default
+```
+
+The existing `news-raw-extractor` CronJob remains unchanged. Suspending it is a
+separate human decision after daily pipeline scheduled-run verification.
+
 ## Raw Extractor CronJob
 
 Human-controlled operation.
