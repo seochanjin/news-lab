@@ -4,7 +4,9 @@
 
 - Daily topic pipeline CronJob manifest 정적 검증
 - 04:00 KST schedule과 Job 안전 설정 검증
+- 30분 active deadline과 Python unbuffered command 검증
 - 자동 `--execute` command의 bounded 운영값 검증
+- Daily topic pipeline 단계별 secret-safe progress logging 변경 검증
 - 기존 image, node selector, resource/security context, Secret reference 패턴 검증
 - 기존 RSS/raw extractor CronJob과 application/DB/API 범위 비변경 확인
 - RUNBOOK의 human-controlled 운영 절차 문서화 확인
@@ -29,6 +31,10 @@ python -c 'import yaml; from pathlib import Path; data=yaml.safe_load(Path("k8s/
 git diff -- app db frontend Dockerfile .github k8s/news-rss-collector-cronjob.yaml k8s/news-raw-extractor-cronjob.yaml scripts/run_daily_topic_pipeline.py
 git status --short --branch
 git diff --stat
+python -m py_compile scripts/run_daily_topic_pipeline.py tests/test_daily_topic_pipeline_cronjob_manifest.py
+python -m unittest tests.test_daily_topic_pipeline_cronjob_manifest -v
+git diff --check
+python -m unittest discover -s tests -v
 ```
 
 ## Results
@@ -38,10 +44,16 @@ git diff --stat
 - Full unittest discovery: passed, 119 tests.
 - YAML static parse check: passed with `cronjob manifest ok`.
 - `git diff --check` and targeted diff check: passed.
-- Scope diff for application, DB, frontend, Dockerfile, GitHub Actions,
-  existing RSS/raw extractor CronJobs, and daily pipeline script: empty.
+- Initial implementation scope diff for application, DB, frontend, Dockerfile,
+  GitHub Actions, existing RSS/raw extractor CronJobs, and daily pipeline
+  script: empty. The approved follow-up fix intentionally modifies only the
+  daily pipeline script from that list.
 - Final manifest focused test, YAML parse, `git diff --check`, and scope diff
   rerun after documentation updates: passed.
+- Approved-fix Python compile: passed.
+- Approved-fix manifest focused tests: passed, 3 tests.
+- Approved-fix full unittest discovery: passed, 119 tests.
+- Approved-fix final `git diff --check`: passed.
 - Initial manifest test used locally available PyYAML. Because PyYAML is not
   declared in repository dependencies, the committed unit test was changed to
   standard-library text assertions. The separate YAML parse command remains
@@ -50,6 +62,9 @@ git diff --stat
   - name `news-daily-topic-pipeline`;
   - schedule `0 4 * * *` and `Asia/Seoul`;
   - `concurrencyPolicy: Forbid`, `restartPolicy: Never`, `backoffLimit: 1`;
+  - `activeDeadlineSeconds: 1800`;
+  - unbuffered command order:
+    `python -u scripts/run_daily_topic_pipeline.py`;
   - required bounded pipeline arguments and explicit `--execute`;
   - existing `seocj/news-api:latest`, node selector, resource/security pattern;
   - `news-api-secret` references for `DATABASE_URL`,
@@ -57,20 +72,27 @@ git diff --stat
 
 ## Manual or Production Verification
 
-- Not run.
-- No CronJob manifest was applied to K3s.
-- No manual Job was created.
-- No CronJob logs or scheduled-run results were inspected.
-- No production `/topics` curl verification was run for this task.
+- Human-provided pre-fix production observation:
+  - CronJob applied and scheduled at `04:00 Asia/Seoul`.
+  - Job Pod started and Secret env references resolved.
+  - `scripts/run_daily_topic_pipeline.py` existed in the image.
+  - Job remained `Running` for more than 5 hours.
+  - `kubectl logs` returned no output.
+  - No new `/topics` rows were observed.
+  - Human operator deleted the stuck Job.
+- Post-fix production verification was not run by Codex.
+- The updated CronJob manifest was not applied by Codex.
+- No provider call, DB write, production curl, or kubectl command was run by
+  Codex while applying the approved fixes.
 
 ## Pending Verification
 
-- Human verification that `news-api-secret` contains the required key names,
-  without exposing secret values.
 - Human-controlled `kubectl apply` of
   `k8s/news-daily-topic-pipeline-cronjob.yaml`.
-- Human-controlled CronJob get, manual Job creation, logs, cleanup, and
-  production `/topics` read verification.
+- Human-controlled manual or scheduled Job verification that logs identify the
+  last completed stage and the Job succeeds or fails after 30 minutes.
+- Human-controlled production `/topics` read verification after a successful
+  Job.
 - Next scheduled `04:00 Asia/Seoul` automatic run verification.
 - Human decision on whether to suspend the existing `news-raw-extractor`
   CronJob after scheduled-run verification.

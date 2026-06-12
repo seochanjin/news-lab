@@ -678,8 +678,9 @@ candidate. `0.78` remains a conservative comparison value.
 
 The `news-daily-topic-pipeline` CronJob runs at `04:00 Asia/Seoul`, after the
 RSS collector and raw extractor schedules. It includes `--execute`, provider
-flags, and bounded topic/article limits. Applying, manually running, disabling,
-or deleting this CronJob is a human-controlled production operation.
+flags, and bounded topic/article limits. Each Job has a 30-minute active
+deadline and runs Python in unbuffered mode. Applying, manually running,
+disabling, or deleting this CronJob is a human-controlled production operation.
 
 Apply the CronJob after review:
 
@@ -710,6 +711,16 @@ Check the manual Job and logs:
 
 ```bash
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get job $JOB_NAME -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs -n default job/$JOB_NAME
+```
+
+The logs identify the last started and completed pipeline stage using
+secret-safe counts and selected article IDs. If a Job exceeds 30 minutes,
+Kubernetes marks it failed; inspect the Job description and logs to identify
+the last completed stage:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl describe job $JOB_NAME -n default
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs -n default job/$JOB_NAME
 ```
 

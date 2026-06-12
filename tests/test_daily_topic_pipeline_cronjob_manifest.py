@@ -26,6 +26,7 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
                 "concurrencyPolicy: Forbid",
                 "successfulJobsHistoryLimit: 3",
                 "failedJobsHistoryLimit: 3",
+                "activeDeadlineSeconds: 1800",
                 "backoffLimit: 1",
                 "restartPolicy: Never",
                 "workload: app",
@@ -33,10 +34,14 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
         )
 
     def test_command_has_bounded_execute_configuration(self):
+        self.assertIn(
+            "- python\n"
+            "                - -u\n"
+            "                - scripts/run_daily_topic_pipeline.py",
+            self.manifest,
+        )
         self.assertContainsAll(
             [
-                "- python",
-                "- scripts/run_daily_topic_pipeline.py",
                 "- --window-hours\n                - \"24\"",
                 "- --max-articles\n                - \"300\"",
                 "- --similarity-threshold\n                - \"0.70\"",

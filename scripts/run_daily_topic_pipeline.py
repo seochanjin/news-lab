@@ -1,5 +1,6 @@
 import argparse
 import json
+import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -38,6 +39,7 @@ DEFAULT_MAX_ARTICLES_PER_TOPIC = 3
 DEFAULT_MAX_RAW_CHARS_PER_ARTICLE = 3000
 DEFAULT_EXTRACTION_LIMIT = 5
 MAX_DAILY_PROVIDER_ARTICLES = 300
+LOGGER = logging.getLogger(__name__)
 
 
 def parse_args(argv=None):
@@ -138,7 +140,20 @@ def build_pipeline(
 ):
     articles = prepare_articles(rows)
     embedder = embedding_provider or create_embedding_provider(args)
+    LOGGER.info(
+        "embedding provider start: provider=%s model=%s article_count=%d",
+        "openai" if args.use_embedding_provider else "deterministic",
+        embedder.model,
+        len(articles),
+    )
     embeddings = embedder.embed([article["embedding_input"] for article in articles])
+    LOGGER.info(
+        "embedding provider end: provider=%s model=%s embedding_count=%d",
+        "openai" if args.use_embedding_provider else "deterministic",
+        embedder.model,
+        len(embeddings),
+    )
+    LOGGER.info("topic candidate generation start: article_count=%d", len(articles))
     grouped = group_articles(
         articles,
         embeddings,
@@ -155,23 +170,40 @@ def build_pipeline(
     )
     _attach_report_metadata(target_topics, articles)
     ordered_topics = sorted(target_topics, key=_topic_selection_key)
+    LOGGER.info(
+        "topic candidate generation end: candidate_count=%d",
+        len(ordered_topics),
+    )
     selected_topics = ordered_topics[: args.max_topics]
     reference_topics = ordered_topics[
         args.max_topics : args.max_topics + args.max_reference_topics
     ]
     selected_article_ids = _selected_article_ids(selected_topics)
+    LOGGER.info("selected topic count: %d", len(selected_topics))
 
     extraction_results = []
-    if args.execute and selected_article_ids:
-        if extraction_executor is None or raw_text_loader is None:
-            raise ValueError(
-                "execute mode requires extraction_executor and raw_text_loader"
-            )
-        extraction_results = extraction_executor(
+    if args.execute:
+        LOGGER.info(
+            "raw extraction start: article_count=%d article_ids=%s",
+            len(selected_article_ids),
             selected_article_ids,
-            limit=args.extraction_limit,
         )
-        raw_texts = raw_text_loader(_topic_article_ids(selected_topics))
+        if selected_article_ids:
+            if extraction_executor is None or raw_text_loader is None:
+                raise ValueError(
+                    "execute mode requires extraction_executor and raw_text_loader"
+                )
+            extraction_results = extraction_executor(
+                selected_article_ids,
+                limit=args.extraction_limit,
+            )
+            raw_texts = raw_text_loader(_topic_article_ids(selected_topics))
+        LOGGER.info(
+            "raw extraction end: requested_count=%d result_count=%d article_ids=%s",
+            len(selected_article_ids),
+            len(extraction_results),
+            selected_article_ids,
+        )
 
     provider = summary_provider or create_summary_provider(args)
     summary_inputs = build_topic_summary_inputs(
@@ -181,7 +213,19 @@ def build_pipeline(
         max_articles_per_topic=args.max_articles_per_topic,
         max_raw_chars_per_article=args.max_raw_chars_per_article,
     )
+    LOGGER.info(
+        "summary provider start: provider=%s model=%s topic_count=%d",
+        provider.provider,
+        provider.model,
+        len(summary_inputs),
+    )
     summaries = summarize_topic_inputs(summary_inputs, provider)
+    LOGGER.info(
+        "summary provider end: provider=%s model=%s summary_count=%d",
+        provider.provider,
+        provider.model,
+        len(summaries),
+    )
     generation_result = {
         "analysis": {"provider": provider.provider, "model": provider.model},
         "topic_summaries": summaries,
@@ -192,7 +236,15 @@ def build_pipeline(
     if args.execute:
         if save_executor is None:
             raise ValueError("execute mode requires save_executor")
+        LOGGER.info(
+            "DB write start: topic_count=%d",
+            len(save_plan["topics"]),
+        )
         save_plan = save_executor(save_plan)
+        LOGGER.info(
+            "DB write end: saved_topic_count=%d",
+            save_plan["analysis"]["saved_topic_count"],
+        )
 
     extraction_success_count = sum(
         result["status"] == "success" for result in extraction_results
@@ -294,14 +346,59 @@ def render_report(result):
 
 
 def main():
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+    )
+    LOGGER.info("daily topic pipeline start")
+    try:
+        _run()
+    except Exception:
+        LOGGER.exception("daily topic pipeline failed")
+        raise
+    LOGGER.info("daily topic pipeline completion")
+
+
+def _run():
     args = parse_args()
+    LOGGER.info(
+        "pipeline config: window_hours=%d time_basis=%s max_articles=%d "
+        "similarity_threshold=%.2f max_topics=%d max_reference_topics=%d "
+        "max_articles_per_topic=%d max_raw_chars_per_article=%d "
+        "extraction_limit=%d use_embedding_provider=%s "
+        "use_summary_provider=%s summary_model=%s execute=%s",
+        args.window_hours,
+        args.time_basis,
+        args.max_articles,
+        args.similarity_threshold,
+        args.max_topics,
+        args.max_reference_topics,
+        args.max_articles_per_topic,
+        args.max_raw_chars_per_article,
+        args.extraction_limit,
+        args.use_embedding_provider,
+        args.use_summary_provider,
+        args.summary_model,
+        args.execute,
+    )
+    LOGGER.info("database engine create start")
     engine = create_database_engine()
+    LOGGER.info("database engine create end")
+    LOGGER.info("database connection start")
     with engine.connect() as connection:
+        LOGGER.info("database connection established")
         connection.execute(text("set transaction read only"))
+        LOGGER.info("article fetch start")
         rows = get_articles(connection, args)
+        LOGGER.info("article fetch end: article_count=%d", len(rows))
         article_ids = [row["id"] for row in rows]
+        LOGGER.info("raw extraction state fetch start: article_count=%d", len(article_ids))
         raw_states = get_raw_extraction_states(connection, article_ids)
+        LOGGER.info("raw text fetch start: article_count=%d", len(article_ids))
+
+        LOGGER.info("raw text fetch start: article_count=%d", len(article_ids))
         raw_texts = get_raw_texts(connection, article_ids)
+        LOGGER.info("raw text fetch end: raw_text_count=%d", len(raw_texts))
 
     def load_raw_texts(article_ids):
         with engine.connect() as connection:
