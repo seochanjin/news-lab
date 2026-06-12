@@ -6,3 +6,4 @@ python-dotenv
 feedparser
 requests
 beautifulsoup4
+PyYAML

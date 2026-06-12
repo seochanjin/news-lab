@@ -39,6 +39,9 @@ python -m py_compile scripts/run_daily_topic_pipeline.py tests/test_daily_topic_
 python -m unittest tests.test_daily_topic_pipeline_cronjob_manifest -v
 python -m unittest discover -s tests -v
 git diff -- app db frontend Dockerfile .github k8s/news-rss-collector-cronjob.yaml k8s/news-raw-extractor-cronjob.yaml
+python -m unittest tests.test_daily_topic_pipeline_cronjob_manifest -v
+python -m unittest discover -s tests -v
+git diff --check
 ```
 
 ## Results
@@ -65,10 +68,17 @@ git diff -- app db frontend Dockerfile .github k8s/news-rss-collector-cronjob.ya
   Dockerfile, GitHub Actions, and existing RSS/raw extractor CronJobs: empty.
 - CodeRabbit follow-up fetch-stage logging check confirms one raw text fetch
   start/end pair and a raw extraction state fetch start/end pair.
-- Initial manifest test used locally available PyYAML. Because PyYAML is not
-  declared in repository dependencies, the committed unit test was changed to
-  standard-library text assertions. The separate YAML parse command remains
-  recorded as a local static check.
+- Fix 6 YAML structure manifest tests: passed, 3 tests.
+- Fix 6 full unittest discovery: passed, 119 tests.
+- Fix 6 final `git diff --check`: passed.
+- Fix 6 tests parse the CronJob manifest and directly assert nested deadline,
+  command prefix, bounded arguments, Secret references, and safety settings.
+- The repository has no separate test dependency pattern, so `PyYAML` was added
+  as the minimal parser dependency in the existing `requirements.txt`.
+- Before Fix 6, the committed manifest test used standard-library text
+  assertions because PyYAML was not declared in repository dependencies.
+  Fix 6 superseded that approach by declaring PyYAML and parsing the manifest
+  for direct nested structure assertions.
 - Manifest tests confirm:
   - name `news-daily-topic-pipeline`;
   - schedule `0 4 * * *` and `Asia/Seoul`;
