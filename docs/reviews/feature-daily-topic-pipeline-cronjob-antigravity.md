@@ -13,13 +13,13 @@
 [docs/tasks/feature-daily-topic-pipeline-cronjob.md](~/news-lab/docs/tasks/feature-daily-topic-pipeline-cronjob.md)의 핵심 운영 사양이 완벽하게 커버됩니다.
 
 - **실행 주기와 타임존**: `schedule: "0 4 * * *"`과 `timeZone: "Asia/Seoul"` 설정을 통해 매일 오전 4시(KST) 정각에 RSS 수집 및 원문 추출 스케줄 이후 안전하게 트리거되도록 지정하였습니다.
-- **동시성 및 실패 한도 제한**: `concurrencyPolicy: Forbid`로 동시 실행을 차단하고, `backoffLimit: 1` 및 `restartPolicy: Never`를 적용하여 1회 실패 시 반복 재시도로 인한 과도한 LLM API 요금 청구 리스크를 원천 방어하였습니다.
+- **동시성 및 실패 한도 제한**: `concurrencyPolicy: Forbid`로 동시 실행을 차단하고, `backoffLimit: 1` 및 `restartPolicy: Never`를 적용하여 Job 재시도를 1회로 제한합니다. 이는 반복 실패에 따른 LLM API 비용 리스크를 제한하지만, 실패한 실행과 허용된 재시도에서 발생하는 반복 과금 가능성을 완전히 제거하지는 않습니다.
 - **파이프라인 인자**: 자동 실행과 저장을 위한 `--execute` 플래그를 포함하여 명세된 파이프라인의 모든 바운디드 인자(`--similarity-threshold 0.70`, `--max-topics 3`, `--max-reference-topics 10` 등)가 정상 반영되었습니다.
 - **비밀 데이터 비노출**: `news-api-secret` 내의 키 참조(DATABASE_URL, API key 등)만 선언하였으며, 기밀 정보 자체는 코드나 문서에 전혀 노출되지 않았습니다.
 
 ## Code Quality / Maintainability
 
-- **정밀한 텍스트 기반 매니페스트 검증**: [tests/test_daily_topic_pipeline_cronjob_manifest.py](~/news-lab/tests/test_daily_topic_pipeline_cronjob_manifest.py)는 PyYAML 등의 외부 종속성이 없는 검증 환경을 고려하여 표준 `unittest` 라이브러리의 텍스트 검사 방식만을 사용해 안정적인 이식성과 정적 검사성을 확보하였습니다.
+- **Dependency-free committed 매니페스트 검증**: [tests/test_daily_topic_pipeline_cronjob_manifest.py](~/news-lab/tests/test_daily_topic_pipeline_cronjob_manifest.py)는 repository dependency를 추가하지 않고 표준 `unittest` 기반 text assertion으로 핵심 설정을 검증합니다. PyYAML parse command는 로컬에 PyYAML이 있는 경우 실행할 수 있는 선택적 smoke check이며, committed unit test 또는 repository 필수 dependency가 아닙니다.
 - **이미지 패턴 재사용**: 기존 `news-api` 배포본과 동일한 `seocj/news-api:latest` 및 `imagePullPolicy: Always` 패턴을 사용해 이미 빌드된 Docker 환경을 자연스럽게 승계합니다.
 
 ## Security Review
@@ -40,7 +40,7 @@
 
 [docs/verification/feature-daily-topic-pipeline-cronjob.md](~/news-lab/docs/verification/feature-daily-topic-pipeline-cronjob.md)를 통해 검증 수준을 분석하였습니다.
 
-- **실제 수행 내용 기록**: PyYAML 파싱, `git diff --check`, 그리고 단위 테스트 discover 검증(119개 OK) 등 실제 로컬에서 실행 완료된 결과만 작성되었습니다.
+- **실제 수행 내용 기록**: 선택적 로컬 PyYAML smoke check, `git diff --check`, 그리고 단위 테스트 discover 검증(119개 OK) 등 실제 로컬에서 실행 완료된 결과만 작성되었습니다.
 - **인프라 작업의 명확한 보류**: `kubectl apply`를 비롯하여 Secret의 내부 검토 등은 production-impacting 영역으로 분류하여 철저히 "Pending Verification"으로 표시하였습니다.
 
 ## Documentation Review
@@ -64,10 +64,10 @@
 ## Suggested Test Commands
 
 ```bash
-# Python YAML 파싱 정적 호환성 수동 검사
+# 선택적 로컬 smoke check: PyYAML이 설치된 환경에서만 실행
 .venv/bin/python -c 'import yaml; from pathlib import Path; data=yaml.safe_load(Path("k8s/news-daily-topic-pipeline-cronjob.yaml").read_text()); assert data["kind"] == "CronJob"; assert data["metadata"]["name"] == "news-daily-topic-pipeline"; print("YAML format check: PASS")'
 
-# 매니페스트 구조 정합성 검증 테스트 개별 수행
+# dependency-free committed 매니페스트 text assertion 테스트
 .venv/bin/python -m unittest tests.test_daily_topic_pipeline_cronjob_manifest -v
 
 # 전체 회귀 단위 테스트 세트 구동 (119개 패스 확인)

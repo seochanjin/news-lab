@@ -394,7 +394,7 @@ def _run():
         article_ids = [row["id"] for row in rows]
         LOGGER.info("raw extraction state fetch start: article_count=%d", len(article_ids))
         raw_states = get_raw_extraction_states(connection, article_ids)
-        LOGGER.info("raw text fetch start: article_count=%d", len(article_ids))
+        LOGGER.info("raw extraction state fetch end: state_count=%d", len(raw_states))
 
         LOGGER.info("raw text fetch start: article_count=%d", len(article_ids))
         raw_texts = get_raw_texts(connection, article_ids)

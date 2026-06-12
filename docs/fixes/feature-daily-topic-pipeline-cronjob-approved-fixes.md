@@ -120,6 +120,8 @@ command:
 - pipeline 시작/종료
 - config 및 argument 요약
 - article 조회 시작/종료와 대상 article count
+- raw extraction state 조회 시작/종료와 state count
+- raw text 조회 시작/종료와 raw text count
 - embedding provider 호출 시작/종료
 - topic candidate 생성 시작/종료와 candidate count
 - selected topic count
@@ -139,8 +141,48 @@ command:
 #### Expected Behavior
 
 - CronJob 또는 manual Job이 hang될 경우 `kubectl logs`로 마지막 진행 단계를 확인할 수 있다.
-- provider call, raw extraction, DB write 중 어느 단계에서 멈췄는지 분리할 수 있다.
+- DB 조회, provider call, raw extraction, DB write 중 어느 단계에서 멈췄는지 분리할 수 있다.
 - pipeline 결과와 품질에는 영향을 주지 않는다.
+
+---
+
+### Fix 5: PR/task/review 문서 불일치 정리
+
+#### Background
+
+CodeRabbit review에서 일부 문서가 실제 PR 변경 내용과 맞지 않는다고 지적했다.
+
+관찰된 불일치:
+
+- PR 문서가 `scripts/run_daily_topic_pipeline.py`를 변경하지 않았다고 설명함
+- PR 문서가 approved code/config fix가 없다고 설명함
+- task 문서가 CronJob command를 `python scripts/run_daily_topic_pipeline.py`로 설명함
+- review 문서가 `backoffLimit: 1`의 retry/cost risk를 과하게 표현함
+- dependency-free test 설명과 선택적 PyYAML smoke check 설명이 섞여 있음
+
+#### Approved Change
+
+아래 문서를 실제 변경 내용에 맞게 수정한다.
+
+- `docs/pr/feature-daily-topic-pipeline-cronjob.md`
+  - pipeline script는 secret-safe progress logging을 위해 의도적으로 변경되었음을 명시한다.
+  - approved fixes 문서에 Fix 1-5가 승인 및 적용되었음을 명시한다.
+  - post-fix production verification은 pending임을 유지한다.
+
+- `docs/tasks/feature-daily-topic-pipeline-cronjob.md`
+  - command 설명을 `python -u scripts/run_daily_topic_pipeline.py`로 맞춘다.
+  - 기존 bounded args는 변경하지 않는다.
+
+- `docs/reviews/feature-daily-topic-pipeline-cronjob-antigravity.md`
+  - `backoffLimit: 1`은 반복 실패 비용 리스크를 “원천 방어”하는 것이 아니라 “1회 재시도로 제한”하는 설정으로 표현한다.
+  - 자동화된 committed unit test는 dependency-free text assertion이며, PyYAML parse는 선택적 로컬 smoke check임을 분리해 설명한다.
+
+#### Expected Behavior
+
+- task, PR, review, fixes 문서가 현재 구현 상태와 충돌하지 않는다.
+- 이후 agent/reviewer가 오래된 “fix 없음 / script 변경 없음” 문장을 기준으로 오판하지 않는다.
+
+---
 
 ## Rejected or Deferred Suggestions
 
@@ -161,28 +203,53 @@ command:
   - 38차 수동 검증에서 사용한 운영값을 유지한다.
   - 이번 fix는 실행 안정성 보강이며 topic 품질/범위 조정은 별도 단계로 분리한다.
 
+- non-root execution 적용은 보류한다.
+  - 보안 hardening으로는 타당하지만, 현재 hotfix 범위는 장시간 Running 방지와 로그 가시성 확보다.
+  - `runAsNonRoot`, `runAsUser`, `runAsGroup` 적용은 image file permission, runtime tmp/cache path, dependency 동작 검증이 필요하다.
+  - 기존 `news-api` Deployment 보안 컨텍스트와의 일관성도 함께 검토해야 하므로 별도 hardening 작업으로 분리한다.
+
+- Manifest test를 완전한 YAML 구조 parser 기반으로 전환하는 것은 보류한다.
+  - CodeRabbit 지적처럼 substring 기반 test는 구조 검증 한계가 있다.
+  - 다만 현재 repository에는 PyYAML이 dependency로 선언되어 있지 않다.
+  - 이번 hotfix에서는 기존 dependency-free test 정책을 유지하고, 구조 parser 도입은 별도 테스트 개선 작업으로 분리한다.
+  - 대신 command, active deadline, Secret reference, bounded args에 대한 text assertion을 유지한다.
+
 ## Applied Changes
 
-승인된 Fix 1-4를 적용했다.
+승인된 Fix 1-5를 적용했다.
 
 - `k8s/news-daily-topic-pipeline-cronjob.yaml`
   - `jobTemplate.spec.activeDeadlineSeconds: 1800` 추가
   - command를 `python -u scripts/run_daily_topic_pipeline.py` 순서로 변경
+
 - `tests/test_daily_topic_pipeline_cronjob_manifest.py`
   - 30분 deadline과 unbuffered command 순서 검증 추가
   - 기존 bounded command, Secret reference, resource/security, schedule 검증 유지
+
 - `scripts/run_daily_topic_pipeline.py`
-  - pipeline, article fetch, embedding, topic candidate, selected topic,
-    raw extraction, summary provider, DB write 단계별 secret-safe progress
-    logging 추가
+  - pipeline, article fetch, raw extraction state fetch, raw text fetch, embedding, topic candidate, selected topic, raw extraction, summary provider, DB write 단계별 secret-safe progress logging 추가
+  - 중복된 `raw text fetch start` 로그 제거
+  - `raw extraction state fetch end` 로그 추가
   - runtime exception 발생 시 traceback logging 후 exception 재발생
+
 - `docs/RUNBOOK.md`
   - 30분 active deadline, unbuffered logging, 마지막 완료 단계 확인 절차 문서화
+
+- `docs/pr/feature-daily-topic-pipeline-cronjob.md`
+  - 실제 PR 변경 내용과 맞도록 summary 수정
+  - pipeline script 변경 및 approved fixes 적용 사실 반영
+
+- `docs/tasks/feature-daily-topic-pipeline-cronjob.md`
+  - CronJob command를 `python -u scripts/run_daily_topic_pipeline.py`로 정정
+
+- `docs/reviews/feature-daily-topic-pipeline-cronjob-antigravity.md`
+  - retry/cost risk 표현 완화
+  - dependency-free unit test와 선택적 PyYAML smoke check 설명 분리
+
 - `docs/verification/feature-daily-topic-pipeline-cronjob.md`
   - 실제 실행한 local validation 결과와 pending human verification 기록
 
-DB schema/migration, API, frontend, Dockerfile, GitHub Actions, 운영값,
-기존 RSS/raw extractor CronJob, secret/credential은 변경하지 않았다.
+DB schema/migration, API, frontend, Dockerfile, GitHub Actions, 운영값, 기존 RSS/raw extractor CronJob, secret/credential은 변경하지 않는다.
 
 ## Verification Required
 
@@ -269,4 +336,4 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs -n default news-daily-topic-pipelin
 
 - CronJob 등록과 schedule trigger는 성공했다.
 - Job completion과 DB write는 성공하지 못했다.
-- 운영 안정성을 위해 `activeDeadlineSeconds`와 unbuffered logging 보강이 필요하다.
+- 운영 안정성을 위해 `activeDeadlineSeconds`, unbuffered logging, 단계별 progress logging 보강이 필요하다.

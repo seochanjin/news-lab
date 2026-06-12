@@ -35,6 +35,10 @@ python -m py_compile scripts/run_daily_topic_pipeline.py tests/test_daily_topic_
 python -m unittest tests.test_daily_topic_pipeline_cronjob_manifest -v
 git diff --check
 python -m unittest discover -s tests -v
+python -m py_compile scripts/run_daily_topic_pipeline.py tests/test_daily_topic_pipeline_cronjob_manifest.py
+python -m unittest tests.test_daily_topic_pipeline_cronjob_manifest -v
+python -m unittest discover -s tests -v
+git diff -- app db frontend Dockerfile .github k8s/news-rss-collector-cronjob.yaml k8s/news-raw-extractor-cronjob.yaml
 ```
 
 ## Results
@@ -54,6 +58,13 @@ python -m unittest discover -s tests -v
 - Approved-fix manifest focused tests: passed, 3 tests.
 - Approved-fix full unittest discovery: passed, 119 tests.
 - Approved-fix final `git diff --check`: passed.
+- CodeRabbit follow-up Python compile: passed.
+- CodeRabbit follow-up manifest focused tests: passed, 3 tests.
+- CodeRabbit follow-up full unittest discovery: passed, 119 tests.
+- CodeRabbit follow-up protected-scope diff for application, DB, frontend,
+  Dockerfile, GitHub Actions, and existing RSS/raw extractor CronJobs: empty.
+- CodeRabbit follow-up fetch-stage logging check confirms one raw text fetch
+  start/end pair and a raw extraction state fetch start/end pair.
 - Initial manifest test used locally available PyYAML. Because PyYAML is not
   declared in repository dependencies, the committed unit test was changed to
   standard-library text assertions. The separate YAML parse command remains
