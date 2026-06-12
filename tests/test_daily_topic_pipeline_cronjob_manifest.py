@@ -36,30 +36,32 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
     def test_command_has_bounded_execute_configuration(self):
         command = self.container["command"]
 
-        self.assertEqual(
-            command[:3],
-            ["python", "-u", "scripts/run_daily_topic_pipeline.py"],
-        )
-        for argument, value in (
-            ("--window-hours", "24"),
-            ("--max-articles", "300"),
-            ("--similarity-threshold", "0.70"),
-            ("--max-topics", "3"),
-            ("--max-reference-topics", "10"),
-            ("--max-articles-per-topic", "3"),
-            ("--max-raw-chars-per-article", "3000"),
-            ("--summary-model", "gpt-5-nano"),
-        ):
-            with self.subTest(argument=argument):
-                index = command.index(argument)
-                self.assertEqual(command[index + 1], value)
-        for flag in (
+        expected_command = [
+            "python",
+            "-u",
+            "scripts/run_daily_topic_pipeline.py",
+            "--window-hours",
+            "24",
+            "--max-articles",
+            "300",
+            "--similarity-threshold",
+            "0.70",
+            "--max-topics",
+            "3",
+            "--max-reference-topics",
+            "10",
+            "--max-articles-per-topic",
+            "3",
+            "--max-raw-chars-per-article",
+            "3000",
             "--use-embedding-provider",
             "--use-summary-provider",
+            "--summary-model",
+            "gpt-5-nano",
             "--execute",
-        ):
-            with self.subTest(flag=flag):
-                self.assertIn(flag, command)
+        ]
+
+        self.assertEqual(command, expected_command)
 
     def test_reuses_existing_image_secret_and_security_patterns(self):
         self.assertEqual(self.container["image"], "seocj/news-api:latest")
