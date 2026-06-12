@@ -165,7 +165,7 @@ curl -sS "https://api.dev-scj.site/topics?page=1&page_size=10"
 - `k8s/news-daily-topic-pipeline-cronjob.yaml`이 추가된다.
 - CronJob 이름은 `news-daily-topic-pipeline`이다.
 - CronJob은 기존 `news-api` image를 사용한다.
-- CronJob은 `python scripts/run_daily_topic_pipeline.py`를 실행한다.
+- CronJob은 `python -u scripts/run_daily_topic_pipeline.py`를 실행한다.
 - CronJob command에는 다음 운영값이 포함된다.
   - `--window-hours 24`
   - `--max-articles 300`
