@@ -728,8 +728,22 @@ After reviewing the logs, verify the existing read API with a real topic ID:
 
 ```bash
 curl -sS "https://api.dev-scj.site/topics?page=1&page_size=10"
+curl -sS "https://api.dev-scj.site/topics/home"
 curl -sS "https://api.dev-scj.site/topics/<integer-topic-id>"
 ```
+
+Use timing checks when comparing the archive API and the home payload API:
+
+```bash
+curl -sS -o /dev/null -w 'topics page_size=10: %{time_total}s\n' \
+  'https://api.dev-scj.site/topics?page=1&page_size=10'
+curl -sS -o /dev/null -w 'topics home: %{time_total}s\n' \
+  'https://api.dev-scj.site/topics/home'
+```
+
+`/topics/home` is intended for the frontend home screen. It returns a bounded
+topic card payload and does not replace `/topics` for archive browsing or
+`/topics/{id}` for detail views.
 
 Clean up the manual Job:
 

@@ -9,7 +9,7 @@ os.environ.setdefault(
     "postgresql+psycopg://test:test@localhost:5432/test",
 )
 
-from app.routers.topics import get_topic, get_topics
+from app.routers.topics import get_home_topics, get_topic, get_topics
 from app.main import app
 
 
@@ -64,11 +64,28 @@ def topic_row():
     }
 
 
+def home_topic_row():
+    row = topic_row()
+    return {
+        key: row[key]
+        for key in (
+            "id",
+            "topic_date",
+            "title_ko",
+            "summary_ko",
+            "keywords",
+            "source_count",
+            "article_count",
+        )
+    }
+
+
 class TopicsApiTests(unittest.TestCase):
     def test_topics_routes_are_registered(self):
         paths = {route.path for route in app.routes}
 
         self.assertIn("/topics", paths)
+        self.assertIn("/topics/home", paths)
         self.assertIn("/topics/{topic_id}", paths)
 
     def test_topic_list_returns_pagination_and_bound_filters(self):
@@ -92,6 +109,39 @@ class TopicsApiTests(unittest.TestCase):
         self.assertEqual(connection.calls[0][1]["status"], "draft")
         self.assertEqual(connection.calls[0][1]["keyword"], "%AI%")
         self.assertIn(":date_from", connection.calls[0][0])
+
+    def test_home_topics_returns_lightweight_card_payload(self):
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_home_topics(connection=connection)
+
+        self.assertEqual(result["topic_date"], result["items"][0]["topic_date"])
+        self.assertIn("generated_at", result)
+        self.assertEqual(
+            set(result["items"][0]),
+            {
+                "id",
+                "topic_date",
+                "title_ko",
+                "summary_ko",
+                "keywords",
+                "source_count",
+                "article_count",
+            },
+        )
+        self.assertEqual(connection.calls[0][1]["limit"], 10)
+        self.assertNotIn("count(*)", connection.calls[0][0].lower())
+        self.assertNotIn("topic_articles", connection.calls[0][0])
+        self.assertNotIn("provider", connection.calls[0][0])
+        self.assertNotIn("model", connection.calls[0][0])
+
+    def test_home_topics_empty_response_uses_null_topic_date(self):
+        connection = FakeConnection([FakeResult(rows=[])])
+
+        result = get_home_topics(connection=connection)
+
+        self.assertIsNone(result["topic_date"])
+        self.assertEqual(result["items"], [])
 
     def test_topic_detail_returns_related_article_without_raw_text(self):
         connection = FakeConnection(
