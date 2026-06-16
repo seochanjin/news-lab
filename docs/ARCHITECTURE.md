@@ -38,6 +38,7 @@ Main router files:
 - `app/routers/health.py`
 - `app/routers/version.py`
 - `app/routers/extractor.py`
+- `app/routers/topics.py`
 
 ### PostgreSQL / Supabase database
 
@@ -147,6 +148,21 @@ scripts/extract_raw_articles.py
 → /extractor/runs API
 ```
 
+### Daily topic flow
+
+```text
+scripts/run_daily_topic_pipeline.py
+→ topics table
+→ topic_articles table
+→ /topics API
+→ /topics/home API
+```
+
+`/topics/home` is a lightweight read API for the frontend home screen. It
+returns only the topic card fields needed for the first viewport and avoids the
+pagination count, provider/debug metadata, and connected article join used by
+the broader topics APIs.
+
 ## Database Tables
 
 ### sources
@@ -229,6 +245,25 @@ Supported query parameters include:
 - `source`
 - `category`
 - `keyword`
+
+### Topic APIs
+
+- `GET /topics`
+- `GET /topics/home`
+- `GET /topics/{topic_id}`
+
+`GET /topics` is the paginated archive API. It supports filters and returns
+pagination metadata plus topic metadata such as provider, model, status, and
+timestamps.
+
+`GET /topics/home` is the home-screen MVP API. It returns a small bounded list
+of topic cards with `id`, `topic_date`, `title_ko`, `summary_ko`, `keywords`,
+`article_count`, and `source_count`, plus response metadata
+`generated_at` and `topic_date`. It does not return connected articles and does
+not implement Redis, DB snapshots, static JSON, or frontend revalidation yet.
+
+`GET /topics/{topic_id}` is the detail API. It returns the full topic fields and
+the connected article list through `topic_articles`.
 
 ### Collector APIs
 

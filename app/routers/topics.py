@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
@@ -7,6 +7,7 @@ from sqlalchemy.engine import Connection
 from app.database import get_connection
 
 router = APIRouter(prefix="/topics", tags=["topics"])
+HOME_TOPICS_LIMIT = 10
 
 
 @router.get("")
@@ -62,6 +63,29 @@ def get_topics(
         "page_size": page_size,
         "total": total,
         "has_next": page * page_size < total,
+    }
+
+
+@router.get("/home")
+def get_home_topics(
+    connection: Connection = Depends(get_connection),
+):
+    rows = connection.execute(
+        text("""
+            select
+                id, topic_date, title_ko, summary_ko, keywords,
+                source_count, article_count
+            from topics
+            order by topic_date desc, article_count desc, source_count desc, id desc
+            limit :limit
+        """),
+        {"limit": HOME_TOPICS_LIMIT},
+    ).mappings().all()
+    items = [dict(row) for row in rows]
+    return {
+        "generated_at": datetime.now(timezone.utc),
+        "topic_date": items[0]["topic_date"] if items else None,
+        "items": items,
     }
 
 
