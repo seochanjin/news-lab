@@ -57,8 +57,21 @@ spec:
     - hosts:
         - api.dev-scj.site
       secretName: news-api-tls
+    - hosts:
+        - api.newslab.ai.kr
+      secretName: news-api-newslab-tls
   rules:
     - host: api.dev-scj.site
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: news-api
+                port:
+                  number: 80
+    - host: api.newslab.ai.kr
       http:
         paths:
           - path: /
