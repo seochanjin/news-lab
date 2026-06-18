@@ -102,6 +102,25 @@ Kubernetes manifests are stored under:
 
 Kubernetes apply, rollout, secret changes, and production verification are human-controlled operations.
 
+### Backend API ingress and TLS
+
+The `news-api-ingress` Traefik Ingress routes both backend API hosts to the
+same `news-api` Service:
+
+- Existing host: `api.dev-scj.site`
+- New host: `api.newslab.ai.kr`
+
+cert-manager uses the `letsencrypt-prod` ClusterIssuer and keeps separate TLS
+Secrets for the two hosts:
+
+- `api.dev-scj.site` → `news-api-tls`
+- `api.newslab.ai.kr` → `news-api-newslab-tls`
+
+The existing host remains available during the new-domain rollout. Changing
+the frontend API base URL to `api.newslab.ai.kr` is a separate follow-up task
+after the new certificate and HTTPS endpoint have been verified by the human
+operator.
+
 ### Tailscale remote operation path
 
 Tailscale is used to access Oracle K3s nodes through a private network.

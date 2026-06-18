@@ -133,7 +133,8 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment news-api
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -l app=news-api -o wide
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get service news-api
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get ingress news-api-ingress
-KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get certificate news-api-tls
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get certificate \
+  news-api-tls news-api-newslab-tls
 ```
 
 Run the external read-only API checks only when the human operator chooses to
@@ -141,6 +142,7 @@ perform production verification:
 
 ```bash
 curl -i https://api.dev-scj.site/health
+curl -i https://api.newslab.ai.kr/health
 curl https://api.dev-scj.site/version
 curl https://api.dev-scj.site/collector/status
 curl https://api.dev-scj.site/extractor/status
@@ -149,8 +151,11 @@ curl https://api.dev-scj.site/extractor/status
 Normal baseline:
 
 - `news-api` Deployment is `2/2` available and its Pods are `Running`.
-- Service, Ingress, and certificate exist; the certificate is ready.
-- `/health` returns a successful HTTP response.
+- Service and Ingress exist.
+- Both `news-api-tls` and `news-api-newslab-tls` certificates are ready after
+  the new domain has been applied.
+- `/health` returns a successful HTTP response for both
+  `api.dev-scj.site` and `api.newslab.ai.kr`.
 - Collector and extractor status responses show the latest known run. Compare
   timestamps with the configured CronJob schedules before deciding a run is
   stale.
@@ -475,6 +480,98 @@ Check certificates:
 ```bash
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get certificate
 ```
+
+## Backend API Domain and TLS Transition
+
+The backend Ingress keeps the existing `api.dev-scj.site` host and adds
+`api.newslab.ai.kr`. Both hosts route to the same `news-api` Service, but each
+host uses a separate TLS Secret:
+
+```text
+api.dev-scj.site    -> news-api-tls
+api.newslab.ai.kr   -> news-api-newslab-tls
+ClusterIssuer       -> letsencrypt-prod
+```
+
+Changing the frontend API base URL is not part of this transition. Perform
+that change only after the new backend domain and certificate are stable.
+
+All commands in this section are human-controlled. Confirm DNS before applying
+the manifest:
+
+```bash
+dig +short api.newslab.ai.kr
+dig +short AAAA api.newslab.ai.kr
+```
+
+Expected DNS:
+
+```text
+A     152.67.211.33
+AAAA  no record
+```
+
+Confirm the existing issuer and Ingress, then run the server-side dry-run:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get clusterissuer letsencrypt-prod
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get ingress \
+  news-api-ingress -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply --dry-run=server \
+  -f k8s/news-api.yaml
+```
+
+Apply the manifest only after the preflight checks pass:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply -f k8s/news-api.yaml
+```
+
+Verify the Ingress, certificate, ACME resources, and TLS Secret without
+printing Secret data:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get ingress \
+  news-api-ingress -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get ingress \
+  news-api-ingress -o yaml | \
+  rg -n "api.dev-scj.site|api.newslab.ai.kr|news-api-tls|news-api-newslab-tls|cluster-issuer"
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get certificate
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl describe certificate \
+  news-api-newslab-tls
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get order,challenge
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get secret \
+  news-api-newslab-tls
+```
+
+After `news-api-newslab-tls` reports `Ready=True`, verify both hosts:
+
+```bash
+curl -I https://api.newslab.ai.kr/health
+curl -sS https://api.newslab.ai.kr/health
+curl -I https://api.dev-scj.site/health
+curl -sS https://api.dev-scj.site/health
+```
+
+Run repeated health checks to catch intermittent routing or TLS failures:
+
+```bash
+for i in {1..20}; do
+  echo "---- new domain $i ----"
+  curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" \
+    https://api.newslab.ai.kr/health
+done
+
+for i in {1..20}; do
+  echo "---- existing domain $i ----"
+  curl -sS -o /dev/null -w "%{http_code} %{time_total}\n" \
+    https://api.dev-scj.site/health
+done
+```
+
+Record the actual apply, Certificate, ACME, and HTTPS results in the task's
+verification document. Do not mark production verification complete from the
+manifest change alone.
 
 ## Production API Checks
 
