@@ -29,6 +29,30 @@ for f in docs/verification/feature-backend-api-newslab-domain.md docs/pr/feature
 git diff --check && ruby -e 'require "yaml"; ingress = YAML.load_stream(File.read("k8s/news-api.yaml")).find { |d| d["kind"] == "Ingress" }; expected = {"api.dev-scj.site" => "news-api-tls", "api.newslab.ai.kr" => "news-api-newslab-tls"}; actual = ingress.dig("spec", "tls").to_h { |item| [item.fetch("hosts").fetch(0), item.fetch("secretName")] }; raise unless actual == expected; raise unless ingress.dig("metadata", "annotations", "cert-manager.io/cluster-issuer") == "letsencrypt-prod"; raise unless ingress.dig("spec", "rules").map { |rule| rule["host"] } == expected.keys; puts "final static checks passed"'
 ```
 
+Approved fixes 적용 후 실행:
+
+```bash
+git diff --check
+python - <<'PY'
+from pathlib import Path
+import yaml
+
+for path in sorted(Path("k8s").glob("*.yaml")):
+    docs = list(yaml.safe_load_all(path.read_text()))
+    kinds = [
+        doc.get("kind")
+        for doc in docs
+        if isinstance(doc, dict) and doc.get("kind")
+    ]
+    print(f"{path}: {', '.join(kinds)}")
+PY
+git diff --stat
+git diff -- docs/tasks/feature-backend-api-newslab-domain.md docs/reviews/feature-backend-api-newslab-domain-antigravity.md docs/fixes/feature-backend-api-newslab-domain-approved-fixes.md docs/reviews/feature-backend-api-newslab-domain-coderabbit.md
+git grep -n -i -E "API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|BEGIN|\\.env"
+git diff -- app src scripts tests db Dockerfile .github frontend || true
+git status --short -- .env '.env.*' app src scripts tests db Dockerfile .github frontend
+```
+
 ## Results
 
 - Current branch: `feature/backend-api-newslab-domain`.
@@ -59,6 +83,23 @@ git diff --check && ruby -e 'require "yaml"; ingress = YAML.load_stream(File.rea
   `final static checks passed`.
 - DB schema, migration, Supabase SQL, API route/response, Docker image workflow,
   and frontend API base URL were not changed.
+- Approved-fix `git diff --check`: passed.
+- Approved-fix Python `yaml.safe_load_all` parsing: passed.
+  - `k8s/cluster-issuer.yaml`: `ClusterIssuer`
+  - `k8s/news-api.yaml`: `Deployment, Service, Ingress`
+  - `k8s/news-daily-topic-pipeline-cronjob.yaml`: `CronJob`
+  - `k8s/news-raw-extractor-cronjob.yaml`: `CronJob`
+  - `k8s/news-rss-collector-cronjob.yaml`: `CronJob`
+- Approved PR scope wording now distinguishes the functional Ingress change
+  from architecture/runbook and workflow artifact updates.
+- Approved-fix scope diff contains only task/fixes/review documentation
+  changes; no Kubernetes manifest or application behavior was changed by the
+  approved fixes.
+- Approved-fix protected-scope diff/status for application code, scripts,
+  tests, DB, Dockerfile, GitHub Actions, frontend, `.env`, and `.env.*` was
+  empty.
+- Approved-fix security grep matched existing safe references and command text;
+  no credential or secret value was added.
 
 ## Manual or Production Verification
 

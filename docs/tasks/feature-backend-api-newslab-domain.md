@@ -260,10 +260,22 @@ rg -n "api.dev-scj.site|api.newslab.ai.kr|news-api-ingress|news-api-tls|news-api
 git diff --check
 ```
 
-YAML parser가 사용 가능하면 manifest syntax를 확인한다.
+Python PyYAML이 사용 가능하면 multi-document manifest syntax를 확인한다.
 
 ```bash
-ruby -e 'require "yaml"; ARGV.each { |f| docs = YAML.load_stream(File.read(f)); puts "#{f}: #{docs.map { |d| d["kind"] }.compact.join(", ")}" }' k8s/*.yaml
+python - <<'PY'
+from pathlib import Path
+import yaml
+
+for path in sorted(Path("k8s").glob("*.yaml")):
+    docs = list(yaml.safe_load_all(path.read_text()))
+    kinds = [
+        doc.get("kind")
+        for doc in docs
+        if isinstance(doc, dict) and doc.get("kind")
+    ]
+    print(f"{path}: {', '.join(kinds)}")
+PY
 ```
 
 secret 값이 추가되지 않았는지 확인한다.

@@ -32,7 +32,8 @@
 
 ## Scope Control
 
-- **범위 제어 상태**: 변경된 파일은 매니페스트 `k8s/news-api.yaml` 1개 파일과 문서 파일(`docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`)로 제한되어 있습니다.
+- **기능 변경 범위**: 실제 운영 동작을 변경하는 파일은 backend Ingress manifest인 `k8s/news-api.yaml`에 제한되어 있습니다. `docs/ARCHITECTURE.md`와 `docs/RUNBOOK.md`는 도메인/TLS 구조와 human-controlled 운영 절차를 반영합니다.
+- **Workflow 문서 범위**: task, verification, PR, devlog, approved fixes, review 문서는 작업 요구사항, 실제 검증 결과, 승인된 fix와 review 근거를 남기기 위해 함께 추가 또는 수정되었습니다. 이 문서들은 application/DB/frontend 동작을 변경하지 않습니다.
 - **불필요한 변경 없음**: FastAPI 애플리케이션 코드, API 스키마, 데이터베이스 마이그레이션(SQL), Dockerfile, 프론트엔드 코드 등 금지된 범위의 변경이 전혀 발생하지 않았습니다.
 
 ## Verification Review
