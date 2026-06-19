@@ -1,166 +1,106 @@
 # AGENTS.md
 
-## Project
+## 프로젝트
 
-This repository is NewsLab, a long-running news processing and K3s operation project.
+NewsLab은 RSS 기사를 수집하고 원문과 주제 데이터를 PostgreSQL/Supabase에
+저장한 뒤 FastAPI로 제공하는 backend 프로젝트다. 운영 환경은 Oracle Cloud
+A1 node의 K3s cluster다.
 
-NewsLab collects RSS articles, stores article metadata, extracts raw article text, and serves the data through FastAPI APIs. The system is deployed on a K3s cluster running on Oracle Cloud A1 nodes.
+## 먼저 읽을 문서
 
-## Human-controlled steps
+모든 작업에서 다음 순서를 따른다.
 
-The following actions must be performed manually by the human:
+1. 현재 task: `docs/tasks/<safe-branch>.md`
+2. 공통 workflow: [docs/agent/backend-workflow.md](docs/agent/backend-workflow.md)
+3. 역할별 지침:
+   - Codex: [docs/agent/codex-instructions.md](docs/agent/codex-instructions.md)
+   - Antigravity: [docs/agent/antigravity-review.md](docs/agent/antigravity-review.md)
+4. 작업에 필요한 문서만 선택:
+   - Architecture index: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+   - Runbook index: [docs/RUNBOOK.md](docs/RUNBOOK.md)
+5. 검증 기준: [docs/agent/verification-gates.md](docs/agent/verification-gates.md)
+6. 금지 및 사람 통제 작업:
+   [docs/agent/forbidden-commands.md](docs/agent/forbidden-commands.md)
 
-- PR merge
-- GitHub main branch merge decisions
-- Supabase SQL migration execution
-- Kubernetes manifest apply
-- K3s rollout / restart
-- Production verification
-- Secret creation or update
-- OCI security rule changes
-- DNS / domain / TLS changes
+Task file이 chat prompt와 충돌하면 task file을 우선한다.
 
-Agents must not perform these actions unless explicitly instructed.
+## WIP 1
 
-## Safety Rules
+한 번에 하나의 작업 단위만 진행한다.
 
-- Do not push directly to main.
-- Do not run git push unless explicitly asked.
-- Do not run git merge unless explicitly asked.
-- Do not run kubectl apply unless explicitly asked.
-- Do not run kubectl rollout unless explicitly asked.
-- Do not modify secrets, .env files, kubeconfig files, SSH keys, DockerHub tokens, or Supabase credentials.
-- Do not modify Kubernetes manifests unless the task explicitly asks for it.
-- Do not delete files without explaining why.
-- Keep changes small and reviewable.
-
-## Code Style
-
-- Use FastAPI routers under app/routers.
-- Register new routers in app/main.py.
-- Prefer SQLAlchemy text() with raw SQL for database queries.
-- Use bind parameters, not string interpolation, for user-provided values.
-- When adding DB schema changes, add a SQL file under db/migrations.
-- When adding dependencies, update requirements.txt.
-- Avoid large refactors unless explicitly requested.
-
-## Current Architecture
-
-- FastAPI API server
-- PostgreSQL / Supabase database
-- SQLAlchemy text() queries
-- RSS collector script: scripts/collect_rss.py
-- Raw article extractor script: scripts/extract_raw_articles.py
-- K3s deployment on Oracle Cloud A1
-- RSS collector CronJob
-- Tailscale-based remote operation path
-- Raw article extractor run history: extraction_runs
-
-## Main API Areas
-
-- /articles
-- /sources
-- /collector/status
-- /collector/runs
-- /raw-articles
-- /health
-- /version
-- /extractor/status
-- /extractor/runs
-
-## Commands
-
-Run API locally:
-
-```bash
-uvicorn app.main:app --reload
+```text
+작업 단위 완료
+= 조사 → 변경 → 문서화 → 검증 → checklist 갱신
 ```
 
-## Common checks:
+현재 작업 단위가 완료되지 않았으면 다음 작업 단위로 이동하지 않는다. 새로
+발견한 문제는 현재 blocker, 현재 범위의 결함, 후속 작업 후보, 과거 기록 중
+하나로 분류한다.
 
-```bash
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/articles
-curl http://127.0.0.1:8000/collector/status
-curl http://127.0.0.1:8000/raw-articles
-curl http://127.0.0.1:8000/extractor/status
-```
+## 안전 규칙
 
-Run RSS collector manually:
+- `main`에 직접 push하지 않는다.
+- 명시적 요청 없이 `git push`, `git merge`를 실행하지 않는다.
+- `kubectl apply`, `kubectl delete`, `kubectl patch`, `kubectl edit`,
+  `kubectl rollout`, Helm 변경, `docker push`를 실행하지 않는다.
+- Supabase SQL과 production migration을 실행하지 않는다.
+- secret, `.env`, kubeconfig, credential, SSH key, token을 수정하거나 값을
+  문서에 기록하지 않는다.
+- Kubernetes manifest는 task가 명시적으로 요구할 때만 수정한다.
+- production verification은 사람이 제공한 실제 결과 없이 완료로 표시하지
+  않는다.
+- DB에 쓰는 collector/extractor/pipeline script는 명시적 승인 없이 실행하지
+  않는다.
+- 파일을 삭제할 때는 이유를 먼저 설명한다.
+- 변경은 작고 review 가능하게 유지한다.
 
-```bash
-python scripts/collect_rss.py
-```
+세부 구분은 [금지 및 사람 통제 작업](docs/agent/forbidden-commands.md)을 따른다.
 
-Run raw article extractor manually:
+## 구현 규칙
 
-```bash
-python scripts/extract_raw_articles.py
-```
+- FastAPI router는 `app/routers/`에 둔다.
+- 새 router는 `app/main.py`에 등록한다.
+- DB query는 SQLAlchemy `text()`와 bind parameter를 우선한다.
+- DB schema 변경은 `db/migrations/`에 SQL file로 추가한다.
+- dependency 추가 시 `requirements.txt`를 갱신한다.
+- 명시적 요청이 없으면 큰 refactor를 하지 않는다.
+- frontend repository와 frontend 문서는 backend task 범위에 포함하지 않는다.
 
-## Workflow
+## Workflow artifact
 
-Before editing code:
+| 목적 | 경로 |
+| --- | --- |
+| Task source of truth | `docs/tasks/` |
+| Review finding | `docs/reviews/` |
+| 사람이 승인한 fix | `docs/fixes/` |
+| 실제 검증 기록 | `docs/verification/` |
+| PR draft | `docs/pr/` |
+| Devlog draft | `docs/devlog/` |
+| Architecture decision | `docs/adr/` |
 
-1. Inspect relevant files.
-2. Explain the current structure.
-3. Propose a plan.
-4. Keep the scope limited.
+Review 결과만으로 구현을 수정하지 않는다. 사람이 승인한 항목이
+`docs/fixes/<safe-branch>-approved-fixes.md`에 기록된 경우에만 적용한다.
+PR과 devlog의 검증 주장은 `docs/verification/`을 source of truth로 사용한다.
 
-After editing code:
+## 검증 원칙
 
-1. Summarize changed files.
-2. Summarize behavior changes.
-3. Provide exact test commands.
-4. Mention risks and follow-up work.
-5. Do not push or merge unless explicitly asked.
+- Task 문서에는 checklist가 있어야 한다.
+- 실제 완료한 항목만 체크한다.
+- 실행한 command와 실제 결과만 verification 문서에 기록한다.
+- 미수행, 환경 제약 실패, 운영 반영 후 확인 필요, 사람이 수행 필요를 구분한다.
+- 코드 또는 pipeline 변경은 가능한 범위에서 입력부터 저장과 조회까지
+  end-to-end로 검증한다.
+- 운영 적용이 필요한 검증은 실행하지 않고 사람 수행 항목으로 남긴다.
+- 자동 test/lint가 없는 영역을 통과한 것처럼 쓰지 않는다.
 
-## Multi-Agent Review Workflow
+## 주요 구성
 
-Agent workflow artifacts are stored by purpose:
+- FastAPI: `app/main.py`, `app/routers/`
+- PostgreSQL/Supabase: `app/database.py`, `db/migrations/`
+- RSS collector: `scripts/collect_rss.py`
+- Raw extractor: `scripts/extract_raw_articles.py`
+- Daily topic pipeline: `scripts/run_daily_topic_pipeline.py`
+- Kubernetes manifest: `k8s/`
 
-- Task specs: `docs/tasks/`
-- Review outputs: `docs/reviews/`
-- Human-approved review fixes: `docs/fixes/`
-- Actual verification logs: `docs/verification/`
-- PR drafts: `docs/pr/`
-- Worklog drafts: `docs/devlog/`
-
-Review findings from Antigravity, CodeRabbit, or other reviewers must be saved under `docs/reviews/`.
-
-Only fixes explicitly approved by the human should be recorded under `docs/fixes/`.
-
-Actual commands run, results, skipped checks, and human-provided production verification logs should be recorded under `docs/verification/`.
-
-PR and devlog drafts should use `docs/verification/` as the source of truth for test and verification results.
-
-## Data and Migration Safety
-
-- Do not execute migration SQL against Supabase. Only create migration files under `db/migrations`.
-- Do not run data-writing scripts such as `scripts/collect_rss.py` or `scripts/extract_raw_articles.py` unless explicitly asked.
-- Before running any script that writes to the database, explain what data it will create or update.
-- Read-only API checks with `curl` are allowed.
-
-## Test Status
-
-Automated tests and lint are not fully configured yet.
-
-If a task requires tests:
-
-- Do not pretend tests already exist.
-- Propose the test setup first.
-- Prefer clear manual verification commands until automated tests are introduced.
-
-## Documentation Outputs
-
-When asked to prepare PR or worklog drafts:
-
-- PR drafts should be written under `docs/pr/`.
-- Worklog drafts should be written under `docs/devlog/`.
-- Review outputs should be written under `docs/reviews/`.
-- Approved review fixes should be written under `docs/fixes/`.
-- Verification logs should be written under `docs/verification/`.
-- Architecture decisions should be written under `docs/adr/`.
-- PR and worklog drafts must be grounded in `docs/verification/` for test and verification claims.
-- Do not claim production deployment is complete unless the human provides verification logs.
-- Do not claim PR merge is complete unless the human explicitly says it was merged.
+현재 구조와 데이터 흐름은 [Architecture index](docs/ARCHITECTURE.md), 운영
+절차는 [Runbook index](docs/RUNBOOK.md)에서 필요한 문서만 선택해 확인한다.
