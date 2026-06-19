@@ -29,9 +29,16 @@ class FakeResult:
 
 
 class FakeConnection:
-    def __init__(self, *, existing=None, similarity_rows=None):
+    def __init__(
+        self,
+        *,
+        existing=None,
+        similarity_rows=None,
+        upsert_inserted=True,
+    ):
         self.existing = existing
         self.similarity_rows = similarity_rows or []
+        self.upsert_inserted = upsert_inserted
         self.calls = []
 
     def execute(self, statement, params):
@@ -41,6 +48,8 @@ class FakeConnection:
             return FakeResult(first=self.existing)
         if "as similarity" in sql:
             return FakeResult(rows=self.similarity_rows)
+        if "on conflict" in sql:
+            return FakeResult(first={"inserted": self.upsert_inserted})
         return FakeResult()
 
 
@@ -115,11 +124,23 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
         self.assertEqual(result.status, "created")
         self.assertEqual(len(provider.calls), 1)
         self.assertIn("insert into article_embeddings", connection.calls[-1][0])
+        self.assertIn(
+            "on conflict (article_id, provider, model, source_text_type)",
+            connection.calls[-1][0],
+        )
+        self.assertIn("embedding = excluded.embedding", connection.calls[-1][0])
+        self.assertIn("dimension = excluded.dimension", connection.calls[-1][0])
+        self.assertIn(
+            "source_text_hash = excluded.source_text_hash",
+            connection.calls[-1][0],
+        )
+        self.assertIn("updated_at = now()", connection.calls[-1][0])
         self.assertEqual(connection.calls[-1][1]["embedding"], "[0.1,0.2,0.3]")
 
     def test_changed_input_updates_existing_embedding(self):
         connection = FakeConnection(
-            existing={"id": 10, "source_text_hash": "old-hash"}
+            existing={"id": 10, "source_text_hash": "old-hash"},
+            upsert_inserted=False,
         )
         provider = FakeProvider()
 
@@ -131,8 +152,22 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "updated")
-        self.assertIn("update article_embeddings", connection.calls[-1][0])
-        self.assertEqual(connection.calls[-1][1]["embedding_id"], 10)
+        self.assertIn("on conflict", connection.calls[-1][0])
+
+    def test_insert_race_returns_updated_instead_of_unique_error(self):
+        connection = FakeConnection(upsert_inserted=False)
+        provider = FakeProvider()
+
+        result = store_article_embedding(
+            connection,
+            article={"id": 1, "title": "Article", "summary": "Summary"},
+            embedding_provider=provider,
+            expected_dimension=3,
+        )
+
+        self.assertEqual(result.status, "updated")
+        self.assertEqual(len(provider.calls), 1)
+        self.assertIn("on conflict", connection.calls[-1][0])
 
     def test_model_is_part_of_existing_embedding_lookup(self):
         connection = FakeConnection()

@@ -123,3 +123,39 @@
 ### Verdict
 
 - **APPROVED**
+
+## Re-review 2
+
+### Existing Problems Status
+
+- **최초 리뷰 상의 문제점**: 최초 리뷰 시 발견된 결함 및 문제점 없음 (해결됨).
+- **이전 재검토(Re-review 1) 상의 문제점**: 발견된 결함 및 문제점 없음 (해결됨).
+
+### Approved Fixes Verification
+
+[docs/fixes/feature-article-embedding-storage-approved-fixes.md](~/news-lab/docs/fixes/feature-article-embedding-storage-approved-fixes.md) 문서에 명시된 3가지 승인된 수정 사항(Fix 1 ~ Fix 3)이 완벽히 적용되었습니다.
+
+- **Approved Fix 1 (Atomic Upsert)**: `SELECT → INSERT` 흐름에서 발생할 수 있는 동시성 경쟁 조건(Race Condition)을 방지하기 위해 `INSERT ... ON CONFLICT (article_id, provider, model, source_text_type) DO UPDATE` 쿼리 형태로 구현이 안전하게 통합되었습니다. 동시 충돌 시 `returning (xmax = 0) as inserted` 분석을 통해 `created` 또는 `updated` 상태를 안전하게 판단하며, 바인드 파라미터를 그대로 보존하고 있습니다.
+- **Approved Fix 2 (Markdown Fence)**: `Verification Required` 섹션 내의 백틱 4개 개수 오류가 수정되었으며, standalone 3-backtick fence 쌍이 일치하는 것을 확인하였습니다.
+- **Approved Fix 3 (Migration Test Path)**: [tests/test_article_embedding_migration.py](~/news-lab/tests/test_article_embedding_migration.py) 파일 내에서 `__file__` 기준으로 리포지토리 루트 절대 경로를 계산하도록 변경하여 작업 경로 독립성을 보장하였습니다.
+
+### Verification Evidence
+
+- **단위 테스트 실행 결과**:
+  - `python -m compileall app scripts tests && python -m unittest discover -s tests` 실행 시 신규 추가/수정된 테스트 케이스를 포함한 총 137개의 테스트가 성공적으로 통과(`OK`)했습니다.
+  - `/tmp`와 같은 외부 작업 경로 디렉터리에서도 migration test가 정상적으로 파일을 조회하고 성공함을 검사하였습니다.
+- **포맷 정합성**:
+  - `git diff --check`가 충돌 없이 통과됨을 재검사하였습니다.
+  - 마크다운 렌더링에 깨짐이 없도록 fixes 문서 내의 backtick fence가 올바르게 닫혀 있음을 확인하였습니다.
+
+### New Problems Found
+
+- **새로운 문제 없음**: `git status --short`에 표시된 모든 변경(modified/untracked) 파일(예: [app/utils/article_embedding_storage.py](~/news-lab/app/utils/article_embedding_storage.py), [tests/test_article_embedding_storage.py](~/news-lab/tests/test_article_embedding_storage.py) 변경 사항 등)을 상세히 검사한 결과, 추가적인 오류, 성능 병목, 또는 요구되지 않은 변경(Scope Creep)은 존재하지 않습니다.
+
+### Required Fixes Before PR
+
+- **해당 사항 없음** (PR 진행을 위한 블로커 없음).
+
+### Verdict
+
+- **APPROVED**

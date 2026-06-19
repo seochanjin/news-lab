@@ -2,7 +2,8 @@ import unittest
 from pathlib import Path
 
 
-MIGRATION = Path("db/migrations/006_create_article_embeddings.sql")
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MIGRATION = REPO_ROOT / "db" / "migrations" / "006_create_article_embeddings.sql"
 
 
 class ArticleEmbeddingMigrationTests(unittest.TestCase):

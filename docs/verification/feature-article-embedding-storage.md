@@ -236,3 +236,127 @@ Article `2687`의 embedding을 기준 vector로 사용해 cosine similarity quer
 - vector dimension 검증: 통과
 - cosine similarity query: 통과
 - failed: 0
+
+## Approved Fix Verification
+
+### Approved Fix 1: Atomic upsert
+
+Command:
+`python -m unittest tests.test_article_embedding_storage tests.test_article_embeddings`
+
+Result:
+17 tests가 통과했다.
+
+Status: passed
+
+Notes:
+동일 conflict key의 `ON CONFLICT DO UPDATE`, conflict 시 정상 `updated` 반환,
+bind parameter vector 전달, hash 동일 provider 미호출 reuse와 dimension 불일치
+저장 중단을 확인했다.
+
+Command:
+`python -m unittest discover -s tests`
+
+Result:
+전체 137 tests가 통과했다.
+
+Status: passed
+
+Notes:
+기존 argument validation test의 예상 argparse error output이 포함되지만 최종
+결과는 `OK`다.
+
+### Approved Fix 2: Markdown fence
+
+Command:
+```bash
+rg -n '^`{3,}$' docs/fixes/feature-article-embedding-storage-approved-fixes.md
+```
+
+Result:
+Standalone 3-backtick fence 20개가 출력되었고 최종 문서 직접 확인에서
+opening과 closing이 10쌍으로 대응했다.
+
+Status: passed
+
+Command:
+```bash
+rg -n '````' docs/fixes/feature-article-embedding-storage-approved-fixes.md
+```
+
+Result:
+승인 항목 설명에 포함된 inline 잘못된 예시 1건만 출력되었고 standalone
+4-backtick fence는 없었다.
+
+Status: passed
+
+### Approved Fix 3: Migration test path
+
+Command:
+`python -m unittest tests.test_article_embedding_migration`
+
+Result:
+Repository root에서 1 test가 통과했다.
+
+Status: passed
+
+Command:
+`python /Users/seochanjin/workspace/NewsLab/news-lab/tests/test_article_embedding_migration.py`
+
+Result:
+`/tmp` 작업 디렉터리에서 1 test가 통과했다.
+
+Status: passed
+
+Notes:
+Test는 `__file__` 기준 repository root와 migration 절대 경로를 사용한다.
+
+### Approved Fix 전체 회귀
+
+Command:
+`python -m compileall app scripts tests; python -m unittest discover -s tests; git diff --check; git status --short --branch`
+
+Result:
+Compileall과 `git diff --check`가 exit code 0으로 완료되었고 전체 137 tests가
+통과했다. 현재 branch는 `feature/article-embedding-storage`다.
+
+Status: passed
+
+Notes:
+Task 범위 변경 외에 기존 user change인
+`docs/reviews/feature-article-embedding-storage-coderabbit.md` modified 상태가
+남아 있으며 Codex는 해당 review file을 수정하지 않았다.
+
+### Approved Fix 운영 회귀
+
+Command:
+`python scripts/embed_articles.py --limit 3`
+
+Status: human-required
+
+Notes:
+Atomic upsert 적용 후 운영 E2E 재실행은 production DB write와 credential
+환경이 필요하므로 실행하지 않았다. 사람이 제공한 기존 생성·재사용 E2E log는
+upsert 적용 전 결과이며, 이번 fix의 운영 회귀 완료 근거로 사용하지 않는다.
+
+### 최종 review
+
+Status: human-required
+
+Notes:
+Antigravity 재검토는 자동 실행하지 않았다. Approved Fix 1~3 적용 결과와 이
+verification 기록을 기준으로 사람이 별도 재검토를 진행해야 한다.
+
+Command:
+`git diff --check; git diff --stat; git diff --name-only; git status --short --branch`
+
+Result:
+`git diff --check`는 출력 없이 통과했다. Approved fix 관련 application,
+fixes/verification 문서와 test 변경을 확인했다.
+
+Status: passed
+
+Notes:
+출력에 포함된 CodeRabbit review file 변경은 작업 시작 전부터 존재한 user
+change이며 이번 apply-fixes 작업에서는 수정하지 않았다. Secret, `.env`,
+kubeconfig와 credential file 변경은 확인되지 않았다.

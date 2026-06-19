@@ -2,55 +2,91 @@
 
 ## Approved Fixes
 
-해당 사항 없음.
+### 1. Article embedding 저장을 원자적 upsert로 변경
 
-Antigravity 최초 review와 재검토 결과, 현재 구현에서 PR 전에 반드시 수정해야 하는 결함은 발견되지 않았다.
+CodeRabbit review에서 현재 `SELECT → INSERT` 흐름에 동시성 경쟁 조건이 있음을 확인했다.
 
-실제 Supabase 환경에서 다음 핵심 동작도 확인했다.
+현재 동일한 다음 조합을 두 worker가 동시에 처리할 경우:
 
 ```text
-소량 article 조회
-→ embedding 생성
-→ article_embeddings 저장
-→ 동일 batch 재실행
-→ 기존 embedding 재사용
+article_id
+provider
+model
+source_text_type
 ```
 
-실행 결과:
+두 worker가 모두 기존 row가 없다고 판단한 뒤 각각 `INSERT`를 시도할 수 있다.
 
-```json
-{
-  "dry_run": true,
-  "selected": 3,
-  "created": 0,
-  "updated": 0,
-  "reused": 0,
-  "failed": 0
-}
+첫 번째 `INSERT`는 성공하지만 두 번째 `INSERT`는 unique constraint 오류로 실패해, 멱등성을 의도한 batch가 실패할 수 있다.
+
+승인된 수정:
+
+- [x] 신규 embedding 저장을 `INSERT ... ON CONFLICT DO UPDATE` 기반 원자적 upsert로 변경한다.
+- [x] conflict target은 기존 unique constraint와 동일하게 유지한다.
+
+```text
+article_id
+provider
+model
+source_text_type
 ```
 
-```json
-{
-  "dry_run": false,
-  "selected": 3,
-  "created": 3,
-  "updated": 0,
-  "reused": 0,
-  "failed": 0,
-  "failures": []
-}
+- [x] conflict 발생 시 다음 값을 최신 결과로 갱신한다.
+  - `embedding`
+  - `dimension`
+  - `source_text_hash`
+  - `updated_at`
+- [x] 기존 row가 없으면 `created`, race 또는 기존 row가 있으면 현재 계약에 맞는 상태를 반환한다.
+- [x] unique constraint race로 batch 전체가 실패하지 않도록 한다.
+- [x] 모든 runtime 값은 bind parameter를 사용한다.
+- [x] vector 값을 SQL f-string으로 직접 삽입하지 않는다.
+- [x] 기존 hash가 동일한 일반 경로에서는 provider 미호출 및 `reused` 동작을 유지한다.
+- [x] 동시 실행에서 embedding API 중복 호출 자체를 완전히 방지하는 분산 락은 이번 범위에 포함하지 않는다.
+
+테스트 추가 또는 보완:
+
+- [x] 동일 conflict key에 대해 upsert SQL이 사용되는지 검증한다.
+- [x] conflict 발생 시 unique constraint 예외 대신 정상 완료되는 경로를 검증한다.
+- [x] hash 동일 시 기존 provider 미호출 테스트가 유지된다.
+- [x] vector dimension 불일치 시 저장하지 않는 기존 검증이 유지된다.
+- [x] 기존 136개 이상의 전체 회귀 테스트가 통과한다.
+
+### 2. Approved fixes 문서의 Markdown closing fence 수정
+
+CodeRabbit review에서 `Verification Required` 섹션의 closing fence가 백틱 4개로 작성되어 Markdown code block이 깨지는 문제를 확인했다.
+
+승인된 수정:
+
+- [x] 잘못된 closing fence ` ```` `를 ` ``` `로 변경한다.
+- [x] 문서 내 모든 fenced code block의 opening과 closing 개수가 일치하는지 확인한다.
+- [x] fixes 문서의 내용 자체는 불필요하게 재작성하지 않는다.
+
+### 3. Migration test 경로를 현재 작업 디렉터리와 독립적으로 변경
+
+CodeRabbit review에서 migration test가 repository root를 현재 작업 디렉터리로 가정하고 있음을 확인했다.
+
+현재 방식:
+
+```python
+Path("db/migrations/006_create_article_embeddings.sql")
 ```
 
-```json
-{
-  "dry_run": false,
-  "selected": 3,
-  "created": 0,
-  "updated": 0,
-  "reused": 3,
-  "failed": 0,
-  "failures": []
-}
+이 방식은 repository root가 아닌 위치에서 test를 실행하면 실패할 수 있다.
+
+승인된 수정:
+
+- [x] `tests/test_article_embedding_migration.py`에서 `__file__` 기준으로 repository root를 계산한다.
+- [x] migration 파일 경로를 repository root에 대한 절대 경로로 구성한다.
+- [x] repository root에서 실행한 기존 test가 계속 통과해야 한다.
+- [x] repository root가 아닌 임시 작업 디렉터리에서도 migration test가 통과하는지 확인한다.
+
+권장 구조:
+
+```python
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+MIGRATION = REPO_ROOT / "db" / "migrations" / "006_create_article_embeddings.sql"
 ```
 
 ## Rejected or Deferred Suggestions
@@ -83,7 +119,7 @@ source .venv/bin/activate
 - FastAPI application과 batch script의 설정 로딩 방식이 달라짐
 - 운영 CronJob에서 동일한 설정 로딩 코드가 중복됨
 
-이번 작업에서는 새 dependency 또는 자동 `.env` 로더를 추가하지 않는다.
+이번 작업에서는 새 dependency 또는 자동 `.env` loader를 추가하지 않는다.
 
 ### 2. HNSW 또는 IVFFlat vector index
 
@@ -129,11 +165,56 @@ Deferred.
 
 기존 raw SQL 전체 ORM 전환과 동적 SQL 정리는 별도의 SQL refactoring 작업으로 유지한다.
 
+### 6. 동시 실행 시 embedding API 중복 호출 완전 방지
+
+Deferred.
+
+이번 Approved Fix에서는 DB unique constraint race로 인해 batch가 실패하지 않도록 원자적 upsert를 적용한다.
+
+동일 article을 여러 worker가 동시에 처리할 때 embedding API 호출 자체를 한 번만 보장하려면 다음과 같은 추가 제어가 필요할 수 있다.
+
+- PostgreSQL advisory lock
+- row-level lock
+- processing state
+- distributed lock
+- job queue의 deduplication key
+
+현재 수동 소량 batch MVP에서는 과도한 범위이므로 daily pipeline 병렬 실행 정책과 함께 후속 작업에서 검토한다.
+
 ## Applied Changes
 
-추가 수정 사항 없음.
+적용 상태:
 
-기존 구현에서 다음이 완료되었다.
+- Approved Fix 1
+  - 상태: 적용 및 로컬 검증 완료
+- Approved Fix 2
+  - 상태: 적용 및 검증 완료
+- Approved Fix 3
+  - 상태: 적용 및 검증 완료
+
+- Approved Fix 1 적용
+  - 신규 embedding 저장과 hash 변경 갱신을 atomic upsert로 통합했다.
+  - conflict target은 `(article_id, provider, model, source_text_type)`이다.
+  - conflict 시 embedding, dimension, source text hash와 updated timestamp를
+    갱신한다.
+  - PostgreSQL `RETURNING (xmax = 0) AS inserted` 결과로 `created`와
+    race/conflict의 `updated`를 구분한다.
+  - 모든 runtime 값과 pgvector 문자열은 bind parameter로 전달한다.
+  - hash 동일 provider 미호출 reuse와 dimension 불일치 저장 중단을 유지했다.
+  - 관련 17 tests와 전체 137 tests가 통과했다.
+
+- Approved Fix 2 적용
+  - 잘못된 4-backtick closing fence가 남아 있지 않음을 확인했다.
+  - standalone fenced code marker 20개가 opening/closing 10쌍으로 대응함을
+    직접 확인했다.
+  - 승인 checklist와 Applied Changes 외 문서 내용은 재작성하지 않았다.
+
+- Approved Fix 3 적용
+  - migration test가 `__file__`에서 repository root를 계산하도록 변경했다.
+  - migration path를 repository root 기준 절대 경로로 구성했다.
+  - repository root와 `/tmp` 작업 디렉터리에서 각각 test 통과를 확인했다.
+
+기존 구현에서 완료된 내용:
 
 - Supabase PostgreSQL의 `vector` extension 활성화
 - `article_embeddings` table 생성
@@ -153,7 +234,7 @@ Deferred.
 - cosine similarity 조회
 - architecture, pipeline, runbook 및 verification 갱신
 
-운영 환경에서 다음 E2E를 추가 확인했다.
+운영 E2E 확인 결과:
 
 ```text
 첫 번째 실제 실행
@@ -173,205 +254,83 @@ reused=3
 failed=0
 ```
 
-동일 입력에 대해 중복 row 생성 또는 embedding 재호출 없이 재사용되는 핵심 MVP 동작을 확인했다.
+Vector dimension 확인:
+
+```text
+article_id=2685 actual_dimension=1536 recorded_dimension=1536
+article_id=2686 actual_dimension=1536 recorded_dimension=1536
+article_id=2687 actual_dimension=1536 recorded_dimension=1536
+```
+
+Cosine similarity 확인:
+
+```text
+query_article_id=2687 article_id=2687 similarity=1.0
+query_article_id=2687 article_id=2685 similarity=0.294441283666331
+query_article_id=2687 article_id=2686 similarity=0.266297983343077
+```
 
 ## Verification Required
 
-### 1. Verification 문서에 운영 E2E 결과 추가
-
-`docs/verification/feature-article-embedding-storage.md`에 다음 내용을 추가한다.
-
-````md
-## Production E2E Verification
-
-### 환경변수 로드
+### 1. Atomic upsert 관련 단위 테스트
 
 ```bash
-source .venv/bin/activate
-set -a
-source .env
-set +a
-```
-````
-
-환경변수 값 자체는 출력하거나 문서에 기록하지 않았다.
-
-### Read-only dry-run
-
-```bash
-python scripts/embed_articles.py --limit 3 --dry-run
-```
-
-결과:
-
-```json
-{
-  "dry_run": true,
-  "selected": 3,
-  "created": 0,
-  "updated": 0,
-  "reused": 0,
-  "failed": 0
-}
-```
-
-상태: 통과
-
-확인 내용:
-
-- Supabase DB 연결 성공
-- 처리 대상 기사 3건 선택
-- embedding provider 호출 없음
-- DB insert/update 없음
-
-### 최초 embedding 생성
-
-```bash
-python scripts/embed_articles.py --limit 3
-```
-
-결과:
-
-```json
-{
-  "dry_run": false,
-  "selected": 3,
-  "created": 3,
-  "updated": 0,
-  "reused": 0,
-  "failed": 0,
-  "failures": []
-}
-```
-
-상태: 통과
-
-확인 내용:
-
-- 기사 3건 선택
-- embedding 3건 생성
-- `article_embeddings`에 신규 저장
-- 실패 없음
-
-### 동일 batch 재실행
-
-```bash
-python scripts/embed_articles.py --limit 3
-```
-
-결과:
-
-```json
-{
-  "dry_run": false,
-  "selected": 3,
-  "created": 0,
-  "updated": 0,
-  "reused": 3,
-  "failed": 0,
-  "failures": []
-}
-```
-
-상태: 통과
-
-확인 내용:
-
-- 동일 기사 3건 선택
-- 신규 생성 없음
-- 갱신 없음
-- 기존 embedding 3건 재사용
-- 실패 없음
-
-동일한 article, provider, model, source text type 및 source text hash에 대해 기존 embedding이 재사용됨을 확인했다.
-
-````
-
-### 2. DB row 확인
-
-Supabase SQL Editor에서 다음을 확인한다.
-
-```sql
-select
-    article_id,
-    provider,
-    model,
-    dimension,
-    source_text_type,
-    source_text_hash,
-    created_at,
-    updated_at
-from article_embeddings
-order by id desc
-limit 10;
-````
-
-확인 기준:
-
-- 실행 대상 article 3건의 row 존재
-- `provider = 'openai'`
-- `model = 'text-embedding-3-small'`
-- `dimension = 1536`
-- `source_text_type = 'title_summary'`
-- `source_text_hash`가 비어 있지 않음
-
-### 3. 실제 vector dimension 확인
-
-```sql
-select
-    article_id,
-    vector_dims(embedding) as actual_dimension,
-    dimension as recorded_dimension
-from article_embeddings
-order by id desc
-limit 10;
+python -m unittest \
+  tests.test_article_embedding_storage \
+  tests.test_article_embeddings
 ```
 
 확인 기준:
 
-```text
-actual_dimension = 1536
-recorded_dimension = 1536
+- 신규 row 저장 SQL이 `ON CONFLICT`를 포함한다.
+- conflict target이 unique constraint와 일치한다.
+- conflict 발생 시 embedding, dimension, hash와 updated timestamp가 갱신된다.
+- runtime 값이 bind parameter로 전달된다.
+- hash 동일 시 provider 미호출 및 `reused` 결과가 유지된다.
+- dimension 불일치 시 저장하지 않는다.
+
+### 2. Migration test 경로 독립성 확인
+
+Repository root에서 실행:
+
+```bash
+python -m unittest tests.test_article_embedding_migration
 ```
 
-### 4. 중복 row 확인
+Repository root가 아닌 위치에서 실행:
 
-```sql
-select
-    article_id,
-    provider,
-    model,
-    source_text_type,
-    count(*) as row_count
-from article_embeddings
-group by
-    article_id,
-    provider,
-    model,
-    source_text_type
-having count(*) > 1;
+```bash
+cd /tmp
+python \
+  /Users/seochanjin/workspace/NewsLab/news-lab/tests/test_article_embedding_migration.py
 ```
 
-기대 결과:
+또는 module import가 필요한 경우 repository를 `PYTHONPATH`에 지정한다.
 
-```text
-0 rows
+```bash
+cd /tmp
+PYTHONPATH=/Users/seochanjin/workspace/NewsLab/news-lab \
+python -m unittest \
+  tests.test_article_embedding_migration
 ```
-
-### 5. Cosine similarity 확인
-
-구현된 내부 similarity 조회 경로 또는 검증 SQL을 사용해 결과를 확인한다.
 
 확인 기준:
 
-- 같은 provider만 비교
-- 같은 model만 비교
-- 같은 dimension만 비교
-- 같은 source text type만 비교
-- 자기 자신은 similarity가 1에 가깝게 반환
-- 결과가 cosine similarity 내림차순으로 정렬
+- 현재 작업 디렉터리와 무관하게 migration 파일을 찾는다.
+- test가 통과한다.
 
-### 6. 최종 회귀 검증
+### 3. Markdown fence 확인
+
+```bash
+rg -n '^`{3,}$' \
+  docs/fixes/feature-article-embedding-storage-approved-fixes.md
+```
+
+문서를 직접 확인해 모든 opening fence와 closing fence가 올바르게 대응하는지 검토한다.
+
+추가로 Markdown renderer 또는 기존 문서 검사 command가 있으면 함께 사용한다.
+
+### 4. 전체 회귀 검증
 
 ```bash
 python -m compileall app scripts tests
@@ -382,22 +341,71 @@ git status --short --branch
 
 확인 기준:
 
-- Compile 통과
+- Python compile 통과
 - 전체 test 통과
 - whitespace 오류 없음
-- 변경 범위가 task와 문서 범위에 한정됨
-- secret 또는 `.env`가 Git 변경에 포함되지 않음
+- task 범위 밖 변경 없음
+- `.env` 및 실제 credential이 Git 변경에 포함되지 않음
+
+### 5. 운영 E2E 회귀 확인
+
+Atomic upsert 변경은 저장 SQL 경로에 영향을 주므로 소량 운영 E2E를 다시 확인한다.
+
+환경변수 로드:
+
+```bash
+source .venv/bin/activate
+set -a
+source .env
+set +a
+```
+
+동일 기사 재실행:
+
+```bash
+python scripts/embed_articles.py --limit 3
+```
+
+기대 결과:
+
+```text
+selected=3
+created=0
+updated=0
+reused=3
+failed=0
+```
+
+새 기사를 대상으로 생성 경로도 필요하면 `--article-id`로 아직 embedding이 없는 기사 한 건만 선택한다.
+
+```bash
+python scripts/embed_articles.py --article-id <미처리_article_id>
+```
+
+운영 article의 제목이나 요약은 검증 목적으로 수정하지 않는다.
+
+### 6. 최종 Antigravity 재검토
+
+Codex가 Approved Fix 1~3을 적용하고 verification을 갱신한 뒤 기존 Antigravity review 파일에 다음 `Re-review N`을 추가한다.
+
+확인 항목:
+
+- CodeRabbit CR-1 원자적 upsert 해결 여부
+- Markdown fence 수정 여부
+- migration test path 독립성
+- 기존 embedding 생성·재사용 동작 회귀 없음
+- 신규 scope creep 없음
+- PR blocker 잔존 여부
 
 ### 7. 최종 상태
 
-다음 조건을 만족하면 PR 진행 가능하다.
+다음 조건을 모두 충족하면 PR 진행 가능하다.
 
-- Supabase migration 적용 완료
-- dry-run 성공
-- 최초 3건 생성 성공
-- 동일 batch 재실행 시 3건 재사용
-- 실패 0건
-- DB row 및 dimension 확인
-- 중복 row 없음
-- cosine similarity 조회 확인
+- Atomic upsert 적용
+- Unique constraint race로 인한 insert 실패 방지
+- Markdown fence 수정
+- Migration test path 독립성 확보
 - 전체 회귀 테스트 통과
+- 운영 재사용 E2E 통과
+- Antigravity 재검토 완료
+- 미해결 Required Fix 없음

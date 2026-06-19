@@ -30,7 +30,7 @@ FIND_EMBEDDING_QUERY = text("""
       and source_text_type = :source_text_type
 """)
 
-INSERT_EMBEDDING_QUERY = text("""
+UPSERT_EMBEDDING_QUERY = text("""
     insert into article_embeddings (
         article_id,
         embedding,
@@ -49,15 +49,13 @@ INSERT_EMBEDDING_QUERY = text("""
         :source_text_type,
         :source_text_hash
     )
-""")
-
-UPDATE_EMBEDDING_QUERY = text("""
-    update article_embeddings
-    set embedding = cast(:embedding as vector),
-        dimension = :dimension,
-        source_text_hash = :source_text_hash,
+    on conflict (article_id, provider, model, source_text_type)
+    do update set
+        embedding = excluded.embedding,
+        dimension = excluded.dimension,
+        source_text_hash = excluded.source_text_hash,
         updated_at = now()
-    where id = :embedding_id
+    returning (xmax = 0) as inserted
 """)
 
 SIMILAR_EMBEDDINGS_QUERY = text("""
@@ -188,20 +186,12 @@ def store_article_embedding(
         "source_text_type": source_text_type,
         "source_text_hash": source_text_hash,
     }
-    if existing:
-        connection.execute(
-            UPDATE_EMBEDDING_QUERY,
-            {
-                "embedding_id": existing["id"],
-                "embedding": params["embedding"],
-                "dimension": dimension,
-                "source_text_hash": source_text_hash,
-            },
-        )
-        status = "updated"
-    else:
-        connection.execute(INSERT_EMBEDDING_QUERY, params)
-        status = "created"
+    upsert_result = (
+        connection.execute(UPSERT_EMBEDDING_QUERY, params).mappings().first()
+    )
+    if upsert_result is None:
+        raise RuntimeError("embedding upsert did not return a result")
+    status = "created" if upsert_result["inserted"] else "updated"
 
     return EmbeddingResult(article_id, status, source_text_hash)
 
