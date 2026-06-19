@@ -12,10 +12,10 @@
 
 ## Requirement Coverage
 
-[docs/tasks/feature-article-embedding-storage.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/feature-article-embedding-storage.md)에 명시된 요구사항 및 인수 조건(Acceptance criteria)을 모두 해결하였습니다.
+[docs/tasks/feature-article-embedding-storage.md](~/news-lab/docs/tasks/feature-article-embedding-storage.md)에 명시된 요구사항 및 인수 조건(Acceptance criteria)을 모두 해결하였습니다.
 
 - **DB 스키마 구성**:
-  - `vector` 익스텐션의 비침습적인 활성화와 cascade delete 규칙을 지정한 `article_embeddings` 테이블 설계가 [db/migrations/006_create_article_embeddings.sql](file:///Users/seochanjin/workspace/NewsLab/news-lab/db/migrations/006_create_article_embeddings.sql)에 올바르게 작성되었습니다.
+  - `vector` 익스텐션의 비침습적인 활성화와 cascade delete 규칙을 지정한 `article_embeddings` 테이블 설계가 [db/migrations/006_create_article_embeddings.sql](~/news-lab/db/migrations/006_create_article_embeddings.sql)에 올바르게 작성되었습니다.
 - **임베딩 재사용 및 갱신**:
   - 입력 값의 공백 정규화 및 UTF-8 SHA-256 해시 비교 로직을 통해 해시가 동일한 경우 임베딩 API를 재호출하지 않고 저장된 레코드를 재사용(`reused`)하며, 해시가 변경된 경우 갱신(`updated`), 새로운 조합일 경우 신규 생성(`created`)이 정확히 작동합니다.
   - 벡터 차원(dimension = 1536)을 검증하여 불일치할 시 예외를 발생시키고 처리를 중단하는 가드 조건이 적용되었습니다.
@@ -26,7 +26,7 @@
 
 ## Code Quality / Maintainability
 
-- **가독성 및 모듈화**: 핵심 임베딩 조회/저장 로직이 [app/utils/article_embedding_storage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/utils/article_embedding_storage.py)에 잘 구조화되었고, 예외 처리와 트랜잭션 범위가 안전하게 격리되었습니다.
+- **가독성 및 모듈화**: 핵심 임베딩 조회/저장 로직이 [app/utils/article_embedding_storage.py](~/news-lab/app/utils/article_embedding_storage.py)에 잘 구조화되었고, 예외 처리와 트랜잭션 범위가 안전하게 격리되었습니다.
 - **의존성 주입 및 테스트 용이성**: `FakeConnection` 및 `FakeProvider`를 이용해 실제 데이터베이스 커넥션이나 OpenAI API key 연결 없이도 임베딩 캐싱 및 갱신 상태(insert, update, reuse 등)의 비즈니스 로직을 완벽하게 검증하는 모의 테스트(Mock Test) 코드가 우수하게 구현되었습니다.
 - **바인드 파라미터**: 새로 도입된 모든 SQL 쿼리(FIND, INSERT, UPDATE, SIMILARITY)가 SQLAlchemy `text()` 객체 및 명시적인 바인드 파라미터를 사용하여 SQL injection 위험이 사전에 방지되었습니다.
 
@@ -38,7 +38,7 @@
 ## Operational Risk
 
 - **배치 실행량 강제 제한**: `scripts/embed_articles.py` 스크립트에서 배치 실행 시 발생할 수 있는 대량의 API 호출 및 DB 쓰기 부하를 방지하기 위해 `--limit` 최대 크기를 100으로 제한하여 안정 장치를 걸어두었습니다.
-- **마이그레이션 제어 분리**: 에이전트가 데이터베이스에 마이그레이션을 자동 실행하지 않도록 분리하고, 런북([docs/runbooks/database-check.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/runbooks/database-check.md))에 휴먼 오퍼레이터가 점검해야 할 사전 조건, 사후 조회 쿼리, 롤백을 위한 `drop table` SQL 구문을 상세히 포함시켰습니다.
+- **마이그레이션 제어 분리**: 에이전트가 데이터베이스에 마이그레이션을 자동 실행하지 않도록 분리하고, 런북([docs/runbooks/database-check.md](~/news-lab/docs/runbooks/database-check.md))에 휴먼 오퍼레이터가 점검해야 할 사전 조건, 사후 조회 쿼리, 롤백을 위한 `drop table` SQL 구문을 상세히 포함시켰습니다.
 
 ## Scope Control
 
@@ -46,12 +46,12 @@
 
 ## Verification Review
 
-- **단위 테스트 무결성**: [docs/verification/feature-article-embedding-storage.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/feature-article-embedding-storage.md)에 정적 컴파일(`compileall`), 전체 136건의 단위 테스트(`unittest discover`), 드라이런 실행 확인 등에 대한 명확한 실행 명령어와 실행 상태 결과가 상세하게 증적(evidence)으로 기록되어 있어 결과 신뢰도가 매우 높습니다.
+- **단위 테스트 무결성**: [docs/verification/feature-article-embedding-storage.md](~/news-lab/docs/verification/feature-article-embedding-storage.md)에 정적 컴파일(`compileall`), 전체 136건의 단위 테스트(`unittest discover`), 드라이런 실행 확인 등에 대한 명확한 실행 명령어와 실행 상태 결과가 상세하게 증적(evidence)으로 기록되어 있어 결과 신뢰도가 매우 높습니다.
 - **예외 사항 기록**: 환경 제약으로 인해 설치되지 않은 `pytest` 대신 표준 모듈인 `unittest`를 활용하여 테스트를 우회 수행한 점과 실제 원격 DB가 필요한 E2E/통합 테스트 영역은 '사람이 수행 필요' 상태로 솔직하고 구체적이게 남겨둔 검증 무결성을 칭찬합니다.
 
 ## Documentation Review
 
-- **문서 갱신 정합성**: [docs/architecture/database.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/architecture/database.md) 및 [docs/architecture/pipeline.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/architecture/pipeline.md)에 `article_embeddings` 테이블의 연관 관계와 배치 임베딩의 흐름이 최신으로 정비되었으며, [docs/runbooks/database-check.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/runbooks/database-check.md)에도 프로덕션 적용/검증 가이드라인이 명료한 한국어로 기재되어 가독성이 뛰어납니다.
+- **문서 갱신 정합성**: [docs/architecture/database.md](~/news-lab/docs/architecture/database.md) 및 [docs/architecture/pipeline.md](~/news-lab/docs/architecture/pipeline.md)에 `article_embeddings` 테이블의 연관 관계와 배치 임베딩의 흐름이 최신으로 정비되었으며, [docs/runbooks/database-check.md](~/news-lab/docs/runbooks/database-check.md)에도 프로덕션 적용/검증 가이드라인이 명료한 한국어로 기재되어 가독성이 뛰어납니다.
 
 ## Problems Found
 
@@ -96,18 +96,19 @@
 
 ### Approved Fixes Verification
 
-- **Approved Fixes**: [docs/fixes/feature-article-embedding-storage-approved-fixes.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/fixes/feature-article-embedding-storage-approved-fixes.md) 문서상에 승인된 수정 사항이 존재하지 않으며, 기존 구현이 요구 조건을 모두 완전히 만족합니다 (해결됨).
+- **Approved Fixes**: [docs/fixes/feature-article-embedding-storage-approved-fixes.md](~/news-lab/docs/fixes/feature-article-embedding-storage-approved-fixes.md) 문서상에 승인된 수정 사항이 존재하지 않으며, 기존 구현이 요구 조건을 모두 완전히 만족합니다 (해결됨).
 
 ### Verification Evidence
 
 `git status --short`에 표시된 모든 변경(modified/untracked) 파일 및 핵심 코드를 실제 분석 및 실행하여 교차 검증하였습니다.
+
 - **검토 대상 핵심 파일**:
-  - 데이터베이스 마이그레이션: [db/migrations/006_create_article_embeddings.sql](file:///Users/seochanjin/workspace/NewsLab/news-lab/db/migrations/006_create_article_embeddings.sql)
-  - 코어 비즈니스 로직: [app/utils/article_embedding_storage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/utils/article_embedding_storage.py)
-  - 배치 처리 CLI 스크립트: [scripts/embed_articles.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/embed_articles.py)
-  - 신규 단위 테스트 코드: [tests/test_article_embedding_migration.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/tests/test_article_embedding_migration.py), [tests/test_article_embedding_storage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/tests/test_article_embedding_storage.py), [tests/test_embed_articles.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/tests/test_embed_articles.py)
-  - 작업 전후 요구사항 및 검증 데이터: [docs/tasks/feature-article-embedding-storage.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/feature-article-embedding-storage.md), [docs/verification/feature-article-embedding-storage.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/feature-article-embedding-storage.md)
-  - 아키텍처 및 런북: [docs/architecture/database.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/architecture/database.md), [docs/architecture/pipeline.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/architecture/pipeline.md), [docs/runbooks/database-check.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/runbooks/database-check.md)
+  - 데이터베이스 마이그레이션: [db/migrations/006_create_article_embeddings.sql](~/news-lab/db/migrations/006_create_article_embeddings.sql)
+  - 코어 비즈니스 로직: [app/utils/article_embedding_storage.py](~/news-lab/app/utils/article_embedding_storage.py)
+  - 배치 처리 CLI 스크립트: [scripts/embed_articles.py](~/news-lab/scripts/embed_articles.py)
+  - 신규 단위 테스트 코드: [tests/test_article_embedding_migration.py](~/news-lab/tests/test_article_embedding_migration.py), [tests/test_article_embedding_storage.py](~/news-lab/tests/test_article_embedding_storage.py), [tests/test_embed_articles.py](~/news-lab/tests/test_embed_articles.py)
+  - 작업 전후 요구사항 및 검증 데이터: [docs/tasks/feature-article-embedding-storage.md](~/news-lab/docs/tasks/feature-article-embedding-storage.md), [docs/verification/feature-article-embedding-storage.md](~/news-lab/docs/verification/feature-article-embedding-storage.md)
+  - 아키텍처 및 런북: [docs/architecture/database.md](~/news-lab/docs/architecture/database.md), [docs/architecture/pipeline.md](~/news-lab/docs/architecture/pipeline.md), [docs/runbooks/database-check.md](~/news-lab/docs/runbooks/database-check.md)
 - **테스트 실행 결과**:
   - `python -m compileall app scripts tests && python -m unittest discover -s tests` 실행 시 총 136개의 테스트 케이스가 성공적으로 통과(`OK`)하여 무결함을 확인했습니다.
 
@@ -122,4 +123,3 @@
 ### Verdict
 
 - **APPROVED**
-
