@@ -1,332 +1,45 @@
-# NewsLab Architecture
+# NewsLab Backend Architecture
 
-## Overview
+이 문서는 backend architecture의 진입점이다. 세부 내용을 한 파일에 반복하지
+않고 작업 범위에 맞는 문서만 선택해 읽는다.
 
-NewsLab is a FastAPI-based news processing service deployed on a K3s cluster.
+## 전체 구조
 
-The project collects RSS articles, stores article metadata in PostgreSQL/Supabase, extracts raw article text, and exposes the data through FastAPI APIs.
-
-This project is intended to be operated and evolved over time, not just built once.
-
-## Components
-
-### Agent workflow artifacts
-
-NewsLab uses file-based artifacts to coordinate implementation, review, approved fixes, and verification across agents.
-
-Main workflow directories:
-
-- `docs/tasks/` - task specifications
-- `docs/reviews/` - Antigravity, CodeRabbit, and other review outputs
-- `docs/fixes/` - human-approved review fixes that were applied or deferred
-- `docs/verification/` - actual commands run, results, skipped checks, and human-provided verification logs
-- `docs/pr/` - PR drafts
-- `docs/devlog/` - worklog drafts
-
-PR and devlog drafts should be based on `docs/verification/` for test and verification claims.
-
-### FastAPI API server
-
-Serves read APIs for article data, collector status, and raw article extraction results.
-
-Main router files:
-
-- `app/routers/articles.py`
-- `app/routers/sources.py`
-- `app/routers/collector.py`
-- `app/routers/raw_articles.py`
-- `app/routers/health.py`
-- `app/routers/version.py`
-- `app/routers/extractor.py`
-- `app/routers/topics.py`
-
-### PostgreSQL / Supabase database
-
-Stores source metadata, collected article metadata, RSS collection run history, and extracted raw article text.
-
-Current tables:
-
-- `sources`
-- `articles`
-- `crawl_runs`
-- `raw_articles`
-- `extraction_runs`
-
-### RSS collector
-
-Script:
-
-- `scripts/collect_rss.py`
-
-Purpose:
-
-- Reads enabled RSS sources from `sources`
-- Fetches RSS feed entries
-- Inserts new articles into `articles`
-- Records execution results in `crawl_runs`
-
-Execution:
-
-- Runs manually in local development
-- Runs automatically in K3s through the `news-rss-collector` CronJob
-- Scheduled daily at 03:00 Asia/Seoul
-- CronJob command: `python scripts/collect_rss.py`
-
-### Raw article extractor
-
-Script:
-
-- `scripts/extract_raw_articles.py`
-
-Purpose:
-
-- Reads article URLs from `articles`
-- Fetches article HTML
-- Extracts article-like text using BeautifulSoup
-- Stores extraction result in `raw_articles`
-
-Execution:
-
-- Runs manually in local development
-- Runs automatically in K3s through the `news-raw-extractor` CronJob
-- Scheduled daily at 03:30 Asia/Seoul
-- CronJob command: `python scripts/extract_raw_articles.py`
-
-### K3s deployment
-
-The FastAPI application is containerized and deployed to a K3s cluster running on Oracle Cloud A1 nodes.
-
-Kubernetes manifests are stored under:
-
-- `k8s/`
-
-Kubernetes apply, rollout, secret changes, and production verification are human-controlled operations.
-
-### Backend API ingress and TLS
-
-The `news-api-ingress` Traefik Ingress routes both backend API hosts to the
-same `news-api` Service:
-
-- Existing host: `api.dev-scj.site`
-- New host: `api.newslab.ai.kr`
-
-cert-manager uses the `letsencrypt-prod` ClusterIssuer and keeps separate TLS
-Secrets for the two hosts:
-
-- `api.dev-scj.site` → `news-api-tls`
-- `api.newslab.ai.kr` → `news-api-newslab-tls`
-
-The existing host remains available during the new-domain rollout. Changing
-the frontend API base URL to `api.newslab.ai.kr` is a separate follow-up task
-after the new certificate and HTTPS endpoint have been verified by the human
-operator.
-
-### Tailscale remote operation path
-
-Tailscale is used to access Oracle K3s nodes through a private network.
-
-The kubeconfig still uses:
+NewsLab은 RSS 수집, 기사 원문 추출, 주제 생성 결과를 PostgreSQL/Supabase에
+저장하고 FastAPI read API로 제공한다. application과 scheduled pipeline은
+Oracle Cloud A1 node의 K3s cluster에서 실행된다.
 
 ```text
-https://127.0.0.1:6443
+RSS source
+→ collector / extractor / topic pipeline
+→ PostgreSQL/Supabase
+→ FastAPI
+→ backend API domain
 ```
 
-The local Kubernetes API access is done through an SSH tunnel over Tailscale.
+## 현재 운영 구성
 
-## Data Flow
+- API application: `news-api`
+- Database: PostgreSQL/Supabase
+- Scheduled workload:
+  - `news-rss-collector`
+  - `news-raw-extractor`
+  - `news-daily-topic-pipeline`
+- Runtime: Oracle Cloud A1 기반 K3s
+- Ingress: Traefik
+- TLS: cert-manager와 `letsencrypt-prod`
+- Remote operation: Tailscale SSH tunnel
 
-### RSS collection flow
+운영 변경과 production verification은 사람이 수행한다.
 
-```text
-RSS feed
-→ scripts/collect_rss.py
-→ articles table
-→ crawl_runs table
-→ /articles API
-→ /collector/status API
-→ /collector/runs API
-```
+## 세부 문서
 
-### Raw article extraction flow
+- [전체 구성과 책임](architecture/overview.md)
+- [FastAPI와 API 영역](architecture/backend-api.md)
+- [Database 구조](architecture/database.md)
+- [수집·추출·주제 pipeline](architecture/pipeline.md)
+- [K3s runtime](architecture/k3s-runtime.md)
+- [Domain과 TLS](architecture/domains.md)
 
-```text
-articles.url
-→ scripts/extract_raw_articles.py
-→ article HTML
-→ BeautifulSoup extraction
-→ raw_articles table
-→ /raw-articles API
-```
-
-### Raw article extractor run history flow
-
-```text
-scripts/extract_raw_articles.py
-→ extraction_runs table
-→ /extractor/status API
-→ /extractor/runs API
-```
-
-### Daily topic flow
-
-```text
-scripts/run_daily_topic_pipeline.py
-→ topics table
-→ topic_articles table
-→ /topics API
-→ /topics/home API
-```
-
-`/topics/home` is a lightweight read API for the frontend home screen. It
-returns only the topic card fields needed for the first viewport and avoids the
-pagination count, provider/debug metadata, and connected article join used by
-the broader topics APIs.
-
-## Database Tables
-
-### sources
-
-Stores news source metadata and feed configuration.
-
-### articles
-
-Stores collected article metadata.
-
-Main data:
-
-- `source_id`
-- `title`
-- `url`
-- `category`
-- `summary`
-- `published_at`
-- `tags`
-
-### crawl_runs
-
-Stores RSS collector execution history.
-
-Main data:
-
-- `started_at`
-- `finished_at`
-- `status`
-- `inserted_count`
-- `skipped_count`
-- `error_message`
-
-### raw_articles
-
-Stores extracted raw article text.
-
-Main data:
-
-- `article_id`
-- `raw_text`
-- `extraction_status`
-- `error_message`
-- `extracted_at`
-
-### extraction_runs
-
-Stores raw article extractor execution history.
-
-Main data:
-
-- `started_at`
-- `finished_at`
-- `status`
-- `success_count`
-- `failed_count`
-- `error_message`
-
-## APIs
-
-### Basic APIs
-
-- `GET /`
-- `GET /health`
-- `GET /version`
-
-### Source APIs
-
-- `GET /sources`
-
-### Article APIs
-
-- `GET /articles`
-- `GET /articles/{article_id}`
-
-Supported query parameters include:
-
-- `page`
-- `page_size`
-- `source`
-- `category`
-- `keyword`
-
-### Topic APIs
-
-- `GET /topics`
-- `GET /topics/home`
-- `GET /topics/{topic_id}`
-
-`GET /topics` is the paginated archive API. It supports filters and returns
-pagination metadata plus topic metadata such as provider, model, status, and
-timestamps.
-
-`GET /topics/home` is the home-screen MVP API. It returns a small bounded list
-of topic cards with `id`, `topic_date`, `title_ko`, `summary_ko`, `keywords`,
-`article_count`, and `source_count`, plus response metadata
-`generated_at` and `topic_date`. It does not return connected articles and does
-not implement Redis, DB snapshots, static JSON, or frontend revalidation yet.
-
-`GET /topics/{topic_id}` is the detail API. It returns the full topic fields and
-the connected article list through `topic_articles`.
-
-### Collector APIs
-
-- `GET /collector/status`
-- `GET /collector/runs`
-- `GET /collector/runs?status=success`
-- `GET /collector/runs?status=failed`
-
-### Raw Article APIs
-
-- `GET /raw-articles`
-- `GET /raw-articles?status=success`
-- `GET /raw-articles?status=failed`
-- `GET /raw-articles/{article_id}`
-
-### Extractor APIs
-
-- `GET /extractor/status`
-- `GET /extractor/runs`
-- `GET /extractor/runs?status=running`
-- `GET /extractor/runs?status=success`
-- `GET /extractor/runs?status=failed`
-
-## Current Manual Operations
-
-The following operations are intentionally manual:
-
-- Supabase SQL migration execution
-- PR merge
-- K3s rollout / restart
-- Kubernetes manifest apply
-- Secret creation or update
-- Production verification
-- OCI security rule changes
-
-## Not Yet Implemented
-
-The following are not implemented yet:
-
-- Automated tests
-- Lint / formatter setup
-- Article summarization
-- Keyword extraction
-- Embedding / RAG search
-- Frontend UI
-- Prometheus / Grafana monitoring
-- Backup automation
+운영 command는 [Runbook index](RUNBOOK.md), agent 작업 절차는
+[Backend agent workflow](agent/backend-workflow.md)를 참고한다.
