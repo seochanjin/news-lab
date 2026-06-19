@@ -22,7 +22,11 @@ SUPPORTED_MODEL_DIMENSIONS = {
 }
 
 FIND_EMBEDDING_QUERY = text("""
-    select id, source_text_hash
+    select
+        id,
+        source_text_hash,
+        dimension,
+        embedding::text as embedding
     from article_embeddings
     where article_id = :article_id
       and provider = :provider
@@ -78,6 +82,7 @@ class EmbeddingResult:
     article_id: int
     status: str
     source_text_hash: str
+    embedding: tuple[float, ...] | None = None
 
 
 def normalize_source_text(value: str | None) -> str:
@@ -113,6 +118,16 @@ def vector_to_pgvector(vector: Sequence[float]) -> str:
     return "[" + ",".join(str(float(value)) for value in vector) + "]"
 
 
+def pgvector_to_vector(value: str) -> tuple[float, ...]:
+    normalized = value.strip()
+    if not normalized.startswith("[") or not normalized.endswith("]"):
+        raise ValueError("stored embedding is not a pgvector text value")
+    body = normalized[1:-1].strip()
+    if not body:
+        return ()
+    return tuple(float(item) for item in body.split(","))
+
+
 def _existing_embedding(
     connection,
     *,
@@ -144,6 +159,7 @@ def store_article_embedding(
     provider: str = DEFAULT_EMBEDDING_PROVIDER,
     source_text_type: str = DEFAULT_SOURCE_TEXT_TYPE,
     expected_dimension: int | None = None,
+    persist: bool = True,
 ) -> EmbeddingResult:
     article_id = int(article["id"])
     source_text = build_article_embedding_input(
@@ -153,6 +169,7 @@ def store_article_embedding(
     if not source_text:
         raise ValueError(f"article {article_id} has no embedding source text")
 
+    dimension = expected_dimension or get_model_dimension(embedding_provider.model)
     source_text_hash = hash_source_text(source_text)
     existing = _existing_embedding(
         connection,
@@ -162,9 +179,25 @@ def store_article_embedding(
         source_text_type=source_text_type,
     )
     if existing and existing["source_text_hash"] == source_text_hash:
-        return EmbeddingResult(article_id, "reused", source_text_hash)
+        stored_dimension = int(existing["dimension"])
+        if stored_dimension != dimension:
+            raise ValueError(
+                "stored embedding dimension mismatch: "
+                f"expected {dimension}, got {stored_dimension}"
+            )
+        embedding = pgvector_to_vector(str(existing["embedding"]))
+        if len(embedding) != dimension:
+            raise ValueError(
+                "stored embedding vector dimension mismatch: "
+                f"expected {dimension}, got {len(embedding)}"
+            )
+        return EmbeddingResult(
+            article_id,
+            "reused",
+            source_text_hash,
+            embedding,
+        )
 
-    dimension = expected_dimension or get_model_dimension(embedding_provider.model)
     embeddings = embedding_provider.embed([source_text])
     if len(embeddings) != 1:
         raise ValueError(
@@ -175,6 +208,15 @@ def store_article_embedding(
         raise ValueError(
             "embedding dimension mismatch: "
             f"expected {dimension}, got {len(embedding)}"
+        )
+
+    embedding_tuple = tuple(float(value) for value in embedding)
+    if not persist:
+        return EmbeddingResult(
+            article_id,
+            "updated" if existing else "created",
+            source_text_hash,
+            embedding_tuple,
         )
 
     params = {
@@ -193,7 +235,12 @@ def store_article_embedding(
         raise RuntimeError("embedding upsert did not return a result")
     status = "created" if upsert_result["inserted"] else "updated"
 
-    return EmbeddingResult(article_id, status, source_text_hash)
+    return EmbeddingResult(
+        article_id,
+        status,
+        source_text_hash,
+        embedding_tuple,
+    )
 
 
 def find_similar_article_embeddings(

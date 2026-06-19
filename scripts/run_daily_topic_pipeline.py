@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -11,6 +12,13 @@ from sqlalchemy import text
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app.utils.article_embedding_storage import (
+    DEFAULT_EMBEDDING_PROVIDER,
+    DEFAULT_SOURCE_TEXT_TYPE,
+    EmbeddingResult,
+    get_model_dimension,
+    store_article_embedding,
+)
 from app.utils.raw_extraction_targets import select_raw_extraction_targets
 from app.utils.topic_grouping import group_articles
 from app.utils.topic_representatives import select_topic_representatives
@@ -39,6 +47,7 @@ DEFAULT_MAX_ARTICLES_PER_TOPIC = 3
 DEFAULT_MAX_RAW_CHARS_PER_ARTICLE = 3000
 DEFAULT_EXTRACTION_LIMIT = 5
 MAX_DAILY_PROVIDER_ARTICLES = 300
+MIN_CLUSTERING_ARTICLES = 2
 LOGGER = logging.getLogger(__name__)
 
 
@@ -133,11 +142,13 @@ def build_pipeline(
     args,
     *,
     embedding_provider=None,
+    embedding_acquirer=None,
     summary_provider=None,
     extraction_executor=None,
     raw_text_loader=None,
     save_executor=None,
 ):
+    pipeline_started_at = time.monotonic()
     articles = prepare_articles(rows)
     embedder = embedding_provider or create_embedding_provider(args)
     LOGGER.info(
@@ -146,19 +157,45 @@ def build_pipeline(
         embedder.model,
         len(articles),
     )
-    embeddings = embedder.embed([article["embedding_input"] for article in articles])
+    (
+        clustering_articles,
+        embeddings,
+        embedding_stats,
+        embedding_failures,
+    ) = acquire_pipeline_embeddings(
+        articles,
+        embedder,
+        embedding_acquirer=embedding_acquirer,
+    )
     LOGGER.info(
-        "embedding provider end: provider=%s model=%s embedding_count=%d",
+        "embedding provider end: provider=%s model=%s embedding_count=%d "
+        "created=%d updated=%d reused=%d failed=%d",
         "openai" if args.use_embedding_provider else "deterministic",
         embedder.model,
         len(embeddings),
+        embedding_stats["created"],
+        embedding_stats["updated"],
+        embedding_stats["reused"],
+        embedding_stats["failed"],
     )
-    LOGGER.info("topic candidate generation start: article_count=%d", len(articles))
-    grouped = group_articles(
-        articles,
-        embeddings,
-        similarity_threshold=args.similarity_threshold,
+    LOGGER.info(
+        "topic candidate generation start: article_count=%d",
+        len(clustering_articles),
     )
+    if len(clustering_articles) < MIN_CLUSTERING_ARTICLES:
+        LOGGER.warning(
+            "topic candidate generation skipped: clustering_input_count=%d "
+            "minimum=%d",
+            len(clustering_articles),
+            MIN_CLUSTERING_ARTICLES,
+        )
+        grouped = []
+    else:
+        grouped = group_articles(
+            clustering_articles,
+            embeddings,
+            similarity_threshold=args.similarity_threshold,
+        )
     representatives = select_topic_representatives(
         grouped,
         max_candidates_per_topic=args.max_articles_per_topic,
@@ -168,7 +205,7 @@ def build_pipeline(
         raw_states,
         max_targets_per_topic=args.max_articles_per_topic,
     )
-    _attach_report_metadata(target_topics, articles)
+    _attach_report_metadata(target_topics, clustering_articles)
     ordered_topics = sorted(target_topics, key=_topic_selection_key)
     LOGGER.info(
         "topic candidate generation end: candidate_count=%d",
@@ -233,7 +270,7 @@ def build_pipeline(
     save_plan = build_save_plan(generation_result, args)
     save_plan["analysis"]["raw_extraction_performed"] = bool(extraction_results)
     _apply_similarity_scores(save_plan, selected_topics)
-    if args.execute:
+    if args.execute and save_plan["topics"]:
         if save_executor is None:
             raise ValueError("execute mode requires save_executor")
         LOGGER.info(
@@ -258,8 +295,15 @@ def build_pipeline(
             "execute_requested": args.execute,
             "window_hours": args.window_hours,
             "article_count": len(articles),
+            "candidate_articles": len(articles),
+            "embedding_created": embedding_stats["created"],
+            "embedding_updated": embedding_stats["updated"],
+            "embedding_reused": embedding_stats["reused"],
+            "embedding_failed": embedding_stats["failed"],
+            "clustering_input_count": len(clustering_articles),
             "topic_candidate_count": len(target_topics),
             "selected_topic_count": len(selected_topics),
+            "topic_count": len(selected_topics),
             "reference_topic_count": len(reference_topics),
             "selected_article_ids": selected_article_ids,
             "embedding_provider": (
@@ -272,10 +316,15 @@ def build_pipeline(
             "raw_extraction_success_count": extraction_success_count,
             "raw_extraction_failed_count": extraction_failed_count,
             "db_write_performed": save_plan["analysis"]["db_write_performed"],
+            "pipeline_elapsed_seconds": round(
+                time.monotonic() - pipeline_started_at,
+                6,
+            ),
         },
         "topics": [_public_topic(topic) for topic in selected_topics],
         "reference_topics": [_public_topic(topic) for topic in reference_topics],
         "extraction_results": extraction_results,
+        "embedding_failures": embedding_failures,
         "topic_summaries": summaries,
         "save_plan": save_plan,
     }
@@ -292,8 +341,12 @@ def render_report(result):
         f"- Execute requested: `{str(analysis['execute_requested']).lower()}`",
         f"- Window hours: {analysis['window_hours']}",
         f"- Article count: {analysis['article_count']}",
+        f"- Candidate articles: {analysis['candidate_articles']}",
+        f"- Embedding created/updated/reused/failed: {analysis['embedding_created']} / {analysis['embedding_updated']} / {analysis['embedding_reused']} / {analysis['embedding_failed']}",
+        f"- Clustering input count: {analysis['clustering_input_count']}",
         f"- Topic candidate count: {analysis['topic_candidate_count']}",
         f"- Selected topic count: {analysis['selected_topic_count']}",
+        f"- Topic count: {analysis['topic_count']}",
         f"- Reference topic count: {analysis['reference_topic_count']}",
         f"- Selected article IDs: `{analysis['selected_article_ids']}`",
         "- Topic ordering: `article_count desc, source_count desc, average similarity desc, latest published_at desc, topic_candidate_id asc`",
@@ -302,6 +355,7 @@ def render_report(result):
         f"- Raw extraction performed: `{str(analysis['raw_extraction_performed']).lower()}`",
         f"- Raw extraction success/failure: {analysis['raw_extraction_success_count']} / {analysis['raw_extraction_failed_count']}",
         f"- DB write performed: `{str(analysis['db_write_performed']).lower()}`",
+        f"- Pipeline elapsed seconds: {analysis['pipeline_elapsed_seconds']}",
         "",
         "## Selected Topics",
         "",
@@ -415,11 +469,41 @@ def _run():
 
         extraction_executor = extract_selected_article_ids
 
+    embedder = create_embedding_provider(args)
+    embedding_acquirer = None
+    if args.use_embedding_provider:
+        expected_dimension = get_model_dimension(embedder.model)
+
+        def embedding_acquirer(article):
+            if args.execute:
+                with engine.begin() as connection:
+                    return store_article_embedding(
+                        connection,
+                        article=article,
+                        embedding_provider=embedder,
+                        provider=DEFAULT_EMBEDDING_PROVIDER,
+                        source_text_type=DEFAULT_SOURCE_TEXT_TYPE,
+                        expected_dimension=expected_dimension,
+                    )
+            with engine.connect() as connection:
+                connection.execute(text("set transaction read only"))
+                return store_article_embedding(
+                    connection,
+                    article=article,
+                    embedding_provider=embedder,
+                    provider=DEFAULT_EMBEDDING_PROVIDER,
+                    source_text_type=DEFAULT_SOURCE_TEXT_TYPE,
+                    expected_dimension=expected_dimension,
+                    persist=False,
+                )
+
     result = build_pipeline(
         rows,
         raw_states,
         raw_texts,
         args,
+        embedding_provider=embedder,
+        embedding_acquirer=embedding_acquirer,
         extraction_executor=extraction_executor,
         raw_text_loader=load_raw_texts if args.execute else None,
         save_executor=save if args.execute else None,
@@ -428,6 +512,73 @@ def _run():
         args.report_path.parent.mkdir(parents=True, exist_ok=True)
         args.report_path.write_text(render_report(result), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+def acquire_pipeline_embeddings(
+    articles,
+    embedding_provider,
+    *,
+    embedding_acquirer=None,
+):
+    if embedding_acquirer is None:
+        embeddings = embedding_provider.embed(
+            [article["embedding_input"] for article in articles]
+        )
+        if len(articles) != len(embeddings):
+            raise ValueError("articles and embeddings must have the same length")
+        return (
+            articles,
+            embeddings,
+            {
+                "created": len(embeddings),
+                "updated": 0,
+                "reused": 0,
+                "failed": 0,
+            },
+            [],
+        )
+
+    clustering_articles = []
+    embeddings = []
+    stats = {"created": 0, "updated": 0, "reused": 0, "failed": 0}
+    failures = []
+    for article in articles:
+        try:
+            result = embedding_acquirer(article)
+        except Exception as error:
+            stats["failed"] += 1
+            failure = {
+                "article_id": article.get("id"),
+                "error": _safe_embedding_error(error),
+            }
+            failures.append(failure)
+            LOGGER.warning(
+                "article embedding failed: article_id=%s error=%s",
+                failure["article_id"],
+                failure["error"],
+            )
+            continue
+
+        if not isinstance(result, EmbeddingResult):
+            raise TypeError("embedding acquirer returned an invalid result")
+        if result.status not in {"created", "updated", "reused"}:
+            raise ValueError(
+                f"unsupported embedding status: {result.status}"
+            )
+        if result.embedding is None:
+            raise ValueError("embedding result does not include a vector")
+
+        clustering_articles.append(article)
+        embeddings.append(result.embedding)
+        stats[result.status] += 1
+    return clustering_articles, embeddings, stats, failures
+
+
+def _safe_embedding_error(error: Exception) -> str:
+    message = " ".join(str(error).split())
+    if len(message) > 200:
+        message = message[:197] + "..."
+    return f"{type(error).__name__}: {message}" if message else type(error).__name__
 
 
 def _selected_article_ids(topics):

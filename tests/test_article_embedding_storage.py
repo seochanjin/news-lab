@@ -4,6 +4,7 @@ from app.utils.article_embedding_storage import (
     build_article_embedding_input,
     find_similar_article_embeddings,
     hash_source_text,
+    pgvector_to_vector,
     store_article_embedding,
 )
 
@@ -44,7 +45,7 @@ class FakeConnection:
     def execute(self, statement, params):
         sql = str(statement)
         self.calls.append((sql, params))
-        if "select id, source_text_hash" in sql:
+        if "source_text_hash" in sql and "from article_embeddings" in sql:
             return FakeResult(first=self.existing)
         if "as similarity" in sql:
             return FakeResult(rows=self.similarity_rows)
@@ -95,7 +96,12 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
     def test_same_hash_reuses_without_provider_call(self):
         source_text = build_article_embedding_input(title="Article", summary="Summary")
         connection = FakeConnection(
-            existing={"id": 10, "source_text_hash": hash_source_text(source_text)}
+            existing={
+                "id": 10,
+                "source_text_hash": hash_source_text(source_text),
+                "dimension": 3,
+                "embedding": "[0.1,0.2,0.3]",
+            }
         )
         provider = FakeProvider()
 
@@ -107,6 +113,7 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "reused")
+        self.assertEqual(result.embedding, (0.1, 0.2, 0.3))
         self.assertEqual(provider.calls, [])
         self.assertEqual(len(connection.calls), 1)
 
@@ -122,6 +129,7 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "created")
+        self.assertEqual(result.embedding, (0.1, 0.2, 0.3))
         self.assertEqual(len(provider.calls), 1)
         self.assertIn("insert into article_embeddings", connection.calls[-1][0])
         self.assertIn(
@@ -152,6 +160,7 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "updated")
+        self.assertEqual(result.embedding, (0.1, 0.2, 0.3))
         self.assertIn("on conflict", connection.calls[-1][0])
 
     def test_insert_race_returns_updated_instead_of_unique_error(self):
@@ -166,6 +175,7 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
         )
 
         self.assertEqual(result.status, "updated")
+        self.assertEqual(result.embedding, (0.1, 0.2, 0.3))
         self.assertEqual(len(provider.calls), 1)
         self.assertIn("on conflict", connection.calls[-1][0])
 
@@ -213,6 +223,48 @@ class ArticleEmbeddingStorageTests(unittest.TestCase):
             )
 
         self.assertEqual(len(connection.calls), 1)
+
+    def test_stored_dimension_mismatch_stops_before_provider_call(self):
+        source_text = build_article_embedding_input(title="Article", summary="Summary")
+        connection = FakeConnection(
+            existing={
+                "id": 10,
+                "source_text_hash": hash_source_text(source_text),
+                "dimension": 2,
+                "embedding": "[0.1,0.2]",
+            }
+        )
+        provider = FakeProvider()
+
+        with self.assertRaisesRegex(ValueError, "stored embedding dimension mismatch"):
+            store_article_embedding(
+                connection,
+                article={"id": 1, "title": "Article", "summary": "Summary"},
+                embedding_provider=provider,
+                expected_dimension=3,
+            )
+
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_non_persistent_generation_skips_database_write(self):
+        connection = FakeConnection()
+        provider = FakeProvider()
+
+        result = store_article_embedding(
+            connection,
+            article={"id": 1, "title": "Article", "summary": "Summary"},
+            embedding_provider=provider,
+            expected_dimension=3,
+            persist=False,
+        )
+
+        self.assertEqual(result.status, "created")
+        self.assertEqual(result.embedding, (0.1, 0.2, 0.3))
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_pgvector_text_is_converted_to_clustering_vector(self):
+        self.assertEqual(pgvector_to_vector("[0.1,-0.2,3]"), (0.1, -0.2, 3.0))
 
     def test_similarity_query_filters_compatible_embeddings(self):
         rows = [{"article_id": 2, "similarity": 0.9}]

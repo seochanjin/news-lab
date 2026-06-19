@@ -42,6 +42,59 @@ curl "https://api.dev-scj.site/topics/home"
 - 실패한 Job은 이후 성공 여부와 무관하게 원인을 확인한다.
 - Collector/extractor API 이력이 Job 시각과 상태에 부합한다.
 
+## Daily topic embedding reuse 확인
+
+Daily topic pipeline은 기존 실행 단위와 `04:00 Asia/Seoul` schedule을 유지하며
+`article_embeddings`를 clustering 입력으로 재사용한다.
+
+사람이 안전한 환경 변수 주입과 DB write 영향을 확인한 뒤 동일 조건으로 두 번
+실행한다.
+
+```bash
+python scripts/run_daily_topic_pipeline.py \
+  --window-hours 24 \
+  --max-articles 300 \
+  --similarity-threshold 0.70 \
+  --max-topics 3 \
+  --max-reference-topics 10 \
+  --max-articles-per-topic 3 \
+  --max-raw-chars-per-article 3000 \
+  --use-embedding-provider \
+  --use-summary-provider \
+  --summary-model gpt-5-nano \
+  --execute
+```
+
+각 실행의 JSON result 또는 log에서 다음 값을 기록한다.
+
+```text
+candidate_articles
+embedding_created
+embedding_updated
+embedding_reused
+embedding_failed
+clustering_input_count
+topic_count
+pipeline_elapsed_seconds
+```
+
+첫 실행은 기존 저장 상태에 따라 created/updated/reused가 섞일 수 있다. 동일
+조건의 두 번째 실행에서는 기사 입력이 바뀌지 않았다면 `embedding_reused`가
+증가하고 provider 신규 호출 대상은 감소해야 한다.
+
+확인 기준:
+
+- `candidate_articles = embedding_created + embedding_updated +
+  embedding_reused + embedding_failed`
+- `clustering_input_count = candidate_articles - embedding_failed`
+- 실패 article ID와 짧은 오류 요약만 log에 있고 credential과 전체 원문이 없음
+- 정상 vector가 2건 미만이면 `topic_count=0`이고 topic DB save를 수행하지 않음
+- 기존 topic clustering threshold와 summary/save 계약이 유지됨
+
+실패 시 embedding failure가 일부 article에 한정됐는지, 정상 vector 수가 최소
+조건을 충족했는지, topic save 단계까지 진행했는지를 구분한다. 운영 article의
+제목이나 요약을 검증 목적으로 수정하지 않는다.
+
 ## 실패한 Job 조사
 
 ```bash
