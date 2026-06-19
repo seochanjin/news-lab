@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from app.utils.article_embedding_storage import EmbeddingResult
 from app.utils.topic_summary import DeterministicSummaryProvider
 from scripts.run_daily_topic_pipeline import (
     _topic_selection_key,
@@ -16,7 +17,11 @@ from scripts.run_daily_topic_pipeline import (
 class FakeEmbeddingProvider:
     model = "fake-embedding-v1"
 
+    def __init__(self):
+        self.calls = []
+
     def embed(self, texts):
+        self.calls.append(list(texts))
         return [[1.0, 0.0] for _ in texts]
 
 
@@ -48,7 +53,13 @@ def rows():
     ]
 
 
-def args(*, execute=False, max_topics=5, max_reference_topics=10):
+def args(
+    *,
+    execute=False,
+    max_topics=5,
+    max_reference_topics=10,
+    use_embedding_provider=False,
+):
     return SimpleNamespace(
         execute=execute,
         window_hours=24,
@@ -61,7 +72,7 @@ def args(*, execute=False, max_topics=5, max_reference_topics=10):
         max_articles_per_topic=3,
         max_raw_chars_per_article=3000,
         extraction_limit=5,
-        use_embedding_provider=False,
+        use_embedding_provider=use_embedding_provider,
         use_summary_provider=False,
         summary_model="gpt-5-nano",
     )
@@ -249,6 +260,10 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
         report = render_report(result)
 
         self.assertIn("Window hours: 24", report)
+        self.assertIn("Candidate articles: 2", report)
+        self.assertIn("Embedding created/updated/reused/failed: 2 / 0 / 0 / 0", report)
+        self.assertIn("Clustering input count: 2", report)
+        self.assertIn("Pipeline elapsed seconds", report)
         self.assertIn("Selected article IDs", report)
         self.assertIn("Similarity scores", report)
         self.assertIn("Raw extraction success/failure", report)
@@ -260,6 +275,91 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
         self.assertIn("#### Generated Summary", report)
         self.assertIn("## Reference Candidates", report)
         self.assertNotIn("raw text one", report)
+
+    def test_stored_embeddings_preserve_article_vector_order_and_stats(self):
+        input_rows = rows() + [
+            {
+                **rows()[0],
+                "id": 3,
+                "source": "C",
+                "title": "AI topic article 3",
+                "url": "https://example.com/3",
+            },
+            {
+                **rows()[0],
+                "id": 4,
+                "source": "D",
+                "title": "AI topic article 4",
+                "url": "https://example.com/4",
+            }
+        ]
+        provider = FakeEmbeddingProvider()
+        results = {
+            1: EmbeddingResult(1, "reused", "hash-1", (1.0, 0.0)),
+            2: RuntimeError("provider unavailable"),
+            3: EmbeddingResult(3, "created", "hash-3", (1.0, 0.0)),
+            4: EmbeddingResult(4, "updated", "hash-4", (1.0, 0.0)),
+        }
+
+        def acquire(article):
+            result = results[article["id"]]
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+        result = build_pipeline(
+            input_rows,
+            {},
+            {1: "one", 3: "three"},
+            args(use_embedding_provider=True),
+            embedding_provider=provider,
+            embedding_acquirer=acquire,
+            summary_provider=DeterministicSummaryProvider(),
+        )
+
+        self.assertEqual(provider.calls, [])
+        self.assertEqual(result["analysis"]["candidate_articles"], 4)
+        self.assertEqual(result["analysis"]["embedding_created"], 1)
+        self.assertEqual(result["analysis"]["embedding_updated"], 1)
+        self.assertEqual(result["analysis"]["embedding_reused"], 1)
+        self.assertEqual(result["analysis"]["embedding_failed"], 1)
+        self.assertEqual(result["analysis"]["clustering_input_count"], 3)
+        self.assertEqual(
+            [article["article_id"] for article in result["topics"][0]["articles"]],
+            [1, 3, 4],
+        )
+        self.assertEqual(
+            result["embedding_failures"],
+            [{"article_id": 2, "error": "RuntimeError: provider unavailable"}],
+        )
+
+    def test_dimension_failure_excludes_article_and_skips_clustering_below_minimum(self):
+        save_executor = Mock()
+
+        def acquire(article):
+            if article["id"] == 1:
+                return EmbeddingResult(1, "reused", "hash-1", (1.0, 0.0))
+            raise ValueError("stored embedding dimension mismatch")
+
+        result = build_pipeline(
+            rows(),
+            {},
+            {},
+            args(execute=True, use_embedding_provider=True),
+            embedding_provider=FakeEmbeddingProvider(),
+            embedding_acquirer=acquire,
+            summary_provider=DeterministicSummaryProvider(),
+            save_executor=save_executor,
+        )
+
+        self.assertEqual(result["analysis"]["embedding_reused"], 1)
+        self.assertEqual(result["analysis"]["embedding_failed"], 1)
+        self.assertEqual(result["analysis"]["clustering_input_count"], 1)
+        self.assertEqual(result["analysis"]["topic_count"], 0)
+        self.assertEqual(result["topics"], [])
+        self.assertEqual(result["topic_summaries"], [])
+        self.assertFalse(result["analysis"]["db_write_performed"])
+        save_executor.assert_not_called()
 
 
 if __name__ == "__main__":
