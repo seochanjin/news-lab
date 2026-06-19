@@ -545,17 +545,6 @@ def acquire_pipeline_embeddings(
     for article in articles:
         try:
             result = embedding_acquirer(article)
-            if not isinstance(result, EmbeddingResult):
-                raise TypeError("embedding acquirer returned an invalid result")
-            if result.status not in {"created", "updated", "reused"}:
-                raise ValueError(
-                    f"unsupported embedding status: {result.status}"
-                )
-            if result.embedding is None:
-                raise ValueError("embedding result does not include a vector")
-            clustering_articles.append(article)
-            embeddings.append(result.embedding)
-            stats[result.status] += 1
         except Exception as error:
             stats["failed"] += 1
             failure = {
@@ -568,6 +557,20 @@ def acquire_pipeline_embeddings(
                 failure["article_id"],
                 failure["error"],
             )
+            continue
+
+        if not isinstance(result, EmbeddingResult):
+            raise TypeError("embedding acquirer returned an invalid result")
+        if result.status not in {"created", "updated", "reused"}:
+            raise ValueError(
+                f"unsupported embedding status: {result.status}"
+            )
+        if result.embedding is None:
+            raise ValueError("embedding result does not include a vector")
+
+        clustering_articles.append(article)
+        embeddings.append(result.embedding)
+        stats[result.status] += 1
     return clustering_articles, embeddings, stats, failures
 
 

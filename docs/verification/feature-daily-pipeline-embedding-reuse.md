@@ -238,3 +238,64 @@ pipeline_elapsed_seconds=87.256793
 ```
 
 56차의 production E2E verification은 통과했다.
+
+## Approved Fix Verification
+
+### Approved Fix 1: Embedding acquirer contract fail-fast
+
+Command:
+`python -m unittest tests.test_run_daily_topic_pipeline tests.test_article_embedding_storage tests.test_daily_topic_pipeline_cronjob_manifest`
+
+Result:
+관련 30 tests가 통과했다.
+
+Status: passed
+
+Notes:
+Acquirer 반환 타입, status와 vector 계약 위반의 fail-fast 동작을 추가로
+검증했다. Provider/DB article-level 예외 격리, 실패 이후 정상 처리, 순서 유지,
+상태 집계, 최소 clustering 입력 gate와 CronJob contract도 유지됐다.
+
+Command:
+`python -m compileall app scripts tests; python -m unittest discover -s tests; git diff --check; git status --short --branch`
+
+Result:
+Compileall과 `git diff --check`가 통과했고 전체 145 tests가 통과했다. 현재
+branch는 `feature/daily-pipeline-embedding-reuse`다.
+
+Status: passed
+
+Notes:
+기존 argparse validation의 예상 error output과 article-level failure warning이
+출력됐지만 unittest 최종 결과는 `OK`다.
+
+Command:
+`git diff --name-only; git diff --stat; git diff -- k8s db/migrations app/routers app/main.py requirements.txt`
+
+Result:
+Approved fix 관련 pipeline/test/fixes/verification 문서와 기존 user change인
+CodeRabbit review 파일이 출력됐다. 금지 영역 diff는 없었다.
+
+Status: passed
+
+Notes:
+CodeRabbit review 파일 변경은 작업 시작 전부터 존재했으며 Codex는 수정하지
+않았다. K3s manifest, DB migration, Public API와 dependency 변경은 없다.
+
+### Production E2E 재실행
+
+Status: skipped
+
+Notes:
+Approved fix는 정상 `EmbeddingResult` 처리·저장·재사용 runtime 경로를 변경하지
+않고 callback 반환 계약 위반만 fail-fast 처리한다. Approved fixes 문서가
+허용한 기준에 따라 external provider와 production DB를 사용하는 E2E는
+재실행하지 않았다. 기존 production E2E 결과를 유지한다.
+
+### 최종 review
+
+Status: human-required
+
+Notes:
+Antigravity 재검토는 자동 실행하지 않았다. Approved fix 적용 결과와 이
+verification 기록을 기준으로 사람이 재검토해야 한다.

@@ -8,6 +8,7 @@ from app.utils.article_embedding_storage import EmbeddingResult
 from app.utils.topic_summary import DeterministicSummaryProvider
 from scripts.run_daily_topic_pipeline import (
     _topic_selection_key,
+    acquire_pipeline_embeddings,
     build_pipeline,
     parse_args,
     render_report,
@@ -360,6 +361,46 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
         self.assertEqual(result["topic_summaries"], [])
         self.assertFalse(result["analysis"]["db_write_performed"])
         save_executor.assert_not_called()
+
+    def test_invalid_acquirer_result_type_fails_fast(self):
+        with self.assertRaisesRegex(
+            TypeError,
+            "embedding acquirer returned an invalid result",
+        ):
+            acquire_pipeline_embeddings(
+                [{"id": 1}],
+                FakeEmbeddingProvider(),
+                embedding_acquirer=lambda article: None,
+            )
+
+    def test_invalid_acquirer_status_fails_fast(self):
+        with self.assertRaisesRegex(ValueError, "unsupported embedding status"):
+            acquire_pipeline_embeddings(
+                [{"id": 1}],
+                FakeEmbeddingProvider(),
+                embedding_acquirer=lambda article: EmbeddingResult(
+                    article["id"],
+                    "failed",
+                    "hash-1",
+                    (1.0, 0.0),
+                ),
+            )
+
+    def test_missing_acquirer_vector_fails_fast(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "embedding result does not include a vector",
+        ):
+            acquire_pipeline_embeddings(
+                [{"id": 1}],
+                FakeEmbeddingProvider(),
+                embedding_acquirer=lambda article: EmbeddingResult(
+                    article["id"],
+                    "reused",
+                    "hash-1",
+                    None,
+                ),
+            )
 
 
 if __name__ == "__main__":
