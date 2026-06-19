@@ -197,9 +197,14 @@ Review 규칙:
 Review 모드:
 - docs/reviews/${safe}-antigravity.md가 없거나 비어 있으면 최초 review다.
 - 기존 review가 있으면 재검토다.
-- 재검토에서는 기존 문제의 해결 여부와 새 문제를 구분한다.
+- 재검토에서는 최초 review 본문과 기존 Re-review 이력을 수정하지 않고 파일 아래에 다음 Re-review N만 추가한다.
+- 최초 review의 Problems Found 원문, Required Fixes Before PR 원문과 checkbox, Verdict를 수정하지 않는다.
+- 기존 문제는 번호 또는 명확한 제목으로 최초 review 항목과 연결한다.
+- 기존 문제의 해결 여부는 새 Re-review N의 Existing Problems Status에 기록한다.
 - 기존 문제 상태는 해결됨, 부분 해결, 미해결, 적용 대상 아님 중 하나로 판정한다.
-- 해결 근거를 diff와 verification 결과로 제시한다.
+- 해결 판정에는 Approved Fixes, 현재 diff와 verification evidence를 함께 기록한다.
+- 새 문제는 Re-review N의 New Problems Found에 기록한다.
+- 현재 재검토 기준의 PR blocker는 해당 Re-review N의 Required Fixes Before PR에 기록한다.
 - 최종 판단은 APPROVED, APPROVED WITH NOTES, CHANGES REQUIRED 중 하나를 사용한다.
 EOF
 }
@@ -232,7 +237,7 @@ $(print_review_rules "$safe")
 
 파일을 수정하지 말고 chat에만 출력한다.
 
-출력 구조:
+최초 review 출력 구조:
 
 ## Review Summary
 ## Requirement Coverage
@@ -242,12 +247,21 @@ $(print_review_rules "$safe")
 ## Scope Control
 ## Verification Review
 ## Documentation Review
-## Existing Problems Status
-## New Problems Found
+## Problems Found
 ## Required Fixes Before PR
 ## Optional Improvements
 ## Suggested Test Commands
 ## Verdict
+
+재검토 출력 구조:
+
+## Re-review N
+### Existing Problems Status
+### Approved Fixes Verification
+### Verification Evidence
+### New Problems Found
+### Required Fixes Before PR
+### Verdict
 EOF
 }
 
@@ -284,9 +298,13 @@ $(print_review_rules "$safe")
 - 기존 review 파일이 있으면 전면 재작성하지 않고 재검토 모드로 동작한다.
 - 기존 review 원문과 기존 Re-review 이력을 보존하고 파일 아래에 다음 번호의 Re-review N 섹션을 추가한다.
 - 기존 review를 삭제, 축약하거나 성공 결과로 치환하지 않는다.
-- 기존 문제의 원문은 변경하지 않고 재검토 섹션에 상태와 해결 근거를 기록한다.
-- 기존 Required Fixes Before PR는 실제 해결이 확인된 경우에만 체크한다.
-- 새 문제는 기존 문제와 구분해 기록한다.
+- 최초 review의 Problems Found 원문을 수정하지 않는다.
+- 최초 review의 Required Fixes Before PR 원문과 checkbox를 수정하지 않는다.
+- 최초 review의 Verdict를 수정하지 않는다.
+- 기존 Re-review 이력도 수정하지 않는다.
+- 기존 문제는 번호 또는 명확한 제목으로 최초 review 항목과 연결하고, 해결 상태와 근거는 새 Re-review N의 Existing Problems Status에 기록한다.
+- 새 문제는 새 Re-review N의 New Problems Found에 기록한다.
+- 현재 재검토 기준의 PR blocker는 새 Re-review N의 Required Fixes Before PR에 기록한다.
 - docs/fixes/${safe}-approved-fixes.md와 docs/verification/${safe}.md를 수정하지 않는다.
 
 최초 review 구조:

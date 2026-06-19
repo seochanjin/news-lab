@@ -342,3 +342,129 @@ wc -l \
 - 변경은 승인된 helper와 backend workflow/document artifact 범위에 한정됨
 - Backend application, DB/migration, Kubernetes manifest, Dockerfile,
   GitHub Actions, frontend 변경 없음
+
+## Approved Fix 9·10 적용 검증
+
+### 작업 전 상태와 승인 항목 확인
+
+```bash
+git status --short --branch
+sed -n '1,860p' docs/tasks/feature-backend-agent-workflow-docs.md
+sed -n '1,760p' docs/fixes/feature-backend-agent-workflow-docs-approved-fixes.md
+sed -n '1,760p' docs/verification/feature-backend-agent-workflow-docs.md
+sed -n '145,330p' scripts/agent_next_step.sh
+sed -n '1,180p' docs/agent/antigravity-review.md
+```
+
+결과:
+
+- Branch: `feature/backend-agent-workflow-docs`
+- 미적용 승인 항목은 Fix 9와 Fix 10으로 확인함
+- 작업 시작 시 기존 변경은 approved fixes 문서와 CodeRabbit review 문서였음
+- CodeRabbit review 문서는 수정하지 않음
+
+### 최초 review 출력 계약
+
+```bash
+bash -n scripts/agent_next_step.sh
+scripts/agent_next_step.sh antigravity-review \
+  > /tmp/agent-next-antigravity-review.txt
+scripts/agent_next_step.sh antigravity-review-write \
+  > /tmp/agent-next-antigravity-review-write.txt
+rg -n \
+  '^## Problems Found$|^## Existing Problems Status$|^## New Problems Found$|^## Required Fixes Before PR$|^## Verdict$' \
+  /tmp/agent-next-antigravity-review.txt \
+  /tmp/agent-next-antigravity-review-write.txt
+```
+
+결과:
+
+- `bash -n` 통과
+- 두 prompt 모두 최초 review 구조에 `Problems Found`,
+  `Required Fixes Before PR`, `Verdict`를 출력함
+- 최상위 `Existing Problems Status`와 `New Problems Found`는 출력되지 않음
+- `antigravity-review`와 `antigravity-review-write`의 최초 review 계약이
+  일치함
+
+### Append-only 재검토 계약
+
+```bash
+rg -n \
+  'Re-review N|Existing Problems Status|Approved Fixes Verification|Verification Evidence|New Problems Found|checkbox.*수정하지|Verdict.*수정하지|원문.*보존|불변' \
+  scripts/agent_next_step.sh \
+  docs/agent/antigravity-review.md
+rg -n \
+  'Problems Found|Existing Problems Status|New Problems Found|Required Fixes Before PR|Re-review N|원문|checkbox|Verdict' \
+  scripts/agent_next_step.sh \
+  docs/agent/antigravity-review.md \
+  docs/fixes/feature-backend-agent-workflow-docs-approved-fixes.md
+```
+
+결과:
+
+- 최초 review 본문, `Problems Found`, `Required Fixes Before PR` 원문과
+  checkbox, `Verdict` 수정 금지 규칙 확인
+- 기존 `Re-review` 이력 수정 금지 규칙 확인
+- 기존 문제를 번호 또는 제목으로 연결하고 `Existing Problems Status`에서
+  해결 상태를 판정하도록 명시함
+- 해결 근거로 Approved Fixes, current diff, verification evidence를
+  사용하도록 명시함
+- 새 문제와 현재 PR blocker를 새 `Re-review N` 내부에 기록하도록 명시함
+- Script와 `docs/agent/antigravity-review.md`의 최초/re-review 구조가 일치함
+
+### 기존 command 회귀와 민감정보
+
+```bash
+scripts/agent_next_step.sh --help
+scripts/agent_next_step.sh files
+scripts/agent_next_step.sh fixes-draft \
+  > /tmp/agent-next-fixes-draft.txt
+scripts/agent_next_step.sh pr-draft \
+  > /tmp/agent-next-pr-draft.txt
+scripts/agent_next_step.sh devlog-draft \
+  > /tmp/agent-next-devlog-draft.txt
+wc -l \
+  /tmp/agent-next-fixes-draft.txt \
+  /tmp/agent-next-pr-draft.txt \
+  /tmp/agent-next-devlog-draft.txt
+git grep -n -i -E \
+  'API_KEY|TOKEN|PASSWORD|PRIVATE KEY|BEGIN PRIVATE|DATABASE_URL=|SECRET=' \
+  -- \
+  scripts/agent_next_step.sh \
+  docs/agent \
+  docs/fixes/feature-backend-agent-workflow-docs-approved-fixes.md
+```
+
+결과:
+
+- 기존 command와 한국어 도움말 유지
+- `files`, `fixes-draft`, `pr-draft`, `devlog-draft` exit code 0
+- 세 prompt 출력 총 170줄
+- 실제 credential 값 없음
+- 민감정보 검색은 정책 문구와 검증 pattern만 반환함
+
+### 변경 범위와 미수행 항목
+
+```bash
+git diff --check
+git diff --name-only
+git diff --stat
+```
+
+결과:
+
+- `git diff --check` 통과
+- Fix 9·10 구현 변경은 `scripts/agent_next_step.sh`와
+  `docs/agent/antigravity-review.md`에 한정됨
+- Approved fixes와 verification 문서는 적용 결과 기록을 위해 갱신함
+- 기존 `docs/reviews/feature-backend-agent-workflow-docs-coderabbit.md` 변경은
+  사람이 제공한 승인 근거이며 수정하지 않음
+- Backend application, DB/migration, Kubernetes, Docker, GitHub Actions,
+  frontend 변경 없음
+
+미수행:
+
+- 실제 Antigravity `Re-review N` append:
+  자동으로 Antigravity를 실행하지 않았으며 사람이 수행 필요
+- Production verification:
+  local prompt/policy 변경이므로 범위 밖

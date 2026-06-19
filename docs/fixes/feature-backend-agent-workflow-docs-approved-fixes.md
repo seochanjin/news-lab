@@ -167,9 +167,11 @@ docs/reviews/<safe-branch>-antigravity.md
 
 - [x] 기존 문제 원문은 삭제하거나 의미를 변경하지 않는다.
 - [x] 기존 문제의 상태를 확인할 때 해결 근거를 재검토 섹션에 기록한다.
-- [x] 기존 `Required Fixes Before PR` 항목은 실제 해결이 확인된 경우에만 체크한다.
+- [x] 최초 review의 `Required Fixes Before PR` 원문과 checkbox는 재검토 과정에서 수정하지 않는다.
+- [x] 기존 문제의 해결 여부는 `Re-review N` 내부의 `Existing Problems Status`에서 별도 checklist로 기록한다.
+- [x] 재검토 시점에 남아 있는 PR blocker는 `Re-review N` 내부의 `Required Fixes Before PR`에 새로 기록한다.
 - [x] 새로운 문제가 발견되면 기존 문제와 구분해 재검토 섹션에 추가한다.
-- [x] 재검토 후 현재 상태를 기준으로 최종 판단을 다시 기록한다.
+- [x] 재검토 후 현재 상태를 기준으로 해당 `Re-review N` 내부에 최종 판단을 기록한다.
 
 사용 가능한 최종 판단:
 
@@ -214,6 +216,158 @@ Indexes:
 
 - [x] Antigravity review는 최초 검토와 재검토 모두 동일한 review 파일을 사용한다고 안내한다.
 - [x] 별도의 rereview artifact 경로는 추가하지 않는다.
+
+### 9. 최초 Antigravity review 출력 구조를 정책 계약과 정렬
+
+CodeRabbit review에서 `scripts/agent_next_step.sh`의 Antigravity chat review 출력 구조와 agent policy의 출력 계약이 일치하지 않는 문제가 발견되었다.
+
+현재 chat review prompt는 다음 제목을 사용하도록 구성되어 있다.
+
+```md
+## Existing Problems Status
+
+## New Problems Found
+```
+
+그러나 최초 review 정책 계약은 다음 제목을 요구한다.
+
+```md
+## Problems Found
+```
+
+`Existing Problems Status`와 `New Problems Found`는 최초 review가 아니라 기존 review에 추가되는 재검토 섹션에서 사용해야 한다.
+
+- [x] 최초 Antigravity review의 출력 구조에 `## Problems Found`를 사용한다.
+- [x] 최초 review 최상위 구조에서 `## Existing Problems Status`를 제거한다.
+- [x] 최초 review 최상위 구조에서 `## New Problems Found`를 제거한다.
+- [x] `Existing Problems Status`와 `New Problems Found`는 `Re-review N` 내부에서만 사용한다.
+- [x] `antigravity-review`와 `antigravity-review-write`가 동일한 최초 review 출력 계약을 사용하도록 정렬한다.
+- [x] `docs/agent/antigravity-review.md`와 `scripts/agent_next_step.sh`의 출력 구조를 일치시킨다.
+
+최초 review 출력 구조:
+
+```md
+## Review Summary
+
+## Requirement Coverage
+
+## Code Quality / Maintainability
+
+## Security Review
+
+## Operational Risk
+
+## Scope Control
+
+## Verification Review
+
+## Documentation Review
+
+## Problems Found
+
+## Required Fixes Before PR
+
+## Optional Improvements
+
+## Suggested Test Commands
+
+## Verdict
+```
+
+재검토 출력 구조:
+
+```md
+## Re-review N
+
+### Existing Problems Status
+
+### Approved Fixes Verification
+
+### Verification Evidence
+
+### New Problems Found
+
+### Required Fixes Before PR
+
+### Verdict
+```
+
+### 10. 최초 review를 불변 기록으로 유지하는 append-only 재검토 규칙 적용
+
+CodeRabbit review에서 다음 두 규칙이 서로 충돌하는 문제가 발견되었다.
+
+```text
+기존 review 원문과 기존 Re-review 이력을 보존한다.
+기존 Required Fixes Before PR은 해결된 경우 체크한다.
+```
+
+기존 `Required Fixes Before PR` checkbox를 변경하면 최초 review가 불변 기록으로 보존되지 않는다.
+
+따라서 최초 review 전체를 immutable history로 유지하고, 해결 상태는 `Re-review N`에 별도로 기록한다.
+
+- [x] 최초 review의 본문을 재검토 과정에서 수정하지 않는다.
+- [x] 최초 review의 `Problems Found` 원문을 수정하지 않는다.
+- [x] 최초 review의 `Required Fixes Before PR` 원문과 checkbox를 수정하지 않는다.
+- [x] 최초 review의 `Verdict`를 수정하지 않는다.
+- [x] 기존 `Re-review` 이력도 수정하지 않는다.
+- [x] 기존 문제의 해결 여부는 새 `Re-review N`의 `Existing Problems Status`에 기록한다.
+- [x] 기존 문제는 번호 또는 명확한 제목으로 최초 review 항목과 연결한다.
+- [x] 해결 상태는 다음 중 하나를 사용한다.
+  - 해결됨
+  - 부분 해결
+  - 미해결
+  - 적용 대상 아님
+
+- [x] 해결 판정에는 Approved Fixes, 현재 diff와 verification evidence를 함께 기록한다.
+- [x] 새로 발견된 문제는 `New Problems Found`에 기록한다.
+- [x] 현재 재검토 기준의 PR blocker는 해당 `Re-review N` 내부의 `Required Fixes Before PR`에 기록한다.
+- [x] 기존 review를 삭제, 축약, 재작성하거나 성공 결과로 치환하지 않는다.
+
+재검토 예시:
+
+```md
+## Re-review 2
+
+### Existing Problems Status
+
+- [x] CR-1: 최초 review 출력 구조 불일치
+  - 상태: 해결됨
+  - 확인 근거:
+    - Approved Fix 9 적용 확인
+    - `scripts/agent_next_step.sh` diff 확인
+    - 최초 review prompt 출력 검증 확인
+
+- [x] CR-2: 재검토 기록 보존 규칙 충돌
+  - 상태: 해결됨
+  - 확인 근거:
+    - Approved Fix 10 적용 확인
+    - append-only 지침 확인
+    - 최초 review checkbox 수정 금지 규칙 확인
+
+### Approved Fixes Verification
+
+- [x] Approved Fix 9 적용 및 검증 완료
+- [x] Approved Fix 10 적용 및 검증 완료
+
+### Verification Evidence
+
+- `bash -n scripts/agent_next_step.sh`: 통과
+- 최초 review prompt 출력 계약: 확인
+- 재검토 append-only 규칙: 확인
+- `git diff --check`: 통과
+
+### New Problems Found
+
+- 없음
+
+### Required Fixes Before PR
+
+- 없음
+
+### Verdict
+
+- APPROVED
+```
 
 ## Rejected or Deferred Suggestions
 
@@ -296,41 +450,57 @@ Deferred.
 
 신규 `docs/agent/*`를 현재 기준으로 사용하고, 중복 제거는 별도 후속 작업에서 검토한다.
 
+### 8. Review schema 자동 검사 script 추가
+
+Deferred.
+
+다음과 같은 별도 script는 이번 task에 추가하지 않는다.
+
+```text
+scripts/check_review_contract.sh
+```
+
+이번 작업에서는 기존 read-only command로 최초 review와 재검토 출력 계약을 확인한다.
+
+자동 검사는 향후 workflow 자동화 차수에서 검토한다.
+
 ## Applied Changes
 
 - Approved Fix 1 적용
-  - `codex-implement`, `antigravity-review`, `antigravity-review-write`가 신규
-    `docs/agent/*` 기준 문서를 읽도록 변경했다.
-  - Architecture와 Runbook은 index로 안내하고 관련 세부 문서만 선택하도록
-    변경했다.
+  - `codex-implement`, `antigravity-review`, `antigravity-review-write`가 신규 `docs/agent/*` 기준 문서를 읽도록 변경했다.
+  - Architecture와 Runbook은 index로 안내하고 관련 세부 문서만 선택하도록 변경했다.
 
 - Approved Fix 2 적용
-  - `usage()`, workflow file 안내, 공통 규칙, 모든 생성 prompt와 오류 메시지를
-    한국어로 변경했다.
+  - `usage()`, workflow file 안내, 공통 규칙, 모든 생성 prompt와 오류 메시지를 한국어로 변경했다.
 
 - Approved Fix 3 적용
-  - WIP 1, 작업 단위 완료 순서, checklist 갱신, 문제 분류, end-to-end 및
-    human-controlled verification 규칙을 추가했다.
+  - WIP 1, 작업 단위 완료 순서, checklist 갱신, 문제 분류, end-to-end 및 human-controlled verification 규칙을 추가했다.
 
 - Approved Fix 4 적용
-  - `codex-apply-fixes`에 승인 항목만 적용하고 검증 완료 항목만 체크하며
-    `Applied Changes`와 verification을 실제 결과로 갱신하는 규칙을 추가했다.
+  - `codex-apply-fixes`에 승인 항목만 적용하고 검증 완료 항목만 체크하며 `Applied Changes`와 verification을 실제 결과로 갱신하는 규칙을 추가했다.
 
 - Approved Fix 5 적용
-  - Antigravity가 task checklist, Approved Fixes, diff, verification,
-    acceptance criteria를 함께 대조하도록 보완했다.
+  - Antigravity가 task checklist, Approved Fixes, diff, verification, acceptance criteria를 함께 대조하도록 보완했다.
 
 - Approved Fix 6~7 적용
-  - 최초 review와 재검토를 동일 review 파일에 누적하고 기존 원문과 이력을
-    보존하도록 review prompt와 agent 지침을 변경했다.
+  - 최초 review와 재검토를 동일 review 파일에 누적하고 기존 원문과 이력을 보존하도록 review prompt와 agent 지침을 변경했다.
 
 - Approved Fix 8 적용
-  - `files` 출력에 backend workflow 문서와 architecture/runbook index를
-    추가하고 단일 review 파일 사용을 안내했다.
+  - `files` 출력에 backend workflow 문서와 architecture/runbook index를 추가하고 단일 review 파일 사용을 안내했다.
 
 - 검증 중 수정
-  - Script 재작성 직후 executable bit가 사라져 직접 실행이 실패한 것을
-    확인했고 `chmod +x scripts/agent_next_step.sh`로 복원한 뒤 재검증했다.
+  - Script 재작성 직후 executable bit가 사라져 직접 실행이 실패한 것을 확인했다.
+  - `chmod +x scripts/agent_next_step.sh`로 실행 권한을 복원한 뒤 재검증했다.
+
+- Approved Fix 9 적용
+  - 최초 Antigravity review 출력에 `Problems Found`를 사용하도록 변경했다.
+  - `Existing Problems Status`와 `New Problems Found`는 `Re-review N` 내부에서만 사용하도록 변경했다.
+  - script와 `docs/agent/antigravity-review.md`의 출력 계약을 정렬했다.
+
+- Approved Fix 10 적용
+  - 최초 review의 본문, checkbox와 verdict를 수정하지 않는 append-only 규칙으로 변경했다.
+  - 기존 문제 해결 여부를 `Re-review N`의 새 checklist에서 판정하도록 변경했다.
+  - 재검토 시점의 blocker를 해당 재검토 섹션에 별도로 기록하도록 변경했다.
 
 ## Verification Required
 
@@ -423,10 +593,13 @@ scripts/agent_next_step.sh antigravity-review-write
 
 - writable file은 `docs/reviews/<safe-branch>-antigravity.md` 하나뿐이다.
 - 기존 review가 없으면 최초 review를 작성한다.
+- 최초 review에서는 `Problems Found`를 사용한다.
 - 기존 review가 있으면 내용을 보존하고 `Re-review N`을 추가한다.
 - 기존 문제 원문과 이전 재검토 이력을 삭제하지 않는다.
-- 해결이 확인된 기존 required fix만 체크한다.
-- 새 문제를 별도로 기록한다.
+- 최초 review의 문제 원문, checkbox와 verdict를 수정하지 않는다.
+- 기존 문제 해결 여부는 `Re-review N`의 `Existing Problems Status`에 기록한다.
+- 새 문제는 `New Problems Found`에 기록한다.
+- 재검토 시점의 blocker는 해당 `Re-review N`의 `Required Fixes Before PR`에 기록한다.
 - fixes 파일을 수정하지 않는다.
 - verification 파일을 수정하지 않는다.
 - 출력 설명이 한국어로 작성되어 있다.
@@ -463,7 +636,7 @@ scripts/agent_next_step.sh devlog-draft
 
 ### 9. 단일 review 파일 보존 방식 확인
 
-기존 review 파일의 checksum 또는 복사본을 확보한다.
+기존 review 파일의 복사본을 확보한다.
 
 ```bash
 cp \
@@ -483,11 +656,13 @@ diff -u \
 
 확인 기준:
 
-- 기존 review 내용이 삭제되지 않았다.
-- 기존 문제와 verdict 원문이 임의로 치환되지 않았다.
-- 파일 아래에 `Re-review 1` 섹션이 추가되었다.
-- 기존 문제의 해결 여부와 Approved Fixes 적용 결과가 기록되었다.
-- 새로운 문제가 있다면 별도로 기록되었다.
+- 최초 review의 모든 원문, checkbox와 verdict가 그대로 유지되었다.
+- 기존 `Re-review` 이력이 수정되지 않았다.
+- 파일 아래에 다음 `Re-review N` 섹션이 추가되었다.
+- 기존 문제의 해결 여부가 `Existing Problems Status`에 별도로 기록되었다.
+- Approved Fixes 적용 여부와 검증 근거가 재검토 섹션에 기록되었다.
+- 재검토 시점의 PR blocker가 별도 `Required Fixes Before PR`에 기록되었다.
+- 새로운 문제가 있다면 `New Problems Found`에 기록되었다.
 
 실제 Antigravity file write를 아직 수행하지 않았다면 이 검증은 `재검토 후 사람이 확인 필요`로 기록한다.
 
@@ -545,3 +720,91 @@ scripts/agent_next_step.sh antigravity-review-write
 - scope 위반 여부
 - 추가 필수 수정 여부
 - PR 제출 가능 여부
+
+### 13. 최초 review 출력 계약 검증
+
+```bash
+scripts/agent_next_step.sh antigravity-review \
+  > /tmp/agent-next-antigravity-review.txt
+
+scripts/agent_next_step.sh antigravity-review-write \
+  > /tmp/agent-next-antigravity-review-write.txt
+```
+
+다음 명령으로 heading을 확인한다.
+
+```bash
+rg -n \
+  '^## Problems Found$|^## Existing Problems Status$|^## New Problems Found$|^## Required Fixes Before PR$|^## Verdict$' \
+  /tmp/agent-next-antigravity-review.txt \
+  /tmp/agent-next-antigravity-review-write.txt
+```
+
+최초 review 출력 기준:
+
+```text
+## Problems Found 존재
+## Required Fixes Before PR 존재
+## Verdict 존재
+최상위 ## Existing Problems Status 없음
+최상위 ## New Problems Found 없음
+```
+
+### 14. 재검토 출력 계약 검증
+
+다음 문구가 review prompt와 agent policy에 존재하는지 확인한다.
+
+```bash
+rg -n \
+  'Re-review N|Existing Problems Status|Approved Fixes Verification|Verification Evidence|New Problems Found|checkbox.*수정하지|Verdict.*수정하지|원문.*보존|불변' \
+  scripts/agent_next_step.sh \
+  docs/agent/antigravity-review.md
+```
+
+필수 확인:
+
+```text
+Re-review N 내부의 Existing Problems Status
+Re-review N 내부의 Approved Fixes Verification
+Re-review N 내부의 Verification Evidence
+Re-review N 내부의 New Problems Found
+최초 review 원문 보존
+최초 Required Fixes checkbox 수정 금지
+최초 Verdict 수정 금지
+재검토 결과만 파일 아래에 추가
+```
+
+### 15. Shell 및 diff 재검증
+
+```bash
+bash -n scripts/agent_next_step.sh
+git diff --check
+git diff --name-only
+git diff --stat
+```
+
+확인 기준:
+
+- Approved Fix 9·10 관련 script와 문서만 추가 변경되었다.
+- backend application code 변경이 없다.
+- DB와 migration 변경이 없다.
+- Kubernetes, Docker와 GitHub Actions 변경이 없다.
+- frontend 변경이 없다.
+- `git diff --check`가 통과한다.
+
+### 16. CodeRabbit 지적 대응 확인
+
+```bash
+rg -n \
+  'Problems Found|Existing Problems Status|New Problems Found|Required Fixes Before PR|Re-review N|원문|checkbox|Verdict' \
+  scripts/agent_next_step.sh \
+  docs/agent/antigravity-review.md \
+  docs/fixes/feature-backend-agent-workflow-docs-approved-fixes.md
+```
+
+확인 기준:
+
+- 최초 review와 재검토 구조가 명시적으로 분리되어 있다.
+- policy 문서와 script prompt의 출력 계약이 일치한다.
+- 최초 review가 불변 기록으로 유지된다.
+- 해결 상태는 재검토 섹션에서만 기록된다.
