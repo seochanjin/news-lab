@@ -23,7 +23,6 @@ RSS source
 - Database: PostgreSQL/Supabase
 - Scheduled workload:
   - `news-rss-collector`
-  - `news-raw-extractor`
   - `news-daily-topic-pipeline`
 - Runtime: Oracle Cloud A1 기반 K3s
 - Ingress: Traefik

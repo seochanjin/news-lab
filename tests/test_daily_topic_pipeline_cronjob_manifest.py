@@ -5,6 +5,8 @@ import yaml
 
 
 MANIFEST_PATH = Path("k8s/news-daily-topic-pipeline-cronjob.yaml")
+RSS_MANIFEST_PATH = Path("k8s/news-rss-collector-cronjob.yaml")
+RAW_EXTRACTOR_MANIFEST_PATH = Path("k8s/news-raw-extractor-cronjob.yaml")
 
 
 class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
@@ -94,6 +96,17 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
                 },
             },
         )
+
+    def test_pipeline_replaces_scheduled_raw_extractor(self):
+        rss_manifest = yaml.safe_load(
+            RSS_MANIFEST_PATH.read_text(encoding="utf-8")
+        )
+
+        self.assertFalse(RAW_EXTRACTOR_MANIFEST_PATH.exists())
+        self.assertEqual(rss_manifest["spec"]["schedule"], "0 3 * * *")
+        self.assertEqual(rss_manifest["spec"]["timeZone"], "Asia/Seoul")
+        self.assertEqual(self.spec["schedule"], "0 4 * * *")
+        self.assertEqual(self.spec["timeZone"], "Asia/Seoul")
 
 
 if __name__ == "__main__":

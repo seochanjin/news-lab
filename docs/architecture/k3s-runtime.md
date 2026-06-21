@@ -9,10 +9,12 @@ Repository의 Kubernetes 정의는 `k8s/`에 있다.
 
 - `news-api.yaml`: Deployment, Service, Ingress
 - `news-rss-collector-cronjob.yaml`: RSS collector CronJob
-- `news-raw-extractor-cronjob.yaml`: raw extractor CronJob
 - `news-daily-topic-pipeline-cronjob.yaml`: daily topic pipeline CronJob
 - `cluster-issuer.yaml`: cert-manager ClusterIssuer
 - `monitoring/`: kube-prometheus-stack 설정
+
+Daily topic pipeline은 topic을 먼저 선정한 뒤 selected article의 원문만 확보한다.
+별도 `news-raw-extractor` CronJob은 배포 대상에 포함하지 않는다.
 
 API와 CronJob manifest는 `workload: app` node selector를 사용하고
 `seocj/news-api:latest` image를 참조한다.
