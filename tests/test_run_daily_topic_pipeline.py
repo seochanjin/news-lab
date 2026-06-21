@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -12,6 +12,7 @@ from scripts.run_daily_topic_pipeline import (
     build_pipeline,
     parse_args,
     render_report,
+    resolve_pipeline_context,
 )
 
 
@@ -34,6 +35,17 @@ class SequenceEmbeddingProvider:
 
     def embed(self, texts):
         return self.embeddings
+
+
+class FailFirstSummaryProvider(DeterministicSummaryProvider):
+    def __init__(self):
+        self.call_count = 0
+
+    def summarize(self, topic_input):
+        self.call_count += 1
+        if self.call_count == 1:
+            raise RuntimeError("summary provider unavailable")
+        return super().summarize(topic_input)
 
 
 def rows():
@@ -169,6 +181,30 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
         self.assertEqual(saved_articles[0]["role"], "representative")
         self.assertEqual(saved_articles[1]["role"], "supporting")
 
+    def test_pipeline_date_uses_asia_seoul_date_at_utc_boundary(self):
+        context = resolve_pipeline_context(
+            started_at_utc=datetime(2026, 6, 20, 19, 0, tzinfo=timezone.utc)
+        )
+
+        result = build_pipeline(
+            rows(),
+            {},
+            {1: "raw text one", 2: "raw text two"},
+            args(),
+            embedding_provider=FakeEmbeddingProvider(),
+            summary_provider=DeterministicSummaryProvider(),
+            pipeline_context=context,
+        )
+
+        self.assertEqual(context.pipeline_date, date(2026, 6, 21))
+        self.assertEqual(context.business_timezone, "Asia/Seoul")
+        self.assertEqual(result["analysis"]["pipeline_date"], date(2026, 6, 21))
+        self.assertEqual(result["analysis"]["pipeline_date_source"], "started_at_local")
+        self.assertEqual(
+            {topic["topic_date"] for topic in result["save_plan"]["topics"]},
+            {date(2026, 6, 21)},
+        )
+
     def test_execute_uses_injected_extraction_loader_and_save(self):
         extraction_executor = Mock(
             return_value=[
@@ -199,8 +235,65 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
         self.assertTrue(result["analysis"]["raw_extraction_performed"])
         self.assertEqual(result["analysis"]["raw_extraction_success_count"], 1)
         self.assertEqual(result["analysis"]["raw_extraction_failed_count"], 1)
+        self.assertEqual(result["analysis"]["raw_extracted_count"], 1)
+        self.assertEqual(result["analysis"]["raw_failed_count"], 1)
+        self.assertEqual(result["analysis"]["raw_missing_count"], 1)
         self.assertTrue(result["analysis"]["db_write_performed"])
         self.assertTrue(result["save_plan"]["analysis"]["raw_extraction_performed"])
+
+    def test_raw_stage_reuses_existing_text_and_extracts_only_missing_selected_article(self):
+        extraction_executor = Mock(
+            return_value=[{"article_id": 2, "status": "success"}]
+        )
+        raw_text_loader = Mock(
+            return_value={1: "stored raw text", 2: "new raw text"}
+        )
+
+        result = build_pipeline(
+            rows(),
+            {
+                1: {
+                    "has_raw_text": True,
+                    "extraction_status": "success",
+                },
+                2: {
+                    "has_raw_text": False,
+                    "extraction_status": "pending",
+                },
+            },
+            {},
+            args(execute=True),
+            embedding_provider=FakeEmbeddingProvider(),
+            summary_provider=DeterministicSummaryProvider(),
+            extraction_executor=extraction_executor,
+            raw_text_loader=raw_text_loader,
+            save_executor=lambda plan: plan,
+        )
+
+        extraction_executor.assert_called_once_with([2], limit=5)
+        raw_text_loader.assert_called_once_with([1, 2])
+        self.assertEqual(result["analysis"]["selected_article_count"], 2)
+        self.assertEqual(result["analysis"]["raw_reused_count"], 1)
+        self.assertEqual(result["analysis"]["raw_extracted_count"], 1)
+        self.assertEqual(result["analysis"]["raw_failed_count"], 0)
+        self.assertEqual(result["analysis"]["raw_missing_count"], 0)
+
+    def test_dry_run_loads_raw_text_only_after_selected_articles_are_known(self):
+        raw_text_loader = Mock(return_value={1: "one", 2: "two"})
+
+        result = build_pipeline(
+            rows(),
+            {},
+            {},
+            args(),
+            embedding_provider=FakeEmbeddingProvider(),
+            summary_provider=DeterministicSummaryProvider(),
+            raw_text_loader=raw_text_loader,
+        )
+
+        raw_text_loader.assert_called_once_with([1, 2])
+        self.assertEqual(result["analysis"]["raw_reused_count"], 2)
+        self.assertEqual(result["analysis"]["raw_extracted_count"], 0)
 
     def test_reference_topics_do_not_enter_extraction_summary_or_save(self):
         input_rows = rows() + [
@@ -247,6 +340,41 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
         self.assertIn("#### Reference Articles", report)
         self.assertIn("AI topic article 1", report)
         self.assertNotIn("raw text 1", report)
+
+    def test_summary_failure_is_isolated_to_one_topic(self):
+        input_rows = rows() + [
+            {
+                **rows()[0],
+                "id": article_id,
+                "source": source,
+                "title": f"Other topic article {article_id}",
+                "url": f"https://example.com/{article_id}",
+            }
+            for article_id, source in ((3, "C"), (4, "D"))
+        ]
+
+        result = build_pipeline(
+            input_rows,
+            {},
+            {
+                1: "one",
+                2: "two",
+                3: "three",
+                4: "four",
+            },
+            args(max_topics=2),
+            embedding_provider=SequenceEmbeddingProvider(
+                [[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]]
+            ),
+            summary_provider=FailFirstSummaryProvider(),
+        )
+
+        self.assertEqual(result["analysis"]["selected_topic_count"], 2)
+        self.assertEqual(result["analysis"]["generated_topic_count"], 1)
+        self.assertEqual(result["analysis"]["failed_topic_count"], 1)
+        self.assertEqual(len(result["topic_summaries"]), 1)
+        self.assertEqual(len(result["topic_failures"]), 1)
+        self.assertEqual(len(result["save_plan"]["topics"]), 1)
 
     def test_report_contains_required_pipeline_fields(self):
         result = build_pipeline(

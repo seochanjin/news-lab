@@ -7,11 +7,13 @@
 | CronJob | Schedule | Entry point |
 | --- | --- | --- |
 | `news-rss-collector` | `03:00 Asia/Seoul` | `scripts/collect_rss.py` |
-| `news-raw-extractor` | `03:30 Asia/Seoul` | `scripts/extract_raw_articles.py` |
 | `news-daily-topic-pipeline` | `04:00 Asia/Seoul` | `scripts/run_daily_topic_pipeline.py` |
 
 Manifest의 값이 source of truth다. Schedule 변경은 별도 task와 사람의 apply가
 필요하다.
+
+`news-raw-extractor`는 repository 배포 대상에서 제거됐다. 기존 cluster object
+삭제와 manifest 반영은 human operator가 수행한다.
 
 ## Read-only 상태 확인
 
@@ -22,7 +24,7 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get jobs \
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods \
   -l app=news-rss-collector
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods \
-  -l app=news-raw-extractor
+  -l app=news-daily-topic-pipeline
 ```
 
 Human operator가 API 확인을 허용한 경우:
@@ -40,12 +42,13 @@ curl "https://api.dev-scj.site/topics/home"
 - `LAST SCHEDULE`이 각 schedule 이후 갱신된다.
 - 최근 scheduled Job이 `Complete`다.
 - 실패한 Job은 이후 성공 여부와 무관하게 원인을 확인한다.
-- Collector/extractor API 이력이 Job 시각과 상태에 부합한다.
+- Collector 이력과 topic 생성 결과가 각 Job 시각과 상태에 부합한다.
 
 ## Daily topic embedding reuse 확인
 
 Daily topic pipeline은 기존 실행 단위와 `04:00 Asia/Seoul` schedule을 유지하며
-`article_embeddings`를 clustering 입력으로 재사용한다.
+`article_embeddings`를 clustering 입력으로 재사용한다. Topic 선정 뒤 selected
+article만 원문 확보 대상으로 삼고, 기존 `raw_articles.raw_text`는 재사용한다.
 
 사람이 안전한 환경 변수 주입과 DB write 영향을 확인한 뒤 동일 조건으로 두 번
 실행한다.
@@ -75,6 +78,12 @@ embedding_reused
 embedding_failed
 clustering_input_count
 topic_count
+raw_reused_count
+raw_extracted_count
+raw_failed_count
+raw_missing_count
+pipeline_date
+business_timezone
 pipeline_elapsed_seconds
 ```
 
@@ -90,6 +99,7 @@ pipeline_elapsed_seconds
 - 실패 article ID와 짧은 오류 요약만 log에 있고 credential과 전체 원문이 없음
 - 정상 vector가 2건 미만이면 `topic_count=0`이고 topic DB save를 수행하지 않음
 - 기존 topic clustering threshold와 summary/save 계약이 유지됨
+- `pipeline_date`와 저장된 `topics.topic_date`가 `Asia/Seoul` 기준으로 일치함
 
 실패 시 embedding failure가 일부 article에 한정됐는지, 정상 vector 수가 최소
 조건을 충족했는지, topic save 단계까지 진행했는지를 구분한다. 운영 article의
@@ -128,7 +138,8 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl delete job "$JOB_NAME"
 
 CronJob suspend, re-enable, delete, manifest apply는 사람이 수행한다. Daily topic
 pipeline의 문제가 다른 workload에 영향을 준다면 우선 schedule suspend 여부를
-판단하고 기존 raw extractor 변경은 별도 결정으로 유지한다.
+판단한다. Repository에서 제거된 기존 raw extractor CronJob object의 삭제 또는
+복구는 사람이 manifest version과 영향 범위를 확인한 뒤 결정한다.
 
 ```bash
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl patch cronjob \

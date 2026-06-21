@@ -26,8 +26,9 @@ articles.url
 → /raw-articles, /extractor/status, /extractor/runs
 ```
 
-K3s의 `news-raw-extractor` CronJob은 `03:30 Asia/Seoul`에 실행되도록
-manifest에 정의되어 있다.
+Raw extraction helper와 기존 `raw_articles`, `extraction_runs` 구조는 유지한다.
+Scheduled 선추출 CronJob은 운영 흐름에서 제거하고, Daily topic pipeline이
+topic 선정 후 selected article 가운데 저장 원문이 없는 기사만 추출한다.
 
 ## Daily topic pipeline
 
@@ -35,9 +36,9 @@ manifest에 정의되어 있다.
 article candidate
 → article_embeddings hash 확인
 → 저장 vector 재사용 또는 embedding 생성·저장
-→ grouping / representative selection
-→ 필요한 raw article 처리
-→ summary 생성
+→ 유사 기사 clustering / topic과 대표·관련 기사 선정
+→ selected article의 저장 원문 재사용 또는 신규 추출
+→ 원문 기반 topic summary 생성
 → topics / topic_articles
 → /topics, /topics/home, /topics/{topic_id}
 ```
@@ -45,6 +46,36 @@ article candidate
 진입점은 `scripts/run_daily_topic_pipeline.py`다.
 `news-daily-topic-pipeline` CronJob은 `04:00 Asia/Seoul`에 실행되도록
 manifest에 정의되어 있다.
+
+Pipeline 시작 시 `Asia/Seoul` 기준 `pipeline_date`를 한 번 결정한다. 기사 후보,
+embedding, topic 선정, 원문 확보, summary/save 단계는 같은 실행 컨텍스트를
+전달받으며 최종 `topics.topic_date`도 이 날짜를 사용한다.
+
+내부 단계의 책임은 다음과 같다.
+
+1. 기사 후보 및 embedding 준비
+2. 유사 기사 clustering 및 topic 선정
+3. selected article 원문 확보
+4. topic summary 생성 및 저장
+
+실행 진입점은 CLI, 실행 context, runtime dependency와 단계 호출 순서만
+조정한다. 단계 구현과 결과 계약은 다음 package에 분리되어 있다.
+
+```text
+app/services/daily_topic_pipeline/
+├── context.py
+├── models.py
+├── embedding_stage.py
+├── topic_selection_stage.py
+├── raw_acquisition_stage.py
+├── summary_persistence_stage.py
+├── runtime.py
+└── reporting.py
+```
+
+`context.py`와 `models.py`는 stage module을 import하지 않는다. 각 stage는 공통
+context와 결과 타입에만 의존하며, 단계 사이 결과는 같은 Python process에서
+객체로 전달한다.
 
 Provider 호출과 DB write 여부는 script option에 따라 달라진다. Agent는
 task에서 허용한 dry-run만 실행하며, DB write나 운영 CronJob 실행은 자동으로

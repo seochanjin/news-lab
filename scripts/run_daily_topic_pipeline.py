@@ -4,7 +4,6 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -12,31 +11,27 @@ from sqlalchemy import text
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
-from app.utils.article_embedding_storage import (
-    DEFAULT_EMBEDDING_PROVIDER,
-    DEFAULT_SOURCE_TEXT_TYPE,
-    EmbeddingResult,
-    get_model_dimension,
-    store_article_embedding,
+from app.services.daily_topic_pipeline import (
+    acquire_pipeline_embeddings,
+    acquire_selected_article_raw_texts,
+    cluster_and_select_topics,
+    create_embedding_acquirer,
+    create_raw_text_loader,
+    create_save_executor,
+    prepare_article_embeddings,
+    public_topic,
+    render_report,
+    resolve_pipeline_context,
+    summarize_and_save_topics,
+    topic_selection_key,
 )
-from app.utils.raw_extraction_targets import select_raw_extraction_targets
-from app.utils.topic_grouping import group_articles
-from app.utils.topic_representatives import select_topic_representatives
-from app.utils.topic_summary import (
-    DEFAULT_SUMMARY_MODEL,
-    SUPPORTED_SUMMARY_MODELS,
-    build_topic_summary_inputs,
-    summarize_topic_inputs,
-)
+from app.utils.topic_summary import DEFAULT_SUMMARY_MODEL, SUPPORTED_SUMMARY_MODELS
 from scripts.analyze_raw_extraction_targets import get_raw_extraction_states
 from scripts.analyze_topic_groups import (
     create_database_engine,
     create_embedding_provider,
     get_articles,
-    prepare_articles,
 )
-from scripts.generate_topic_summary_report import create_summary_provider, get_raw_texts
-from scripts.save_topic_summaries import build_save_plan, execute_save_plan
 
 
 DEFAULT_MAX_ARTICLES = 100
@@ -47,8 +42,11 @@ DEFAULT_MAX_ARTICLES_PER_TOPIC = 3
 DEFAULT_MAX_RAW_CHARS_PER_ARTICLE = 3000
 DEFAULT_EXTRACTION_LIMIT = 5
 MAX_DAILY_PROVIDER_ARTICLES = 300
-MIN_CLUSTERING_ARTICLES = 2
 LOGGER = logging.getLogger(__name__)
+
+# Preserve the existing test and caller import contract while implementations
+# live in the service package.
+_topic_selection_key = topic_selection_key
 
 
 def parse_args(argv=None):
@@ -147,256 +145,135 @@ def build_pipeline(
     extraction_executor=None,
     raw_text_loader=None,
     save_executor=None,
+    pipeline_context=None,
 ):
+    """Daily topic pipeline의 네 stage를 기존 순서대로 조정한다.
+
+    하나의 `PipelineContext`를 embedding, topic 선택, 원문 확보, summary/save
+    단계에 전달한다. Provider와 DB adapter는 호출자가 주입할 수 있어 테스트와
+    dry-run에서 외부 부수 효과를 차단한다. 반환값은 기존 report와 JSON 계약을
+    유지하는 통합 결과다.
+    """
+
     pipeline_started_at = time.monotonic()
-    articles = prepare_articles(rows)
+    pipeline_context = pipeline_context or resolve_pipeline_context()
     embedder = embedding_provider or create_embedding_provider(args)
-    LOGGER.info(
-        "embedding provider start: provider=%s model=%s article_count=%d",
-        "openai" if args.use_embedding_provider else "deterministic",
-        embedder.model,
-        len(articles),
-    )
-    (
-        clustering_articles,
-        embeddings,
-        embedding_stats,
-        embedding_failures,
-    ) = acquire_pipeline_embeddings(
-        articles,
-        embedder,
+
+    embedding_result = prepare_article_embeddings(
+        rows,
+        args,
+        pipeline_context=pipeline_context,
+        embedding_provider=embedder,
         embedding_acquirer=embedding_acquirer,
     )
-    LOGGER.info(
-        "embedding provider end: provider=%s model=%s embedding_count=%d "
-        "created=%d updated=%d reused=%d failed=%d",
-        "openai" if args.use_embedding_provider else "deterministic",
-        embedder.model,
-        len(embeddings),
-        embedding_stats["created"],
-        embedding_stats["updated"],
-        embedding_stats["reused"],
-        embedding_stats["failed"],
+    topic_result = cluster_and_select_topics(
+        embedding_result,
+        args,
+        pipeline_context=pipeline_context,
     )
-    LOGGER.info(
-        "topic candidate generation start: article_count=%d",
-        len(clustering_articles),
-    )
-    if len(clustering_articles) < MIN_CLUSTERING_ARTICLES:
-        LOGGER.warning(
-            "topic candidate generation skipped: clustering_input_count=%d "
-            "minimum=%d",
-            len(clustering_articles),
-            MIN_CLUSTERING_ARTICLES,
-        )
-        grouped = []
-    else:
-        grouped = group_articles(
-            clustering_articles,
-            embeddings,
-            similarity_threshold=args.similarity_threshold,
-        )
-    representatives = select_topic_representatives(
-        grouped,
-        max_candidates_per_topic=args.max_articles_per_topic,
-    )
-    target_topics = select_raw_extraction_targets(
-        representatives,
+    raw_result = acquire_selected_article_raw_texts(
+        topic_result,
         raw_states,
-        max_targets_per_topic=args.max_articles_per_topic,
-    )
-    _attach_report_metadata(target_topics, clustering_articles)
-    ordered_topics = sorted(target_topics, key=_topic_selection_key)
-    LOGGER.info(
-        "topic candidate generation end: candidate_count=%d",
-        len(ordered_topics),
-    )
-    selected_topics = ordered_topics[: args.max_topics]
-    reference_topics = ordered_topics[
-        args.max_topics : args.max_topics + args.max_reference_topics
-    ]
-    selected_article_ids = _selected_article_ids(selected_topics)
-    LOGGER.info("selected topic count: %d", len(selected_topics))
-
-    extraction_results = []
-    if args.execute:
-        LOGGER.info(
-            "raw extraction start: article_count=%d article_ids=%s",
-            len(selected_article_ids),
-            selected_article_ids,
-        )
-        if selected_article_ids:
-            if extraction_executor is None or raw_text_loader is None:
-                raise ValueError(
-                    "execute mode requires extraction_executor and raw_text_loader"
-                )
-            extraction_results = extraction_executor(
-                selected_article_ids,
-                limit=args.extraction_limit,
-            )
-            raw_texts = raw_text_loader(_topic_article_ids(selected_topics))
-        LOGGER.info(
-            "raw extraction end: requested_count=%d result_count=%d article_ids=%s",
-            len(selected_article_ids),
-            len(extraction_results),
-            selected_article_ids,
-        )
-
-    provider = summary_provider or create_summary_provider(args)
-    summary_inputs = build_topic_summary_inputs(
-        selected_topics,
         raw_texts,
-        max_topics=args.max_topics,
-        max_articles_per_topic=args.max_articles_per_topic,
-        max_raw_chars_per_article=args.max_raw_chars_per_article,
+        args,
+        pipeline_context=pipeline_context,
+        extraction_executor=extraction_executor,
+        raw_text_loader=raw_text_loader,
     )
-    LOGGER.info(
-        "summary provider start: provider=%s model=%s topic_count=%d",
-        provider.provider,
-        provider.model,
-        len(summary_inputs),
+    save_result = summarize_and_save_topics(
+        topic_result,
+        raw_result,
+        args,
+        pipeline_context=pipeline_context,
+        summary_provider=summary_provider,
+        save_executor=save_executor,
     )
-    summaries = summarize_topic_inputs(summary_inputs, provider)
-    LOGGER.info(
-        "summary provider end: provider=%s model=%s summary_count=%d",
-        provider.provider,
-        provider.model,
-        len(summaries),
-    )
-    generation_result = {
-        "analysis": {"provider": provider.provider, "model": provider.model},
-        "topic_summaries": summaries,
-    }
-    save_plan = build_save_plan(generation_result, args)
-    save_plan["analysis"]["raw_extraction_performed"] = bool(extraction_results)
-    _apply_similarity_scores(save_plan, selected_topics)
-    if args.execute and save_plan["topics"]:
-        if save_executor is None:
-            raise ValueError("execute mode requires save_executor")
-        LOGGER.info(
-            "DB write start: topic_count=%d",
-            len(save_plan["topics"]),
-        )
-        save_plan = save_executor(save_plan)
-        LOGGER.info(
-            "DB write end: saved_topic_count=%d",
-            save_plan["analysis"]["saved_topic_count"],
-        )
 
-    extraction_success_count = sum(
-        result["status"] == "success" for result in extraction_results
-    )
-    extraction_failed_count = sum(
-        result["status"] == "failed" for result in extraction_results
+    return {
+        "analysis": _build_analysis(
+            args,
+            embedder,
+            pipeline_context,
+            embedding_result,
+            topic_result,
+            raw_result,
+            save_result,
+            pipeline_started_at,
+        ),
+        "topics": [public_topic(topic) for topic in topic_result.selected_topics],
+        "reference_topics": [
+            public_topic(topic) for topic in topic_result.reference_topics
+        ],
+        "extraction_results": raw_result.extraction_results,
+        "embedding_failures": embedding_result.failures,
+        "topic_failures": save_result.failures,
+        "topic_summaries": save_result.summaries,
+        "save_plan": save_result.save_plan,
+    }
+
+
+def _build_analysis(
+    args,
+    embedder,
+    pipeline_context,
+    embedding_result,
+    topic_result,
+    raw_result,
+    save_result,
+    pipeline_started_at,
+):
+    candidate_count = (
+        len(embedding_result.articles_with_embeddings)
+        + embedding_result.failed_count
     )
     return {
-        "analysis": {
-            "dry_run": not args.execute,
-            "execute_requested": args.execute,
-            "window_hours": args.window_hours,
-            "article_count": len(articles),
-            "candidate_articles": len(articles),
-            "embedding_created": embedding_stats["created"],
-            "embedding_updated": embedding_stats["updated"],
-            "embedding_reused": embedding_stats["reused"],
-            "embedding_failed": embedding_stats["failed"],
-            "clustering_input_count": len(clustering_articles),
-            "topic_candidate_count": len(target_topics),
-            "selected_topic_count": len(selected_topics),
-            "topic_count": len(selected_topics),
-            "reference_topic_count": len(reference_topics),
-            "selected_article_ids": selected_article_ids,
-            "embedding_provider": (
-                "openai" if args.use_embedding_provider else "deterministic"
-            ),
-            "embedding_model": embedder.model,
-            "summary_provider": provider.provider,
-            "summary_model": provider.model,
-            "raw_extraction_performed": bool(extraction_results),
-            "raw_extraction_success_count": extraction_success_count,
-            "raw_extraction_failed_count": extraction_failed_count,
-            "db_write_performed": save_plan["analysis"]["db_write_performed"],
-            "pipeline_elapsed_seconds": round(
-                time.monotonic() - pipeline_started_at,
-                6,
-            ),
-        },
-        "topics": [_public_topic(topic) for topic in selected_topics],
-        "reference_topics": [_public_topic(topic) for topic in reference_topics],
-        "extraction_results": extraction_results,
-        "embedding_failures": embedding_failures,
-        "topic_summaries": summaries,
-        "save_plan": save_plan,
+        "dry_run": not args.execute,
+        "execute_requested": args.execute,
+        "window_hours": args.window_hours,
+        "article_count": candidate_count,
+        "candidate_articles": candidate_count,
+        "embedding_created": embedding_result.created_count,
+        "embedding_updated": embedding_result.updated_count,
+        "embedding_reused": embedding_result.reused_count,
+        "embedding_failed": embedding_result.failed_count,
+        "clustering_input_count": len(embedding_result.articles_with_embeddings),
+        "cluster_count": topic_result.cluster_count,
+        "topic_candidate_count": topic_result.topic_candidate_count,
+        "selected_topic_count": topic_result.selected_topic_count,
+        "topic_count": topic_result.selected_topic_count,
+        "reference_topic_count": len(topic_result.reference_topics),
+        "selected_article_ids": topic_result.selected_article_ids,
+        "selected_article_count": len(topic_result.selected_article_ids),
+        "embedding_provider": (
+            "openai" if args.use_embedding_provider else "deterministic"
+        ),
+        "embedding_model": embedder.model,
+        "summary_provider": save_result.save_plan["analysis"]["provider"],
+        "summary_model": save_result.save_plan["analysis"]["model"],
+        "raw_extraction_performed": bool(raw_result.extraction_results),
+        "raw_extraction_success_count": len(raw_result.extracted_article_ids),
+        "raw_extraction_failed_count": len(raw_result.failed_article_ids),
+        "raw_reused_count": len(raw_result.reused_article_ids),
+        "raw_extracted_count": len(raw_result.extracted_article_ids),
+        "raw_failed_count": len(raw_result.failed_article_ids),
+        "raw_missing_count": len(raw_result.missing_article_ids),
+        "generated_topic_count": save_result.generated_topic_count,
+        "saved_topic_count": save_result.saved_topic_count,
+        "skipped_topic_count": save_result.skipped_topic_count,
+        "failed_topic_count": save_result.failed_topic_count,
+        "db_write_performed": save_result.save_plan["analysis"][
+            "db_write_performed"
+        ],
+        "pipeline_date": pipeline_context.pipeline_date,
+        "business_timezone": pipeline_context.business_timezone,
+        "started_at_utc": pipeline_context.started_at_utc,
+        "started_at_local": pipeline_context.started_at_local,
+        "pipeline_date_source": pipeline_context.pipeline_date_source,
+        "pipeline_elapsed_seconds": round(
+            time.monotonic() - pipeline_started_at,
+            6,
+        ),
     }
-
-
-def render_report(result):
-    analysis = result["analysis"]
-    lines = [
-        "# Daily topic pipeline report",
-        "",
-        "## Summary",
-        "",
-        f"- Dry-run: `{str(analysis['dry_run']).lower()}`",
-        f"- Execute requested: `{str(analysis['execute_requested']).lower()}`",
-        f"- Window hours: {analysis['window_hours']}",
-        f"- Article count: {analysis['article_count']}",
-        f"- Candidate articles: {analysis['candidate_articles']}",
-        f"- Embedding created/updated/reused/failed: {analysis['embedding_created']} / {analysis['embedding_updated']} / {analysis['embedding_reused']} / {analysis['embedding_failed']}",
-        f"- Clustering input count: {analysis['clustering_input_count']}",
-        f"- Topic candidate count: {analysis['topic_candidate_count']}",
-        f"- Selected topic count: {analysis['selected_topic_count']}",
-        f"- Topic count: {analysis['topic_count']}",
-        f"- Reference topic count: {analysis['reference_topic_count']}",
-        f"- Selected article IDs: `{analysis['selected_article_ids']}`",
-        "- Topic ordering: `article_count desc, source_count desc, average similarity desc, latest published_at desc, topic_candidate_id asc`",
-        f"- Embedding provider/model: `{analysis['embedding_provider']}` / `{analysis['embedding_model']}`",
-        f"- Summary provider/model: `{analysis['summary_provider']}` / `{analysis['summary_model']}`",
-        f"- Raw extraction performed: `{str(analysis['raw_extraction_performed']).lower()}`",
-        f"- Raw extraction success/failure: {analysis['raw_extraction_success_count']} / {analysis['raw_extraction_failed_count']}",
-        f"- DB write performed: `{str(analysis['db_write_performed']).lower()}`",
-        f"- Pipeline elapsed seconds: {analysis['pipeline_elapsed_seconds']}",
-        "",
-        "## Selected Topics",
-        "",
-    ]
-    summaries_by_topic = {
-        summary["topic_candidate_id"]: summary
-        for summary in result["topic_summaries"]
-    }
-    for topic in result["topics"]:
-        lines.extend(
-            _render_report_topic(
-                topic,
-                summary=summaries_by_topic.get(topic["topic_candidate_id"]),
-            )
-        )
-    if not result["topics"]:
-        lines.extend(["- None", ""])
-    lines.extend(
-        [
-            "## Reference Candidates",
-            "",
-            "These candidates were outside `--max-topics` and are shown only for human review.",
-            "They are not raw extraction, summary provider, or DB save targets.",
-            "",
-        ]
-    )
-    for topic in result["reference_topics"]:
-        lines.extend(_render_report_topic(topic, reference=True))
-    if not result["reference_topics"]:
-        lines.extend(["- None", ""])
-    lines.extend(
-        [
-            "## Safety",
-            "",
-            "- Embedding vectors and topic candidate intermediate results are memory-only.",
-            "- Actual raw extraction and DB writes require explicit `--execute`.",
-            "- Provider calls require explicit provider flags and API keys.",
-            "",
-        ]
-    )
-    return "\n".join(lines)
 
 
 def main():
@@ -414,7 +291,80 @@ def main():
 
 
 def _run():
+    """CLI 설정과 runtime 의존성을 구성하고 한 번의 pipeline을 실행한다.
+
+    이 함수는 DB engine과 provider, extractor adapter를 조립하지만 단계별
+    알고리즘은 service package에 위임한다. `--execute`가 없으면 embedding과
+    topic 저장 adapter가 DB write를 수행하지 않는다.
+    """
+
     args = parse_args()
+    pipeline_context = resolve_pipeline_context()
+    _log_pipeline_config(args, pipeline_context)
+
+    LOGGER.info("database engine create start")
+    engine = create_database_engine()
+    LOGGER.info("database engine create end")
+    rows, raw_states = _load_candidates(engine, args)
+
+    embedder = create_embedding_provider(args)
+    embedding_acquirer = create_embedding_acquirer(engine, args, embedder)
+    raw_text_loader = create_raw_text_loader(engine)
+    save_executor = create_save_executor(engine) if args.execute else None
+    extraction_executor = _create_extraction_executor(args)
+
+    result = build_pipeline(
+        rows,
+        raw_states,
+        {},
+        args,
+        embedding_provider=embedder,
+        embedding_acquirer=embedding_acquirer,
+        extraction_executor=extraction_executor,
+        raw_text_loader=raw_text_loader,
+        save_executor=save_executor,
+        pipeline_context=pipeline_context,
+    )
+    if args.report_path:
+        args.report_path.parent.mkdir(parents=True, exist_ok=True)
+        args.report_path.write_text(render_report(result), encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+def _load_candidates(engine, args):
+    """최근 기사 후보와 raw extraction 상태를 한 read-only 연결에서 조회한다."""
+
+    LOGGER.info("database connection start")
+    with engine.connect() as connection:
+        LOGGER.info("database connection established")
+        connection.execute(text("set transaction read only"))
+        LOGGER.info("article fetch start")
+        rows = get_articles(connection, args)
+        LOGGER.info("article fetch end: article_count=%d", len(rows))
+        article_ids = [row["id"] for row in rows]
+        LOGGER.info(
+            "raw extraction state fetch start: article_count=%d",
+            len(article_ids),
+        )
+        raw_states = get_raw_extraction_states(connection, article_ids)
+        LOGGER.info(
+            "raw extraction state fetch end: state_count=%d",
+            len(raw_states),
+        )
+    return rows, raw_states
+
+
+def _create_extraction_executor(args):
+    """Execute 모드에서만 selected article extractor를 지연 import한다."""
+
+    if not args.execute:
+        return None
+    from scripts.extract_raw_articles import extract_selected_article_ids
+
+    return extract_selected_article_ids
+
+
+def _log_pipeline_config(args, pipeline_context):
     LOGGER.info(
         "pipeline config: window_hours=%d time_basis=%s max_articles=%d "
         "similarity_threshold=%.2f max_topics=%d max_reference_topics=%d "
@@ -435,336 +385,15 @@ def _run():
         args.summary_model,
         args.execute,
     )
-    LOGGER.info("database engine create start")
-    engine = create_database_engine()
-    LOGGER.info("database engine create end")
-    LOGGER.info("database connection start")
-    with engine.connect() as connection:
-        LOGGER.info("database connection established")
-        connection.execute(text("set transaction read only"))
-        LOGGER.info("article fetch start")
-        rows = get_articles(connection, args)
-        LOGGER.info("article fetch end: article_count=%d", len(rows))
-        article_ids = [row["id"] for row in rows]
-        LOGGER.info("raw extraction state fetch start: article_count=%d", len(article_ids))
-        raw_states = get_raw_extraction_states(connection, article_ids)
-        LOGGER.info("raw extraction state fetch end: state_count=%d", len(raw_states))
-
-        LOGGER.info("raw text fetch start: article_count=%d", len(article_ids))
-        raw_texts = get_raw_texts(connection, article_ids)
-        LOGGER.info("raw text fetch end: raw_text_count=%d", len(raw_texts))
-
-    def load_raw_texts(article_ids):
-        with engine.connect() as connection:
-            connection.execute(text("set transaction read only"))
-            return get_raw_texts(connection, article_ids)
-
-    def save(plan):
-        with engine.begin() as connection:
-            return execute_save_plan(plan, connection)
-
-    extraction_executor = None
-    if args.execute:
-        from scripts.extract_raw_articles import extract_selected_article_ids
-
-        extraction_executor = extract_selected_article_ids
-
-    embedder = create_embedding_provider(args)
-    embedding_acquirer = None
-    if args.use_embedding_provider:
-        expected_dimension = get_model_dimension(embedder.model)
-
-        def embedding_acquirer(article):
-            if args.execute:
-                with engine.begin() as connection:
-                    return store_article_embedding(
-                        connection,
-                        article=article,
-                        embedding_provider=embedder,
-                        provider=DEFAULT_EMBEDDING_PROVIDER,
-                        source_text_type=DEFAULT_SOURCE_TEXT_TYPE,
-                        expected_dimension=expected_dimension,
-                    )
-            with engine.connect() as connection:
-                connection.execute(text("set transaction read only"))
-                return store_article_embedding(
-                    connection,
-                    article=article,
-                    embedding_provider=embedder,
-                    provider=DEFAULT_EMBEDDING_PROVIDER,
-                    source_text_type=DEFAULT_SOURCE_TEXT_TYPE,
-                    expected_dimension=expected_dimension,
-                    persist=False,
-                )
-
-    result = build_pipeline(
-        rows,
-        raw_states,
-        raw_texts,
-        args,
-        embedding_provider=embedder,
-        embedding_acquirer=embedding_acquirer,
-        extraction_executor=extraction_executor,
-        raw_text_loader=load_raw_texts if args.execute else None,
-        save_executor=save if args.execute else None,
+    LOGGER.info(
+        "pipeline date resolved: pipeline_date=%s business_timezone=%s "
+        "started_at_utc=%s started_at_local=%s source=%s",
+        pipeline_context.pipeline_date,
+        pipeline_context.business_timezone,
+        pipeline_context.started_at_utc.isoformat(),
+        pipeline_context.started_at_local.isoformat(),
+        pipeline_context.pipeline_date_source,
     )
-    if args.report_path:
-        args.report_path.parent.mkdir(parents=True, exist_ok=True)
-        args.report_path.write_text(render_report(result), encoding="utf-8")
-    print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
-
-
-def acquire_pipeline_embeddings(
-    articles,
-    embedding_provider,
-    *,
-    embedding_acquirer=None,
-):
-    if embedding_acquirer is None:
-        embeddings = embedding_provider.embed(
-            [article["embedding_input"] for article in articles]
-        )
-        if len(articles) != len(embeddings):
-            raise ValueError("articles and embeddings must have the same length")
-        return (
-            articles,
-            embeddings,
-            {
-                "created": len(embeddings),
-                "updated": 0,
-                "reused": 0,
-                "failed": 0,
-            },
-            [],
-        )
-
-    clustering_articles = []
-    embeddings = []
-    stats = {"created": 0, "updated": 0, "reused": 0, "failed": 0}
-    failures = []
-    for article in articles:
-        try:
-            result = embedding_acquirer(article)
-        except Exception as error:
-            stats["failed"] += 1
-            failure = {
-                "article_id": article.get("id"),
-                "error": _safe_embedding_error(error),
-            }
-            failures.append(failure)
-            LOGGER.warning(
-                "article embedding failed: article_id=%s error=%s",
-                failure["article_id"],
-                failure["error"],
-            )
-            continue
-
-        if not isinstance(result, EmbeddingResult):
-            raise TypeError("embedding acquirer returned an invalid result")
-        if result.status not in {"created", "updated", "reused"}:
-            raise ValueError(
-                f"unsupported embedding status: {result.status}"
-            )
-        if result.embedding is None:
-            raise ValueError("embedding result does not include a vector")
-
-        clustering_articles.append(article)
-        embeddings.append(result.embedding)
-        stats[result.status] += 1
-    return clustering_articles, embeddings, stats, failures
-
-
-def _safe_embedding_error(error: Exception) -> str:
-    message = " ".join(str(error).split())
-    if len(message) > 200:
-        message = message[:197] + "..."
-    return f"{type(error).__name__}: {message}" if message else type(error).__name__
-
-
-def _selected_article_ids(topics):
-    ids = []
-    for topic in topics:
-        for article in topic["articles"]:
-            if article["extraction_target_status"] == "target":
-                ids.append(article["id"])
-    return ids
-
-
-def _topic_article_ids(topics):
-    return list(
-        dict.fromkeys(
-            article["id"] for topic in topics for article in topic["articles"]
-        )
-    )
-
-
-def _apply_similarity_scores(save_plan, topics):
-    metadata_by_article = {
-        article["id"]: {
-            "role": (
-                "representative"
-                if article.get("representative_candidate_rank") == 1
-                else "supporting"
-            ),
-            "similarity_score": article.get("similarity_to_seed"),
-        }
-        for topic in topics
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") is not None
-    }
-    for topic in save_plan["topics"]:
-        for article in topic["articles"]:
-            metadata = metadata_by_article.get(article["article_id"], {})
-            article.update(metadata)
-
-
-def _attach_report_metadata(topics, articles):
-    url_by_article_id = {
-        article["id"]: article.get("url")
-        for article in articles
-    }
-    for topic in topics:
-        for article in topic["articles"]:
-            article["url"] = url_by_article_id.get(article["id"])
-
-
-def _topic_selection_key(topic):
-    selected = [
-        article
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") is not None
-    ]
-    similarities = [
-        float(article["similarity_to_seed"])
-        for article in selected
-        if article.get("similarity_to_seed") is not None
-    ]
-    average_similarity = (
-        sum(similarities) / len(similarities) if similarities else 0.0
-    )
-    latest = max(
-        (
-            value
-            for article in topic["articles"]
-            if (
-                value := _as_utc(
-                    article.get("published_at") or article.get("created_at")
-                )
-            )
-            is not None
-        ),
-        default=None,
-    )
-    latest_timestamp = latest.timestamp() if latest else float("-inf")
-    return (
-        -topic["article_count"],
-        -topic["source_count"],
-        -average_similarity,
-        -latest_timestamp,
-        topic["topic_candidate_id"],
-    )
-
-
-def _public_topic(topic):
-    selected = [
-        article
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") is not None
-    ]
-    return {
-        "topic_candidate_id": topic["topic_candidate_id"],
-        "article_count": topic["article_count"],
-        "source_count": topic["source_count"],
-        "selected_article_ids": [article["id"] for article in selected],
-        "similarity_scores": {
-            article["id"]: article.get("similarity_to_seed") for article in selected
-        },
-        "articles": [
-            {
-                "role": (
-                    "representative"
-                    if article.get("representative_candidate_rank") == 1
-                    else "supporting"
-                ),
-                "article_id": article["id"],
-                "similarity_score": article.get("similarity_to_seed"),
-                "source": article.get("source"),
-                "published_at": article.get("published_at"),
-                "title": article.get("title"),
-                "url": article.get("url"),
-            }
-            for article in selected
-        ],
-    }
-
-
-def _render_report_topic(topic, *, summary=None, reference=False):
-    article_id_label = "Article IDs" if reference else "Selected article IDs"
-    lines = [
-        f"### {topic['topic_candidate_id']}",
-        "",
-        f"- Article count: {topic['article_count']}",
-        f"- Source count: {topic['source_count']}",
-    ]
-    if reference:
-        lines.append("- Reason: outside max-topics")
-    lines.extend(
-        [
-            f"- {article_id_label}: `{topic['selected_article_ids']}`",
-            f"- Similarity scores: `{topic['similarity_scores']}`",
-            "",
-            "#### Selected Articles" if not reference else "#### Reference Articles",
-            "",
-            "| role | article_id | similarity | source | published_at | title | url |",
-            "| --- | ---: | ---: | --- | --- | --- | --- |",
-        ]
-    )
-    for article in topic["articles"]:
-        lines.append(
-            f"| {_escape(article['role'])} "
-            f"| {article['article_id']} "
-            f"| {_format_similarity(article['similarity_score'])} "
-            f"| {_escape(article['source'])} "
-            f"| {_escape(article['published_at'])} "
-            f"| {_escape(article['title'])} "
-            f"| {_escape(article['url'])} |"
-        )
-    lines.append("")
-    if summary is not None:
-        lines.extend(
-            [
-                "#### Generated Summary",
-                "",
-                f"- Status: `{summary['status']}`",
-                f"- title_ko: {_escape(summary['title_ko'])}",
-                f"- summary_ko: {_escape(summary['summary_ko'])}",
-                "- key_points:",
-            ]
-        )
-        lines.extend(f"  - {_escape(point)}" for point in summary["key_points"])
-        lines.extend(
-            [
-                f"- keywords: `{', '.join(summary['keywords'])}`",
-                "",
-            ]
-        )
-    return lines
-
-
-def _format_similarity(value):
-    return "" if value is None else f"{float(value):.4f}"
-
-
-def _as_utc(value):
-    if value is None:
-        return None
-    if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
-
-
-def _escape(value):
-    return str(value or "").replace("|", "\\|").replace("\n", " ")
 
 
 if __name__ == "__main__":

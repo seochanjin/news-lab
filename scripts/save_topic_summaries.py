@@ -61,7 +61,8 @@ def parse_args(argv=None):
     return parse_generation_args(argv, parser=parser)
 
 
-def build_save_plan(generation_result: dict, args) -> dict:
+def build_save_plan(generation_result: dict, args, *, topic_date=None) -> dict:
+    topic_date = topic_date or date.today()
     topics = []
     skipped = []
     for summary in generation_result["topic_summaries"]:
@@ -83,7 +84,7 @@ def build_save_plan(generation_result: dict, args) -> dict:
         ]
         topics.append(
             {
-                "topic_date": date.today(),
+                "topic_date": topic_date,
                 "topic_candidate_id": summary["topic_candidate_id"],
                 "title_ko": summary["title_ko"],
                 "summary_ko": summary["summary_ko"],
