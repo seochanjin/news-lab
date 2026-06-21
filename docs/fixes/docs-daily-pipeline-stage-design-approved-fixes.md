@@ -191,6 +191,56 @@ def prepare_article_embeddings(...):
 
 docstring과 주석은 현재 코드의 실제 동작과 일치해야 한다.
 
+### 8. Timezone 정보가 없는 started_at_utc 입력 거부
+
+resolve_pipeline_context()는 started_at_utc를 UTC 기준의 timezone-aware datetime으로 입력받아야 한다.
+
+현재 timezone 정보가 없는 naive datetime을 전달받으면 다음과 같이 UTC를 자동 부착한다.
+
+```python
+if started_at_utc.tzinfo is None:
+    started_at_utc = started_at_utc.replace(tzinfo=timezone.utc)
+```
+
+이 동작은 호출자가 Asia/Seoul 로컬 시각을 naive datetime으로 잘못 전달해도 UTC로 조용히 해석한다.
+
+그 결과 다음 값이 실제 의도와 다르게 계산될 수 있다.
+
+- started_at_utc
+- started_at_local
+- pipeline_date
+- 최종 저장되는 topics.topic_date
+
+pipeline_date는 DB에 저장되는 값이므로 입력 오류를 암묵적으로 보정하지 않고 즉시 거부한다.
+
+수정 방향:
+
+```python
+if started_at_utc.tzinfo is None:
+    raise ValueError(
+        "started_at_utc must be timezone-aware and represent an absolute instant"
+    )
+```
+
+정확한 예외 타입과 메시지는 저장소의 기존 validation 규칙에 맞게 조정할 수 있다.
+
+다음 정책을 적용한다.
+
+- started_at_utc는 timezone-aware datetime만 허용한다.
+- UTC 이외의 timezone-aware 값이 전달되면 astimezone(timezone.utc)로 정규화할 수 있다.
+- naive datetime에는 UTC를 자동으로 부착하지 않는다.
+- 호출자가 로컬 시각을 전달해야 한다면 timezone을 명시적으로 포함해야 한다.
+- 잘못된 입력은 context 생성 단계에서 fail-fast 처리한다.
+- 유효한 UTC 입력과 timezone offset이 포함된 입력의 기존 날짜 계산은 유지한다.
+
+추가 테스트:
+
+- naive started_at_utc 전달 시 예외가 발생하는지
+- UTC timezone-aware 입력이 정상 처리되는지
+- +09:00 등 UTC 이외의 aware 입력이 동일한 UTC instant로 정규화되는지
+- 2026-06-20 19:00 UTC가 2026-06-21 Asia/Seoul로 계산되는 기존 경계 테스트가 유지되는지
+- 잘못된 입력에서 topic save 단계가 실행되지 않는지
+
 ---
 
 ## Rejected or Deferred Suggestions
@@ -240,6 +290,12 @@ topic_candidate_runs
 
 핵심 단계, 결과 계약, 외부 시스템 연결, 실패 정책 또는 부수 효과가 있는 함수만 문서화한다.
 
+### Naive datetime을 UTC로 자동 보정
+
+Timezone 정보가 없는 datetime에 timezone.utc를 자동 부착하는 방식은 적용하지 않는다.
+
+호출자의 실수를 감추고 잘못된 pipeline_date와 topic_date를 저장할 수 있으므로 명시적 입력 검증을 사용한다.
+
 ---
 
 ## Applied Changes
@@ -286,6 +342,14 @@ topic_candidate_runs
     `_create_extraction_executor()`에 orchestration 및 외부 연결 경계를 기록했다.
   - 단순 formatting, 정렬, ID 추출 helper에는 장문 docstring을 추가하지 않았다.
 
+- Approved Fix 8:
+  - `resolve_pipeline_context()`가 timezone 정보가 없는
+    `started_at_utc`를 즉시 거부하도록 변경했다.
+  - timezone-aware 입력은 UTC로 정규화한 뒤 Asia/Seoul 기준
+    `started_at_local`과 `pipeline_date`를 계산하도록 유지했다.
+  - naive datetime 거부, UTC 입력, UTC 외 offset 입력 및 날짜 경계
+    테스트를 추가했다.
+
 ---
 
 ## Apply Checklist
@@ -297,6 +361,7 @@ topic_candidate_runs
 - [x] Approved Fix 5: 기존 동작과 계약 회귀 확인
 - [x] Approved Fix 6: import 및 의존성 구조 확인
 - [x] Approved Fix 7: 핵심 함수와 단계 결과 타입의 한글 docstring 작성
+- [x] Approved Fix 8: naive `started_at_utc` 입력 거부 및 timezone-aware 입력 검증
 
 ---
 
@@ -393,5 +458,34 @@ git diff -- \
 - topic 저장 결과와 반환 통계가 유지되는지
 - Raw extractor CronJob 제거 상태가 유지되는지
 - 전체 테스트가 통과하는지
+
+Verification 문서에는 실제 실행한 명령과 실제 결과만 기록한다.
+
+### Pipeline context timezone 입력 검증
+
+```bash
+python -m unittest tests.test_run_daily_topic_pipeline
+다음을 확인한다.
+```
+
+- naive started_at_utc 입력이 거부된다.
+- timezone-aware UTC 입력이 정상 처리된다.
+- UTC 이외의 timezone-aware 입력이 UTC로 정상 정규화된다.
+- 2026-06-20 19:00 UTC가 2026-06-21 Asia/Seoul의
+  pipeline_date로 계산된다.
+- 입력 검증 실패 시 후속 pipeline stage와 topic 저장이 실행되지 않는다.
+
+관련 테스트와 전체 회귀:
+
+```bash
+python -m unittest \
+  tests.test_run_daily_topic_pipeline \
+  tests.test_article_embedding_storage \
+  tests.test_daily_topic_pipeline_cronjob_manifest
+
+python -m compileall app scripts tests
+python -m unittest discover -s tests
+git diff --check
+```
 
 Verification 문서에는 실제 실행한 명령과 실제 결과만 기록한다.

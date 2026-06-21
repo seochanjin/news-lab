@@ -1,6 +1,6 @@
 import os
 import unittest
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -204,6 +204,50 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
             {topic["topic_date"] for topic in result["save_plan"]["topics"]},
             {date(2026, 6, 21)},
         )
+
+    def test_pipeline_context_rejects_naive_started_at_before_save(self):
+        save_executor = Mock()
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "started_at_utc must be timezone-aware",
+        ):
+            context = resolve_pipeline_context(
+                started_at_utc=datetime(2026, 6, 21, 4, 0)
+            )
+            build_pipeline(
+                rows(),
+                {},
+                {1: "raw text one", 2: "raw text two"},
+                args(execute=True),
+                embedding_provider=FakeEmbeddingProvider(),
+                summary_provider=DeterministicSummaryProvider(),
+                save_executor=save_executor,
+                pipeline_context=context,
+            )
+
+        save_executor.assert_not_called()
+
+    def test_pipeline_context_normalizes_timezone_aware_offset_to_utc(self):
+        seoul_timezone = timezone(timedelta(hours=9))
+
+        context = resolve_pipeline_context(
+            started_at_utc=datetime(
+                2026,
+                6,
+                21,
+                4,
+                0,
+                tzinfo=seoul_timezone,
+            )
+        )
+
+        self.assertEqual(
+            context.started_at_utc,
+            datetime(2026, 6, 20, 19, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(context.started_at_local.utcoffset(), timedelta(hours=9))
+        self.assertEqual(context.pipeline_date, date(2026, 6, 21))
 
     def test_execute_uses_injected_extraction_loader_and_save(self):
         extraction_executor = Mock(

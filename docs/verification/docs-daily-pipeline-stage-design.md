@@ -386,3 +386,102 @@ Result:
 - Review 파일은 수정하지 않았다.
 
 Status: passed
+
+## Approved Fix 8 Verification
+
+Command:
+
+```bash
+python -m unittest tests.test_run_daily_topic_pipeline
+```
+
+Result:
+
+- 19 tests passed.
+
+Status: passed
+
+Notes:
+
+- Naive `started_at_utc` 입력에서 `ValueError`가 발생하는 것을 확인했다.
+- 입력 검증 실패 후 save executor가 호출되지 않는 것을 확인했다.
+- UTC aware 입력의 기존 Asia/Seoul 날짜 경계 테스트가 유지됐다.
+- `+09:00` aware 입력이 동일 absolute instant의 UTC 값으로 정규화되고
+  `pipeline_date=2026-06-21`로 계산되는 것을 확인했다.
+
+Command:
+
+```bash
+python -m unittest \
+  tests.test_run_daily_topic_pipeline \
+  tests.test_article_embedding_storage \
+  tests.test_daily_topic_pipeline_cronjob_manifest
+```
+
+Result:
+
+- 37 tests passed.
+
+Status: passed
+
+Command:
+
+```bash
+python -m compileall app scripts tests
+python -c "import scripts.run_daily_topic_pipeline"
+python -c "import app.services.daily_topic_pipeline"
+```
+
+Result:
+
+- Compile completed without errors.
+- Script와 package import가 모두 성공했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Result:
+
+- 152 tests passed.
+
+Status: passed
+
+Command:
+
+```bash
+git diff --check
+git diff --stat
+git status --short --branch
+git diff -- db/migrations app/routers app/main.py requirements.txt
+```
+
+Result:
+
+- `git diff --check`: no errors.
+- Current branch: `docs/daily-pipeline-stage-design`
+- Fix 8 변경 파일과 기존 user change인 approved fixes/review 파일을 확인했다.
+- DB migration, router, `app/main.py`, dependency diff는 없다.
+- Review 파일은 수정하지 않았다.
+
+Status: passed
+
+Command:
+
+```bash
+wc -l \
+  scripts/run_daily_topic_pipeline.py \
+  app/services/daily_topic_pipeline/*.py
+```
+
+Result:
+
+- `scripts/run_daily_topic_pipeline.py`: 400 lines
+- Package files: 8–190 lines
+- Fix 8 적용 후에도 모든 대상 Python 파일이 500줄 이하이다.
+
+Status: passed

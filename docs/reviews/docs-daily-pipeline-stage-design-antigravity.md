@@ -184,5 +184,47 @@
 - **APPROVED**
   - 모든 요구사항 및 승인된 수정 가이드라인이 철저하게 충족되었으며, 150건의 단위 테스트 전체가 완벽히 성공하였기에 최종 APPROVED 판정을 유지합니다.
 
+## Re-review 3
+### Existing Problems Status
 
+- **기존 문제 1**: 해당 사항 없음. (이전 Review 및 Re-review 1, Re-review 2 시점에서 검출된 blocker 결함이 없었습니다.)
+- **상태**: 해결됨 / 해당 없음
 
+### Approved Fixes Verification
+
+[approved-fixes.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 8가지 승인된 수정(Approved Fixes) 사항의 이행 상태를 대조 검증하였습니다:
+
+- **Approved Fix 1 ~ 6 (이행 유지됨)**:
+  - 역할별 패키지 분리, scripts 책임 축소, 공통 context 및 결과 타입 분리, 500줄 제약(scripts 및 services), 기존 동작/계약 회귀 방지, import 및 의존성 구조(순환 참조 및 DB 연결 차단)가 안전하게 유지되고 있습니다.
+- **Approved Fix 7: 핵심 함수와 결과 타입의 역할을 한글 docstring으로 문서화 (이행 완료)**:
+  - 네 개 stage 진입 함수, [resolve_pipeline_context()](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/context.py#L16-L23), 주요 dataclasses([EmbeddingStageResult](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/models.py#L25-L31), [TopicSelectionResult](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/models.py#L52-L57) 등), DB/provider adapters, 그리고 부분 실패 격리 및 transaction 경계 함수들에 한글 docstring이 작성되어 각 단계의 결합 관계 및 처리 계약을 코드 레벨에서 명확히 이해할 수 있게 되었습니다.
+- **Approved Fix 8: Timezone 정보가 없는 started_at_utc 입력 거부 (이행 완료)**:
+  - [resolve_pipeline_context()](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/context.py#L16-L23) 함수에서 timezone 정보가 누락된 naive datetime이 전달되면 즉시 `ValueError`를 발생시켜 잘못된 날짜(pipeline_date 및 topic_date)가 파이프라인 및 데이터베이스로 오염 전파되는 동작을 fail-fast 방식으로 확실히 방어하였습니다.
+  - UTC 이외의 timezone-aware offset 입력에 대해서는 동일 absolute instant의 UTC 값으로 올바르게 정규화 처리됩니다.
+
+### Verification Evidence
+
+실제 동작 검증 및 환경 검토는 [verification.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+
+- **단위 테스트 실행**:
+  - `python -m unittest tests.test_run_daily_topic_pipeline tests.test_article_embedding_storage tests.test_daily_topic_pipeline_cronjob_manifest` -> **37개 테스트 전수 통과** (naive datetime 차단 및 UTC offset 정규화 신규 테스트 2종 포함)
+- **전체 회귀 테스트**:
+  - `python -m compileall app scripts tests && python -m unittest discover -s tests` -> **152개 테스트 에러 없이 통과**
+- **정적 포맷 및 금지 구역**:
+  - `git diff --check` -> 공백 에러 없음
+  - `git diff -- db/migrations app/routers app/main.py requirements.txt` -> 금지된 영역 변경 사항 없음
+- **파일 용량 측정**:
+  - `wc -l scripts/run_daily_topic_pipeline.py app/services/daily_topic_pipeline/*.py` -> 모든 파일 500줄 이하 충족
+
+### New Problems Found
+
+- **결함 사항 없음**: 변경 사항 분석 및 단위 테스트 회귀 검증을 마친 결과, 새로 유입된 설계 오류나 scope creep은 식별되지 않았습니다.
+
+### Required Fixes Before PR
+
+- **해당 사항 없음** (병합에 방해가 되는 블로커 요인이 존재하지 않습니다.)
+
+### Verdict
+
+- **APPROVED**
+  - 새로이 승인된 Fix 7 및 Fix 8 요건이 완벽하게 구현 및 검증 완료되었고, 152건의 전체 단위 테스트 및 변경 금지 영역 보존 계약을 안전하게 준수하였기에 최종 APPROVED 판정을 유지합니다.
