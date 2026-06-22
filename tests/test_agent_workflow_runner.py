@@ -98,3 +98,27 @@ class WorkflowRunnerTests(unittest.TestCase):
             self.assertEqual(result.exit_code, 124)
             self.assertTrue(result.timed_out)
             self.assertIn("started", (log_dir / "stdout.log").read_text())
+
+    def test_external_log_directory_uses_absolute_path(self) -> None:
+        """Repository 밖 로그 경로를 절대 경로로 저장하고 실행 결과를 보존한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = make_repo(root)
+            executable = fake_executable(
+                root / "fake-agent", "print('external log')\n"
+            )
+            external_root = root / "external-logs"
+            log_dir = external_root / "run"
+            result = run_agent(
+                load_state(repo),
+                "codex-implement",
+                AgentCommand("Fake Codex", str(executable), "stdin"),
+                "prompt",
+                5,
+                log_directory=log_dir,
+            )
+            self.assertEqual(result.exit_code, 0)
+            self.assertEqual(result.log_directory, str(log_dir.resolve()))
+            data = json.loads((log_dir / "result.json").read_text())
+            self.assertEqual(data["log_directory"], str(log_dir.resolve()))

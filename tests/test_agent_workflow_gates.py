@@ -5,10 +5,11 @@ Codex, Gemini 또는 Antigravity를 실행하지 않는다.
 """
 
 from pathlib import Path
+import stat
 import tempfile
 import unittest
 
-from scripts.agent_workflow.gates import GateError, validate_action
+from scripts.agent_workflow.gates import GateError, resolve_agent, validate_action
 from scripts.agent_workflow.state import load_state
 from tests.test_agent_workflow_state import make_repo
 
@@ -89,3 +90,48 @@ class WorkflowGateTests(unittest.TestCase):
                 validate_action(
                     load_state(repo), "antigravity-review", require_agent=False
                 )
+
+    def test_review_rejects_pending_verification(self) -> None:
+        """Verification pending 상태에서는 Review action이 gate를 통과하지 못한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npending\n",
+                encoding="utf-8",
+            )
+            with self.assertRaises(GateError):
+                validate_action(
+                    load_state(repo), "antigravity-review", require_agent=False
+                )
+
+    def test_configured_codex_executable_is_accepted(self) -> None:
+        """실행 가능한 AGENT_CODEX_BIN 파일을 정상 Agent command로 해석한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            executable = Path(directory) / "fake-codex"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+            command = resolve_agent(
+                "codex-implement", {"AGENT_CODEX_BIN": str(executable)}
+            )
+            self.assertEqual(command.executable, str(executable.resolve()))
+
+    def test_configured_agent_binary_rejects_invalid_paths(self) -> None:
+        """존재하지 않거나 디렉터리인 Agent binary 환경변수를 차단한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            for value in (str(Path(directory) / "missing"), directory):
+                with self.subTest(value=value), self.assertRaises(GateError) as context:
+                    resolve_agent(
+                        "antigravity-review",
+                        {"AGENT_ANTIGRAVITY_BIN": value},
+                    )
+                self.assertNotIn(value, str(context.exception))
+
+    def test_configured_agent_command_name_uses_path_lookup(self) -> None:
+        """환경변수에 command 이름을 지정하면 PATH에서 실행 파일을 찾는지 검증한다."""
+
+        command = resolve_agent("codex-implement", {"AGENT_CODEX_BIN": "sh"})
+        self.assertTrue(Path(command.executable).is_file())

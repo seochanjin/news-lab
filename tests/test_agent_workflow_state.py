@@ -96,6 +96,34 @@ class WorkflowStateTests(unittest.TestCase):
             )
             self.assertFalse(main_pointer_matches(load_state(repo)))
 
+    def test_main_pointer_accepts_exact_markdown_link_target(self) -> None:
+        """현재 Task의 정확한 Markdown link target만 정상 pointer로 인정한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            self.assertTrue(main_pointer_matches(load_state(repo)))
+
+    def test_main_pointer_rejects_task_name_in_plain_text(self) -> None:
+        """본문 설명에 Task 파일명만 있어도 pointer로 오인하지 않는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            (repo / "docs" / "tasks" / "main.md").write_text(
+                "현재 파일은 feature-example.md를 설명한다.\n", encoding="utf-8"
+            )
+            self.assertFalse(main_pointer_matches(load_state(repo)))
+
+    def test_main_pointer_rejects_task_link_in_code_example(self) -> None:
+        """fenced code 예시 안의 정상 Task link를 실제 pointer로 인정하지 않는다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            (repo / "docs" / "tasks" / "main.md").write_text(
+                "```markdown\n[current](feature-example.md)\n```\n",
+                encoding="utf-8",
+            )
+            self.assertFalse(main_pointer_matches(load_state(repo)))
+
     def test_historical_failed_text_does_not_mark_verification_failed(self) -> None:
         """과거 Status: failed 설명이 현재 Verification 실패로 오인되지 않는지 검증한다."""
 
@@ -166,6 +194,38 @@ class WorkflowStateTests(unittest.TestCase):
                 "# Fixes\n\n## Approved Fixes\n\n- [x] FIX-01\n", encoding="utf-8"
             )
             self.assertEqual(load_state(repo).suggested_action, "pr-draft")
+
+    def test_failed_reviewed_state_requires_verification_resolution(self) -> None:
+        """Review 후 Verification 실패 상태에서는 재Review 대신 검증 해결을 안내한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\nfailed\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                "# Review\n\nCHANGES REQUIRED\n", encoding="utf-8"
+            )
+            state = load_state(repo)
+            self.assertEqual(state.suggested_action, "resolve-verification")
+            self.assertIn("먼저 검증 문제를 해결", format_status(state))
+
+    def test_pending_reviewed_state_requires_verification_resolution(self) -> None:
+        """Review 후 Verification pending 상태에서는 실행 가능한 해결 안내를 출력한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\npending\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                "# Review\n\nReview present\n", encoding="utf-8"
+            )
+            self.assertEqual(load_state(repo).suggested_action, "resolve-verification")
 
 
 if __name__ == "__main__":

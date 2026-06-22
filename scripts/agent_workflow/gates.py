@@ -8,6 +8,7 @@ Approved Fixes와 Agent CLI 가용성을 검증한다. 실행 가능한 Agent co
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import shutil
 
@@ -31,6 +32,25 @@ class AgentCommand:
 REQUIRED_TASK_SECTIONS = ("Scope", "Do not change", "Test commands", "Acceptance criteria")
 
 
+def _configured_executable(value: str, label: str) -> str:
+    """환경변수의 binary 경로 또는 command 이름을 안전하게 검증한다.
+
+    Slash가 포함된 값은 실행 가능한 일반 파일인지 확인하고 command 이름은
+    PATH에서 검색한다. 검증 실패 시 환경변수 값을 노출하지 않는 GateError를
+    발생시키며 executable을 실행하지 않는다.
+    """
+
+    if "/" in value:
+        candidate = Path(value).expanduser()
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate.resolve())
+    else:
+        resolved = shutil.which(value)
+        if resolved and Path(resolved).is_file() and os.access(resolved, os.X_OK):
+            return resolved
+    raise GateError(f"{label}에 지정된 Agent binary가 존재하지 않거나 실행할 수 없습니다.")
+
+
 def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentCommand:
     """Action과 환경 설정에 맞는 설치된 Agent executable을 찾는다.
 
@@ -41,7 +61,11 @@ def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentComman
     env = env or {}
     if action.startswith("codex-"):
         configured = env.get("AGENT_CODEX_BIN")
-        executable = configured or shutil.which("codex")
+        executable = (
+            _configured_executable(configured, "AGENT_CODEX_BIN")
+            if configured
+            else shutil.which("codex")
+        )
         if not executable:
             raise GateError(
                 "Codex CLI를 찾을 수 없습니다. PATH 또는 AGENT_CODEX_BIN을 확인하세요."
@@ -50,7 +74,11 @@ def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentComman
 
     configured = env.get("AGENT_ANTIGRAVITY_BIN")
     if configured:
-        return AgentCommand("Antigravity", configured, "stdin")
+        return AgentCommand(
+            "Antigravity",
+            _configured_executable(configured, "AGENT_ANTIGRAVITY_BIN"),
+            "stdin",
+        )
     gemini = shutil.which("gemini")
     if gemini:
         return AgentCommand("Gemini/Antigravity", gemini, "gemini")
@@ -127,8 +155,11 @@ def validate_action(
         _require_file(state.paths.verification, "Verification")
         if not state.has_changes:
             raise GateError("Review할 구현 변경사항이 없습니다.")
-        if state.verification_status == "failed":
-            raise GateError("Verification에 명시적인 실패가 남아 있어 review 실행을 차단합니다.")
+        if state.verification_status in {"failed", "pending"}:
+            raise GateError(
+                "Verification이 failed 또는 pending 상태여서 review 실행을 차단합니다. "
+                "먼저 검증 문제를 해결하고 실제 결과를 기록하세요."
+            )
 
     if require_agent:
         return resolve_agent(action, env)

@@ -67,10 +67,20 @@ class WorkflowState:
 
     @property
     def suggested_action(self) -> str:
-        """Approved Fixes, Review와 UNIT 상태를 기준으로 다음 action을 제안한다."""
+        """Verification, Approved Fixes, Review와 UNIT 상태로 다음 단계를 제안한다.
+
+        Review가 이미 존재하는데 Verification이 failed 또는 pending이면 실행
+        action 대신 `resolve-verification`을 반환해 먼저 검증 문제를 해결하도록
+        안내한다.
+        """
 
         if self.approved_fixes_status == "approved":
             return "codex-fix"
+        if (
+            self.verification_status in {"failed", "pending"}
+            and self.review_status == "present"
+        ):
+            return "resolve-verification"
         if (
             self.verification_status == "passed"
             and self.review_status == "present"
@@ -174,15 +184,37 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
 
 
 def main_pointer_matches(state: WorkflowState) -> bool:
-    """docs/tasks/main.md가 현재 branch의 Task를 가리키는지 판정한다."""
+    """docs/tasks/main.md의 실제 Markdown link가 현재 Task를 가리키는지 판정한다.
+
+    Symlink는 해석된 대상 경로를 비교한다. 일반 Markdown 파일은 fenced code
+    block 밖의 link target만 추출하고 pointer 문서 기준으로 정규화해 현재 Task
+    경로와 정확히 같은 경우에만 True를 반환한다.
+    """
 
     pointer = state.paths.main_pointer
     if not pointer.exists():
         return False
     if pointer.is_symlink():
         return pointer.resolve() == state.paths.task.resolve()
-    text = pointer.read_text(encoding="utf-8")
-    return state.paths.task.name in text
+
+    in_fence = False
+    targets: list[str] = []
+    for line in pointer.read_text(encoding="utf-8").splitlines():
+        if line.strip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        targets.extend(re.findall(r"\[[^\]]+\]\(([^)\s]+)(?:\s+[^)]*)?\)", line))
+
+    expected = state.paths.task.resolve()
+    for target in targets:
+        if target.startswith(("#", "http://", "https://", "file://")):
+            continue
+        normalized = (pointer.parent / target).resolve()
+        if normalized == expected:
+            return True
+    return False
 
 
 def format_status(state: WorkflowState) -> str:
@@ -229,4 +261,12 @@ def format_status(state: WorkflowState) -> str:
             f"- {state.suggested_action}",
         ]
     )
+    if state.suggested_action == "resolve-verification":
+        lines.extend(
+            [
+                "",
+                "Action required:",
+                "- 먼저 검증 문제를 해결하고 실제 결과를 Verification에 기록하세요.",
+            ]
+        )
     return "\n".join(lines)

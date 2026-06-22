@@ -78,6 +78,21 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
             pass
 
 
+def _serialized_log_directory(log_dir: Path, repo: Path) -> str:
+    """로그 경로를 repository 내부 상대 경로 또는 외부 절대 경로로 직렬화한다.
+
+    경로가 repository 밖에 있어도 relative_to 예외를 외부로 전파하지 않아
+    Agent 실행 결과 저장이 실패하지 않게 한다. 파일을 생성하거나 변경하지 않는다.
+    """
+
+    normalized_log = log_dir.resolve()
+    normalized_repo = repo.resolve()
+    try:
+        return str(normalized_log.relative_to(normalized_repo))
+    except ValueError:
+        return str(normalized_log)
+
+
 def run_agent(
     state: WorkflowState,
     action: str,
@@ -134,7 +149,7 @@ def run_agent(
         exit_code=exit_code,
         duration_seconds=duration,
         timed_out=timed_out,
-        log_directory=str(log_dir.resolve().relative_to(state.repo.resolve())),
+        log_directory=_serialized_log_directory(log_dir, state.repo),
         started_at=started_at.isoformat(),
     )
     (log_dir / "result.json").write_text(

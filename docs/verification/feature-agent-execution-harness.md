@@ -16,6 +16,98 @@ passed
 ## Commands Run
 
 Command:
+`python -m pip install -r requirements-dev.txt`
+
+Result:
+- `requirements.txt`와 `requirements-dev.txt`의 모든 package가 현재 Python 환경에 이미 설치되어 있었다.
+- 마지막 pyenv rehash 단계에서 `/Users/seochanjin/.pyenv/shims` 쓰기 권한이 없어 exit code 1로 종료됐다.
+- 신규 package 설치나 dependency 변경은 발생하지 않았다.
+
+Status: failed
+
+Notes:
+의존성 누락 실패가 아니라 pyenv shim 권한 문제다. 이후 같은 Python executable로 pytest와 unittest를 실행해 전체 통과를 확인했다.
+
+Command:
+`python --version && python -m pytest --version && python -m pytest`
+
+Result:
+- Python 3.11.7
+- pytest 9.1.1
+- collected 177 items
+- 177 passed in 3.88s
+
+Status: passed
+
+Command:
+`python -m unittest discover -s tests`
+
+Result:
+- Ran 177 tests in 3.624s
+- OK
+
+Status: passed
+
+Notes:
+중간 argparse `usage:` 및 `error:` 출력은 invalid input을 검증하는 기존 test의 예상 stderr다. CodeRabbit의 100 tests / 12 errors는 현재 환경에서 재현되지 않았다.
+
+Command:
+`python -m pytest tests/test_agent_workflow_state.py tests/test_agent_workflow_gates.py -v`
+
+Result:
+- 첫 실행: status 안내 문구 expectation 1건 실패
+- 안내 문구를 실행 가능한 표현으로 맞춘 뒤 17 passed, 3 subtests passed in 1.32s
+
+Status: passed
+
+Notes:
+Review가 존재하는 failed/pending 상태는 `resolve-verification`을 반환하고 Review gate를 통과하지 않는다. passed/applied 상태는 기존 `pr-draft` 계약을 유지한다.
+
+Command:
+`python -m pytest tests/test_agent_workflow_state.py -v`
+
+Result:
+`13 passed, 3 subtests passed in 1.06s`
+
+Status: passed
+
+Notes:
+정상 Markdown link target은 허용하고 잘못된 link, 일반 본문 파일명과 fenced code 예시는 `docs/tasks/main.md` pointer로 인정하지 않음을 확인했다.
+
+Command:
+`python -m pytest tests/test_agent_workflow_gates.py -v`
+
+Result:
+`10 passed, 2 subtests passed in 0.48s`
+
+Status: passed
+
+Notes:
+환경변수의 정상 executable과 PATH command는 허용하고 누락 경로와 디렉터리는 값 노출 없이 GateError로 차단함을 확인했다.
+
+Command:
+`python -m pytest tests/test_agent_workflow_runner.py -v`
+
+Result:
+`4 passed in 2.13s`
+
+Status: passed
+
+Notes:
+repository 내부 로그의 기존 동작과 외부 로그 경로의 절대 경로 직렬화, 정상·비정상 종료 및 timeout 로그 보존을 확인했다.
+
+Command:
+`rg -n '~/?news-lab|file://|/Users/[^ )]+/news-lab' docs/reviews/feature-agent-execution-harness-antigravity.md || true`
+
+Result:
+출력 없음.
+
+Status: passed
+
+Notes:
+Antigravity Review의 로컬 경로 link를 저장소 상대 Markdown link로 변경했고 Review 내용과 판정은 유지했다.
+
+Command:
 `command -v codex`, `command -v antigravity`, `command -v gemini`
 
 Result:
@@ -377,6 +469,70 @@ Status: passed
 - pytest 9.1.1에서 전체 171개 test가 통과해 과거 미설치 상태를 재검증으로 해소했다.
 - Verification 현재 상태는 명시적 `Verification Status` section만 사용하며 과거 실패 이력과 예시 문구를 무시한다.
 - 전체 회귀 test는 FIX-03 테스트 추가 후 177개가 통과했다.
+- FIX-05부터 FIX-09까지의 회귀 테스트 추가 후 전체 pytest 187개와 unittest 187개가 통과했다.
+- failed/pending Verification은 Review 재실행 대신 `resolve-verification` 안내를 제공한다.
+- `main.md`는 실제 Markdown link target만 현재 Task pointer로 인정한다.
+- 환경변수 Agent binary는 존재하고 실행 가능한 파일 또는 PATH command인지 사전 검증한다.
+- repository 외부 로그 경로도 절대 경로로 안전하게 result JSON에 저장한다.
+- Antigravity Review의 로컬 절대·home 경로 link는 저장소 상대 Markdown link로 정규화됐다.
+
+Command:
+`python -m pytest`
+
+Result:
+- Python 3.11.7
+- pytest 9.1.1
+- collected 187 items
+- 187 passed in 4.33s
+
+Status: passed
+
+Command:
+`python -m unittest discover -s tests`
+
+Result:
+- Ran 187 tests in 3.803s
+- OK
+
+Status: passed
+
+Notes:
+중간 argparse `usage:` 및 `error:` 출력은 invalid input을 검증하는 기존 test의 예상 stderr다.
+
+Command:
+`python -m compileall app scripts tests && python -c "import scripts.agent_workflow" && bash -n scripts/new_agent_task.sh && bash -n scripts/agent_next_step.sh && bash -n scripts/agent_run.sh`
+
+Result:
+Python compile/import와 세 Shell entrypoint 문법 검증 성공.
+
+Status: passed
+
+Command:
+`scripts/agent_next_step.sh status && git diff --check && git diff --stat && git status --short --branch && git diff -- app db k8s`
+
+Result:
+- Verification: `passed`
+- Review: `present`
+- Approved fixes: `applied`
+- Suggested next action: `pr-draft`
+- whitespace error 없음
+- app, db, k8s diff 없음
+
+Status: passed
+
+Command:
+`git diff --check && scripts/agent_next_step.sh status && git diff -- app db k8s && git status --short --branch`
+
+Result:
+- 최종 문서 갱신 후 whitespace error 없음
+- Verification: `passed`
+- Review: `present`
+- Approved fixes: `applied`
+- Suggested next action: `pr-draft`
+- app, db, k8s diff 없음
+- CodeRabbit review의 기존 user change를 포함한 working tree 상태 확인
+
+Status: passed
 
 ## Manual or Production Verification
 

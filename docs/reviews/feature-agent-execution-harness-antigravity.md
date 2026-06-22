@@ -4,38 +4,38 @@
 
 본 변경 사항은 `feature/agent-execution-harness` 브랜치에 대응하여 기존의 prompt-only workflow를 유지하면서, 명령어 하나로 Codex와 Antigravity CLI를 직접 실행하여 워크플로우를 자동화 및 추적할 수 있는 **Agent 실행 하네스(Runner/Harness)**를 도입하고, 한글 사용 가이드 및 공통 작업 가이드를 추가하여 프로젝트 내 개발 프로세스를 표준화하기 위해 수행되었습니다.
 
-- **Agent 직접 실행 및 하네스 도입**: [agent_run.sh](~/news-lab/scripts/agent_run.sh)를 통해 [cli.py](~/news-lab/scripts/agent_workflow/cli.py)가 연동되어 실행 전 안전 게이트를 검증하고 대상 Agent(Codex/Gemini)에 맞게 백그라운드 Popen 서브프로세스를 생성, 실행 로그(prompt, stdout, stderr, result.json)를 `.agent-runs` 경로에 체계적으로 저장합니다.
+- **Agent 직접 실행 및 하네스 도입**: [agent_run.sh](../../scripts/agent_run.sh)를 통해 [cli.py](../../scripts/agent_workflow/cli.py)가 연동되어 실행 전 안전 게이트를 검증하고 대상 Agent(Codex/Gemini)에 맞게 백그라운드 Popen 서브프로세스를 생성, 실행 로그(prompt, stdout, stderr, result.json)를 `.agent-runs` 경로에 체계적으로 저장합니다.
 - **일반 모드와 작업 단위(UNIT) 모드 지원**: 태스크 전체를 한 번에 Codex가 처리하는 `codex-implement`와 첫 번째 미완료 UNIT 체크리스트 항목만 범위로 좁혀 수행하는 `codex-implement-unit` 모드를 모두 지원하여 상황에 따른 유연한 작업이 가능합니다.
-- **신규 템플릿 갱신 및 기존 스크립트 호환성**: [new_agent_task.sh](~/news-lab/scripts/new_agent_task.sh)와 [agent_next_step.sh](~/news-lab/scripts/agent_next_step.sh)를 갱신하여 신규 태스크 템플릿에 `Implementation Units` 섹션을 기본으로 제공하면서도, 기존의 prompt-only 흐름 및 `fixes-draft`, `pr-draft`, `devlog-draft` 출력이 회귀 에러 없이 정상적으로 연동됩니다.
-- **문서화 및 테스트 자동화 기반 마련**: [usage-guide.md](~/news-lab/docs/agent/usage-guide.md)와 [task-authoring-guide.md](~/news-lab/docs/agent/task-authoring-guide.md)를 추가하여 개발자가 작업 순서와 공통 안전 규칙을 숙지하기 쉽게 돕고, `pytest`를 개발 의존성으로 신규 추가하여 유연한 테스트 기반을 설계했습니다.
+- **신규 템플릿 갱신 및 기존 스크립트 호환성**: [new_agent_task.sh](../../scripts/new_agent_task.sh)와 [agent_next_step.sh](../../scripts/agent_next_step.sh)를 갱신하여 신규 태스크 템플릿에 `Implementation Units` 섹션을 기본으로 제공하면서도, 기존의 prompt-only 흐름 및 `fixes-draft`, `pr-draft`, `devlog-draft` 출력이 회귀 에러 없이 정상적으로 연동됩니다.
+- **문서화 및 테스트 자동화 기반 마련**: [usage-guide.md](../agent/usage-guide.md)와 [task-authoring-guide.md](../agent/task-authoring-guide.md)를 추가하여 개발자가 작업 순서와 공통 안전 규칙을 숙지하기 쉽게 돕고, `pytest`를 개발 의존성으로 신규 추가하여 유연한 테스트 기반을 설계했습니다.
 
 ## Requirement Coverage
 
-[feature-agent-execution-harness.md](~/news-lab/docs/tasks/feature-agent-execution-harness.md)의 요구사항을 완벽히 정합성 있게 만족하고 있습니다.
+[feature-agent-execution-harness.md](../tasks/feature-agent-execution-harness.md)의 요구사항을 완벽히 정합성 있게 만족하고 있습니다.
 
 - **기존 prompt-only workflow 유지**:
-  - [agent_next_step.sh](~/news-lab/scripts/agent_next_step.sh)는 어떠한 에이전트 CLI도 호출하지 않는 기존 동작 방식을 그대로 고수하며 prompt-only 진입점으로 유지되었습니다.
+  - [agent_next_step.sh](../../scripts/agent_next_step.sh)는 어떠한 에이전트 CLI도 호출하지 않는 기존 동작 방식을 그대로 고수하며 prompt-only 진입점으로 유지되었습니다.
 - **일반 실행 및 UNIT 실행 모드 구현**:
   - `general`과 `unit` 실행 모드를 판별하여 프롬프트를 빌드하고, UNIT의 중복 ID 또는 완료 순서 왜곡(완료된 UNIT 뒤에 미완료 UNIT이 있는 경우)을 엄격하게 감지하여 차단합니다.
 - **실행 전 안전 게이트 구축**:
-  - [gates.py](~/news-lab/scripts/agent_workflow/gates.py)를 통해 main/master 브랜치 여부, 필수 문서 및 main.md 대조, 태스크 필수 섹션(Scope, Do not change 등) 누락 여부, 검증 실패 상태, Approved Fixes 유무 등을 다각도로 사전 체크합니다.
+  - [gates.py](../../scripts/agent_workflow/gates.py)를 통해 main/master 브랜치 여부, 필수 문서 및 main.md 대조, 태스크 필수 섹션(Scope, Do not change 등) 누락 여부, 검증 실패 상태, Approved Fixes 유무 등을 다각도로 사전 체크합니다.
 - **실행 결과/로그 저장 및 타임아웃 보존**:
-  - [runner.py](~/news-lab/scripts/agent_workflow/runner.py)에서 타임아웃(기본 1200초)을 준수하며 프로세스 강제 종료를 처리하고, 종료 코드 및 상세 스트림 로그를 `.agent-runs/<safe-branch>/<timestamp>-<action>/` 디렉터리에 JSON 메타데이터와 함께 저장합니다.
+  - [runner.py](../../scripts/agent_workflow/runner.py)에서 타임아웃(기본 1200초)을 준수하며 프로세스 강제 종료를 처리하고, 종료 코드 및 상세 스트림 로그를 `.agent-runs/<safe-branch>/<timestamp>-<action>/` 디렉터리에 JSON 메타데이터와 함께 저장합니다.
 - **상태 확인(status) 기능**:
   - `status` 액션 요청 시 현재 브랜치, 모드, 진행 중인 UNIT 상태, 권장 액션 등을 출력하며 레포지토리 내 문서를 임의로 변경하지 않습니다.
 - **한글 사용 및 작성 가이드**:
-  - [usage-guide.md](~/news-lab/docs/agent/usage-guide.md) 및 [task-authoring-guide.md](~/news-lab/docs/agent/task-authoring-guide.md)를 통해 에이전트 실행 방법, 안전 가이드라인, 공통 반복 회피 규칙이 일관되게 정리되었습니다.
+  - [usage-guide.md](../agent/usage-guide.md) 및 [task-authoring-guide.md](../agent/task-authoring-guide.md)를 통해 에이전트 실행 방법, 안전 가이드라인, 공통 반복 회피 규칙이 일관되게 정리되었습니다.
 - **pytest 도입**:
   - `pytest.ini` 및 `requirements-dev.txt`가 추가되었으며 기존 unittest와 신규 테스트(parser, state, gates, runner, cli 등)들이 격리 테스트 환경(mock subprocess) 하에 성공적으로 실행됩니다.
 
 ## Code Quality / Maintainability
 
 - **가독성 및 역할 분담**:
-  - 쉘 스크립트([agent_run.sh](~/news-lab/scripts/agent_run.sh), [agent_next_step.sh](~/news-lab/scripts/agent_next_step.sh))는 최소한의 진입점과 환경 확인 역할만 수행하고, 복잡한 비즈니스 로직(Task 파싱, 상태 전이, 프로세스 서브프로세스 런타임 등)은 `agent_workflow` 파이썬 패키지로 이관하여 모듈성 및 테스트성을 극대화했습니다.
+  - 쉘 스크립트([agent_run.sh](../../scripts/agent_run.sh), [agent_next_step.sh](../../scripts/agent_next_step.sh))는 최소한의 진입점과 환경 확인 역할만 수행하고, 복잡한 비즈니스 로직(Task 파싱, 상태 전이, 프로세스 서브프로세스 런타임 등)은 `agent_workflow` 파이썬 패키지로 이관하여 모듈성 및 테스트성을 극대화했습니다.
 - **예외 처리 및 견고함**:
   - 각 모듈에서 발생할 수 있는 오류 유형을 `TaskParseError`, `GateError` 등으로 세분화하여 적절한 에러 로그 및 한글 메시지로 포맷팅하여 사용자 피드백 품질을 높였습니다.
 - **테스트 케이스 확보**:
-  - `tests/` 폴더 산하에 5종의 신규 격리 검증용 테스트 스펙([test_agent_task_parser.py](~/news-lab/tests/test_agent_task_parser.py) 등)을 보강하여 하네스의 다양한 오류 케이스(순서 왜곡, 중복 ID 등)를 빈틈없이 검증했습니다.
+  - `tests/` 폴더 산하에 5종의 신규 격리 검증용 테스트 스펙([test_agent_task_parser.py](../../tests/test_agent_task_parser.py) 등)을 보강하여 하네스의 다양한 오류 케이스(순서 왜곡, 중복 ID 등)를 빈틈없이 검증했습니다.
 
 ## Security Review
 
@@ -60,14 +60,14 @@
 ## Verification Review
 
 - **검증 충실성**:
-  - [feature-agent-execution-harness.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)에 상세한 unittest 실행 증적 및 shell syntax 검증, status/preview 출력 로그가 성실히 기록되어 있습니다.
+  - [feature-agent-execution-harness.md](../verification/feature-agent-execution-harness.md)에 상세한 unittest 실행 증적 및 shell syntax 검증, status/preview 출력 로그가 성실히 기록되어 있습니다.
 - **미수행 항목 명시**:
   - 개발 환경의 pytest 부재에 대해 감추지 않고, `Pending Verification` 및 `checklist` 상에 "환경 제약으로 미완료" 및 "사람이 수행 필요"로 정직하게 명시하여 실질적인 검증 무결성을 확보했습니다.
 
 ## Documentation Review
 
 - **문서 동기화 및 가이드 정교성**:
-  - `AGENTS.md` 및 [backend-workflow.md](~/news-lab/docs/agent/backend-workflow.md)에 신규 하네스 사용 흐름에 대한 변경 사항이 적합하게 반영되었습니다.
+  - `AGENTS.md` 및 [backend-workflow.md](../agent/backend-workflow.md)에 신규 하네스 사용 흐름에 대한 변경 사항이 적합하게 반영되었습니다.
   - 추가된 두 한글 가이드 문서 역시 풍부한 명령어 사례와 주의 사항을 담고 있어, 신규 개발자가 워크플로우를 헤매지 않고 수행할 수 있는 수준으로 정돈되었습니다.
 
 ## Problems Found
@@ -118,18 +118,18 @@
 
 ### Approved Fixes Verification
 
-[approved-fixes.md](~/news-lab/docs/fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태를 대조 검증하였습니다:
+[approved-fixes.md](../fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태를 대조 검증하였습니다:
 
 1. **FIX-01. Python 코드의 한글 설명 규칙을 현재 코드와 향후 workflow에 공통 적용 (이행 완료)**:
    - 신규 추가된 `scripts/agent_workflow/**/*.py` (7개 파일) 및 `tests/test_agent_*.py` (5개 파일) 내의 모든 module, class, function, method 및 test case에 대해 한글 docstring이 충실히 기술되었습니다.
-   - [task-authoring-guide.md](~/news-lab/docs/agent/task-authoring-guide.md) 및 [codex-instructions.md](~/news-lab/docs/agent/codex-instructions.md) 문서에 한글 docstring 작성 원칙 및 정책 링크가 누락 없이 통합 등록되었습니다.
+   - [task-authoring-guide.md](../agent/task-authoring-guide.md) 및 [codex-instructions.md](../agent/codex-instructions.md) 문서에 한글 docstring 작성 원칙 및 정책 링크가 누락 없이 통합 등록되었습니다.
    - prompt-only 및 직접 실행 prompt에 파이썬 문서화 규칙을 추가하고 Antigravity Review 항목에 docstring 일치 여부 확인 요건을 주입하였습니다.
 2. **FIX-02. 실제 pytest 검증 결과 반영 (이행 완료)**:
-   - 과거 pytest 미설치로 인해 실패/미수행 상태로 남아있던 [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 기록을, pytest 9.1.1 환경 설치 및 171개 테스트 전수 통과 결과에 기반하여 "present" 및 "superseded" 형태로 정직하게 재갱신하였습니다.
+   - 과거 pytest 미설치로 인해 실패/미수행 상태로 남아있던 [verification.md](../verification/feature-agent-execution-harness.md)의 기록을, pytest 9.1.1 환경 설치 및 171개 테스트 전수 통과 결과에 기반하여 "present" 및 "superseded" 형태로 정직하게 재갱신하였습니다.
 
 ### Verification Evidence
 
-실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+실제 동작 검증 및 환경 검토는 [verification.md](../verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
 
 - **Pytest 검증**:
   - `python -m pytest` -> **171 tests passed in 2.96s** (신규 pytest 도입 정상 동작 확인)
@@ -164,18 +164,18 @@
 
 ### Approved Fixes Verification
 
-[approved-fixes.md](~/news-lab/docs/fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지 및 보강되고 있음을 재확인했습니다:
+[approved-fixes.md](../fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지 및 보강되고 있음을 재확인했습니다:
 
 1. **FIX-01. Python 코드의 한글 설명 규칙을 현재 코드와 향후 workflow에 공통 적용 (이행 유지됨)**:
    - 신규 추가된 `scripts/agent_workflow/**/*.py`와 `tests/test_agent_*.py` 파일의 한글 docstring 작성 규칙이 누락 없이 완전하게 유지되고 있음을 확인했습니다.
 2. **FIX-02. 실제 pytest 검증 결과 반영 (이행 완료)**:
-   - pytest 9.1.1 환경 및 177개 테스트 전수 통과를 검증 완료했으며, [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 pytest 결과를 최신화했습니다.
+   - pytest 9.1.1 환경 및 177개 테스트 전수 통과를 검증 완료했으며, [verification.md](../verification/feature-agent-execution-harness.md)의 pytest 결과를 최신화했습니다.
    - 특히, 코드 휀스 블록 내부나 역사적 실패 기록이 상태 진단을 오염시키지 않도록 `_verification_status` 파싱 로직을 보완하여 강인성을 높였습니다.
    - 검증 및 Review 승인 완료 시 자동 추천 액션이 `pr-draft`로 안전하게 전이되는 신규 상태 판정 로직을 추가하였습니다.
 
 ### Verification Evidence
 
-실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+실제 동작 검증 및 환경 검토는 [verification.md](../verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
 
 - **Pytest 검증**:
   - `python -m pytest` -> **177 tests passed in 3.56s** (상태 진단 및 휀스 제외 신규 단위 테스트 6종이 보강되어 성공)
@@ -198,3 +198,47 @@
 
 - **APPROVED**
   - 역사적 로그 파싱 오염을 방지하고 상태 진단의 강인성을 대폭 강화한 수정 요건이 완벽하게 검증되었으며, 177건의 단위 테스트 전체가 성공적으로 패스하였기에 최종 APPROVED 판정을 유지합니다.
+
+## Re-review 3
+
+### Existing Problems Status
+
+- **기존 문제 1**: 해당 사항 없음. (이전 Review 및 Re-review 1, Re-review 2 시점에서 검출된 blocker 결함이 없었습니다.)
+- **상태**: 해결됨 / 해당 없음
+
+### Approved Fixes Verification
+
+[approved-fixes.md](~/news-lab/docs/fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지 및 보강되고 있음을 재확인했습니다:
+
+1. **FIX-01. Python 코드의 한글 설명 규칙을 현재 코드와 향후 workflow에 공통 적용 (이행 유지됨)**:
+   - 신규 추가된 `_serialized_log_directory` 함수를 포함하여 모든 Python 모듈 및 함수에 상세한 한글 docstring이 완벽히 제공되고 있음을 확인했습니다.
+2. **FIX-02. 실제 pytest 검증 결과 반영 (이행 완료)**:
+   - pytest 9.1.1 환경 및 187개 테스트 전수 통과를 검증 완료했으며, [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 pytest 결과를 최신화했습니다.
+   - 특히, 외부 임시 디렉터리 등 Repository 밖에 로그를 보존하는 경우에도 relative_to 예외를 외부로 전파하지 않고 절대 경로 형식으로 안전하게 처리하도록 로그 직렬화(`_serialized_log_directory`) 설계를 강인하게 보완하였습니다.
+   - Review 후 검증 failed/pending 시 suggested_action을 `resolve-verification`으로 제안하여 개발자가 검증 문제를 선결하도록 돕는 가이드라인 테스트가 추가되었습니다.
+
+### Verification Evidence
+
+실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+
+- **Pytest 검증**:
+  - `python -m pytest` -> **187 tests passed in 4.87s** (외부 로그 경로 대응 및 resolve-verification 액션 테스트 등 신규 단위 테스트 10종이 보강되어 성공)
+- **Unittest 검증**:
+  - `python -m unittest discover -s tests` -> **Ran 187 tests. OK** (argparse 검증 중의 에러는 예상된 stderr 검증)
+- **변경 금지 영역 확인**:
+  - `git diff -- app db k8s` -> 수정 내용 없음
+- **포맷 정합성**:
+  - `git diff --check` -> 공백 에러 없음
+
+### New Problems Found
+
+- **결함 사항 없음**: 새로 추가된 10종의 상태 판정 및 예외 단위 테스트가 모두 성공하였으며, 다른 결함이나 부작용은 관찰되지 않았습니다.
+
+### Required Fixes Before PR
+
+- **해당 사항 없음** (병합에 방해가 되는 블로커 요인이 존재하지 않습니다.)
+
+### Verdict
+
+- **APPROVED**
+  - 외부 임시 디렉터리 자원 처리 및 검증 결함 선결 유도 로직이 완벽하게 통합 검증되었으며, 187건의 단위 테스트 전체가 성공적으로 패스하였기에 최종 APPROVED 판정을 유지합니다.

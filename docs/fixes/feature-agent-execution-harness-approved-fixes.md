@@ -495,6 +495,48 @@ Approved fixes:
 
 다음 권장 action은 현재 workflow 상태에 맞는 PR 준비 단계여야 한다.
 
+- [x] FIX-04. 테스트 결과 불일치 재검증 및 PR 문서 갱신
+  - `python -m pip install -r requirements-dev.txt`로 개발 의존성을 확인한다.
+  - `python -m pytest`와 `python -m unittest discover -s tests`를 다시 실행한다.
+  - 실제 수집 수, 통과 수, 실패 및 오류 수를 Verification에 기록한다.
+  - CodeRabbit이 보고한 100 tests / 12 errors가 재현되면 오류 원인을 수정한다.
+  - 재현되지 않고 177건이 통과하면 실행 환경과 Python·pytest 버전을 PR 문서에 명시한다.
+  - 실제 결과와 다른 테스트 수를 문서에 유지하지 않는다.
+
+- [x] FIX-05. Verification 상태와 다음 권장 action의 계약 일치
+  - Verification이 `failed` 또는 `pending`일 때 `antigravity-review`를 추천하지 않는다.
+  - status에는 먼저 Verification 문제를 해결해야 한다는 실행 가능한 안내를 출력한다.
+  - `suggested_action`이 반환하는 실행 action은 해당 상태에서 gate를 통과할 수 있어야 한다.
+  - 실패, pending, passed 상태별 회귀 테스트를 추가한다.
+  - 새로 생성하거나 수정한 Python 코드에는 한글 docstring을 작성한다.
+
+- [x] FIX-06. `docs/tasks/main.md` 포인터 검증 강화
+  - Task 파일명의 단순 문자열 포함 여부로 포인터를 판정하지 않는다.
+  - `docs/tasks/main.md`에서 실제 Markdown link target을 추출한다.
+  - 정규화된 link target이 현재 Task 파일 경로와 정확히 일치할 때만 통과한다.
+  - 본문 설명이나 코드 예시에 Task 파일명만 포함된 경우에는 차단한다.
+  - 정상 link, 잘못된 link, 일반 본문 오탐에 대한 테스트를 추가한다.
+  - 새로 생성하거나 수정한 Python 코드에는 한글 docstring을 작성한다.
+
+- [x] FIX-07. 환경변수로 지정한 Agent binary 검증
+  - `AGENT_CODEX_BIN`과 `AGENT_ANTIGRAVITY_BIN`이 설정된 경우 gate에서 존재 여부와 실행 가능 여부를 확인한다.
+  - 경로가 디렉터리이거나 존재하지 않거나 실행할 수 없으면 한글 `GateError`를 발생시킨다.
+  - command 이름이면 PATH에서 찾을 수 있는지 확인한다.
+  - 정상 executable과 잘못된 경로에 대한 테스트를 추가한다.
+  - Secret, token 또는 credential 값은 출력하지 않는다.
+
+- [x] FIX-08. 저장소 외부 로그 경로의 안전한 직렬화
+  - `log_directory`가 저장소 내부일 때는 저장소 상대 경로를 기록한다.
+  - 저장소 외부일 때는 `relative_to()` 예외를 발생시키지 않고 정규화된 절대 경로를 기록한다.
+  - 경로 표시 실패로 Agent 실행 결과 저장이 실패하지 않게 한다.
+  - 저장소 내부 및 외부 log directory 테스트를 추가한다.
+  - 새로 생성하거나 수정한 Python 코드에는 한글 docstring을 작성한다.
+
+- [x] FIX-09. 문서 링크의 저장소 상대 경로 정규화
+  - Antigravity Review 문서의 `~/news-lab/...` 링크를 저장소 상대 Markdown link로 변경한다.
+  - `file://` 절대 URL은 사용하지 않는다.
+  - 링크 변경 외에 Review 내용과 판정은 수정하지 않는다.
+
 ## Rejected or Deferred Suggestions
 
 ### DEFERRED-01. pytest 미설치 시 자동 설치
@@ -535,6 +577,32 @@ pytest를 찾을 수 없음
   - 과거 실패 문장과 fenced code 예시가 현재 실패 상태를 오염시키지 않는 회귀 테스트를 추가했다.
   - Verification `passed`, Review `present`, Approved Fixes `applied` 상태에서는 `pr-draft`를 권장하도록 변경했다.
   - 신규 Verification 템플릿과 현재 문서, 사용 가이드 및 verification gate에 명시적 상태 section을 반영했다.
+- FIX-04:
+  - `requirements-dev.txt`의 모든 dependency가 현재 Python 3.11.7 환경에 이미 설치되어 있음을 확인했다.
+  - `pip install`은 dependency 확인 후 pyenv shim rehash 권한 문제로 exit 1이었으며 환경 변경은 발생하지 않았다.
+  - pytest 9.1.1에서 177개, unittest에서 177개 test가 통과해 100 tests / 12 errors는 재현되지 않았다.
+  - 실제 Python·pytest 버전과 test 수를 Verification 및 PR 문서에 반영했다.
+- FIX-05:
+  - Review가 존재하는 `failed` 또는 `pending` Verification 상태에서는 `antigravity-review` 대신 `resolve-verification`을 안내하도록 변경했다.
+  - status에 먼저 검증 문제를 해결하고 실제 결과를 기록하라는 한글 안내를 추가했다.
+  - Antigravity Review gate도 `failed`와 `pending` 상태를 모두 차단하도록 계약을 일치시켰다.
+  - failed, pending, passed 상태와 gate 동작 회귀 테스트를 추가했다.
+- FIX-06:
+  - `main.md`의 파일명 문자열 포함 검사를 제거하고 fenced code 밖의 실제 Markdown link target을 추출하도록 변경했다.
+  - pointer 문서 기준으로 정규화한 link 경로가 현재 Task 경로와 정확히 일치할 때만 통과한다.
+  - 정상 link, 잘못된 link, 일반 본문 파일명과 fenced code 예시 오탐 회귀 테스트를 추가했다.
+- FIX-07:
+  - `AGENT_CODEX_BIN`과 `AGENT_ANTIGRAVITY_BIN`의 경로 또는 command 이름을 실행 전에 검증하도록 변경했다.
+  - 경로는 실행 가능한 일반 파일인지 확인하고 command 이름은 PATH에서 조회한다.
+  - 누락 경로와 디렉터리는 환경변수 값을 노출하지 않는 한글 GateError로 차단한다.
+  - 정상 executable, 잘못된 경로, 디렉터리와 PATH command 회귀 테스트를 추가했다.
+- FIX-08:
+  - repository 내부 로그는 기존처럼 상대 경로로 기록하고 외부 로그는 정규화된 절대 경로로 기록하도록 변경했다.
+  - `relative_to()` 실패가 Agent 실행 결과와 `result.json` 저장을 중단하지 않도록 별도 직렬화 helper를 추가했다.
+  - repository 외부 로그 디렉터리 회귀 테스트를 추가했다.
+- FIX-09:
+  - Antigravity Review의 `~/news-lab/...` Markdown link target을 `docs/reviews/` 기준 저장소 상대 경로로 변경했다.
+  - Review 본문, finding과 verdict는 수정하지 않았고 `file://` 절대 URL도 추가하지 않았다.
 - 승인 Fix 적용 외 application 동작, API, DB, K3s 및 production workflow는 변경하지 않았다.
 
 ## Verification Required
@@ -578,7 +646,7 @@ python -m pytest
 기대 결과:
 
 ```text
-171 passed
+187 passed
 ```
 
 테스트 수가 docstring 전용 테스트 추가 등으로 변경되면 실제 실행 결과를 기록한다.
