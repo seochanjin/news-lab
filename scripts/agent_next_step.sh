@@ -7,10 +7,13 @@ usage() {
 
 Commands:
   files                       현재 branch의 workflow 파일 경로 출력
+  status                      현재 workflow 상태와 다음 action 출력
   codex-implement             Codex 구현 prompt 출력
+  codex-implement-unit        현재 미완료 UNIT Codex 구현 prompt 출력
   antigravity-review          Antigravity chat review prompt 출력
   antigravity-review-write    Antigravity review 파일 작성 prompt 출력
   fixes-draft                 review fix 후보 작성 prompt 출력
+  codex-fix                   승인된 fix 적용 prompt 출력
   codex-apply-fixes           승인된 fix 적용 prompt 출력
   pr-draft                    PR 초안 작성 prompt 출력
   devlog-draft                devlog 초안 작성 prompt 출력
@@ -71,6 +74,10 @@ print_common_rules() {
 - Codex, Gemini/Antigravity, GitHub, CodeRabbit을 자동 실행하지 않는다.
 - 현재 task가 명시적으로 요구하지 않으면 GitHub MCP를 사용하지 않는다.
 - Review output만으로는 수정이 승인되지 않는다. docs/fixes/<safe-branch>-approved-fixes.md의 Approved Fixes만 적용할 수 있다.
+
+Python 문서화 규칙:
+- docs/agent/task-authoring-guide.md의 Python 문서화 정책을 따른다.
+- 새로 생성하거나 의미 있게 수정한 Python module, class, function, method와 테스트에는 실제 역할과 검증 목적을 설명하는 한글 docstring을 작성한다.
 EOF
 }
 
@@ -193,6 +200,8 @@ Review 규칙:
 - Bug, unsafe production behavior, scope creep, verification 누락, 문서 불일치를 우선한다.
 - Review output을 approved fixes로 취급하지 않는다.
 - docs/verification/${safe}.md 또는 제공된 log에 없는 command를 실행된 것으로 주장하지 않는다.
+- 새로 생성하거나 의미 있게 수정한 Python 코드에 한글 module, class, function 및 method docstring이 있는지 확인한다.
+- Python docstring이 실제 구현 및 테스트 목적과 일치하는지 확인한다.
 
 Review 모드:
 - docs/reviews/${safe}-antigravity.md가 없거나 비어 있으면 최초 review다.
@@ -563,6 +572,9 @@ main() {
     codex-implement)
       print_codex_implement "$branch" "$safe"
       ;;
+    codex-implement-unit)
+      python -m scripts.agent_workflow.cli codex-implement-unit --prompt-only
+      ;;
     antigravity-review)
       print_antigravity_review "$branch" "$safe"
       ;;
@@ -572,8 +584,11 @@ main() {
     fixes-draft)
       print_fixes_draft "$branch" "$safe"
       ;;
-    codex-apply-fixes)
+    codex-fix|codex-apply-fixes)
       print_codex_apply_fixes "$branch" "$safe"
+      ;;
+    status)
+      python -m scripts.agent_workflow.cli status
       ;;
     pr-draft)
       print_pr_draft "$branch" "$safe"

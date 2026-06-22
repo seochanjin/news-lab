@@ -37,7 +37,17 @@ cat > "docs/tasks/${SAFE_NAME}.md" <<TASK
 ## Acceptance criteria
 
 ## Notes
+
+## Implementation Units
+
+없음
 TASK
+
+cat > "docs/tasks/main.md" <<TASK_POINTER
+# Current Task
+
+[${SAFE_NAME}.md](${SAFE_NAME}.md)
+TASK_POINTER
 
 cat > "docs/pr/${SAFE_NAME}.md" <<PR
 # ${TASK_TITLE}
@@ -119,6 +129,10 @@ FIXES
 
 cat > "docs/verification/${SAFE_NAME}.md" <<VERIFY
 # Verification: ${TASK_TITLE}
+
+## Verification Status
+
+pending
 
 ## Verification Scope
 

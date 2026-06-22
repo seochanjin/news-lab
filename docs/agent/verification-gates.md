@@ -74,6 +74,19 @@ end-to-end 대상으로 삼을 수 있다.
 
 ## Verification 기록 형식
 
+Verification 문서 상단에는 현재 전체 상태를 명시한다.
+
+```markdown
+## Verification Status
+
+pending
+```
+
+지원 상태는 `pending`, `passed`, `failed`다. 실제 허용 검증이 모두 통과한
+뒤에만 `passed`로 변경한다. 과거 실패 이력과 개별 command의 `Status:`는
+보존하되 현재 전체 상태를 대신하지 않는다. 상태 section이 없는 기존 문서는
+`present`, 문서가 없으면 `missing`으로 호환 처리한다.
+
 각 command에 실제 실행 여부와 결과를 남긴다.
 
 ```text
@@ -84,3 +97,13 @@ Notes:
 ```
 
 PR과 devlog는 이 기록을 근거로 작성한다.
+
+## 실행 하네스 gate
+
+직접 Agent 실행 전에는 repository, branch, 현재 Task, `docs/tasks/main.md`,
+필수 workflow 문서와 대상 CLI를 확인한다. 구현과 Fix는 `main` 및 `master`에서
+차단한다. Codex Fix는 Approved Fixes의 실제 승인 항목을 요구하고, Review는
+변경사항과 Verification 문서 및 명시적 실패 여부를 확인한다.
+
+이 gate는 production 명령을 허용하지 않으며 Agent의 구현 품질이나 Task 완료를
+자동 판정하지 않는다.

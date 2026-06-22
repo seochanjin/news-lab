@@ -12,7 +12,7 @@
 
 ## Requirement Coverage
 
-[docs/tasks/docs-daily-pipeline-stage-design.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/tasks/docs-daily-pipeline-stage-design.md) 요구사항을 완벽히 정합성 있게 충족하고 있습니다.
+[docs/tasks/docs-daily-pipeline-stage-design.md](~/news-lab/docs/tasks/docs-daily-pipeline-stage-design.md) 요구사항을 완벽히 정합성 있게 충족하고 있습니다.
 
 - **단계 분리 및 인터페이스 획정**:
   - 각 단계의 입력과 출력을 정의한 결과 타입(`EmbeddingStageResult`, `TopicSelectionResult`, `RawAcquisitionResult`, `TopicSaveResult`)이 구현되었습니다.
@@ -27,7 +27,7 @@
 
 - **가독성 및 모듈화**: 스크립트 전반에 걸쳐 결합되어 있던 복잡한 처리 연산들이 단계별 함수 단위로 파편화되지 않고 명확하게 그룹핑되어 가독성이 높아졌습니다.
 - **주석 품질**: 코드 자체를 해석하는 불필요한 노이즈 주석을 추가하지 않고, 비즈니스 흐름과 단계 간 결합 조건을 명시하는 정갈한 주석들이 작성되었습니다.
-- **단위 테스트 정상화**: [tests/test_run_daily_topic_pipeline.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/tests/test_run_daily_topic_pipeline.py)에 단계별 격리 실행 테스트 및 수집 예외 케이스 4종이 보강되었으며, 전체 150건의 단위 테스트가 회귀 에러 없이 통과됨을 재검토하였습니다.
+- **단위 테스트 정상화**: [tests/test_run_daily_topic_pipeline.py](~/news-lab/tests/test_run_daily_topic_pipeline.py)에 단계별 격리 실행 테스트 및 수집 예외 케이스 4종이 보강되었으며, 전체 150건의 단위 테스트가 회귀 에러 없이 통과됨을 재검토하였습니다.
 
 ## Security Review
 
@@ -44,11 +44,11 @@
 
 ## Verification Review
 
-- **검증 실질 수행**: [docs/verification/docs-daily-pipeline-stage-design.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/docs-daily-pipeline-stage-design.md) 파일에 전체 테스트 통과 여부 및 정적 컴파일 실행 기록, 매니페스트 부재 체크 등에 대한 구체적인 명령어 증적이 성실히 기재되어 있습니다. 
+- **검증 실질 수행**: [docs/verification/docs-daily-pipeline-stage-design.md](~/news-lab/docs/verification/docs-daily-pipeline-stage-design.md) 파일에 전체 테스트 통과 여부 및 정적 컴파일 실행 기록, 매니페스트 부재 체크 등에 대한 구체적인 명령어 증적이 성실히 기재되어 있습니다.
 
 ## Documentation Review
 
-- **문서 동기화 완결성**: [docs/ARCHITECTURE.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/ARCHITECTURE.md), [docs/architecture/k3s-runtime.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/architecture/k3s-runtime.md), [docs/architecture/pipeline.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/architecture/pipeline.md) 및 [docs/runbooks/cronjobs.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/runbooks/cronjobs.md) 문서에서 기존 03:30 스케줄을 제거하고 04:00 파이프라인에서 지연 원문 추출이 수행된다는 내용으로 설명이 일관성 있게 수정되었습니다.
+- **문서 동기화 완결성**: [docs/ARCHITECTURE.md](~/news-lab/docs/ARCHITECTURE.md), [docs/architecture/k3s-runtime.md](~/news-lab/docs/architecture/k3s-runtime.md), [docs/architecture/pipeline.md](~/news-lab/docs/architecture/pipeline.md) 및 [docs/runbooks/cronjobs.md](~/news-lab/docs/runbooks/cronjobs.md) 문서에서 기존 03:30 스케줄을 제거하고 04:00 파이프라인에서 지연 원문 추출이 수행된다는 내용으로 설명이 일관성 있게 수정되었습니다.
 
 ## Problems Found
 
@@ -85,6 +85,7 @@
   - 본 변경 사항은 `Acceptance Criteria`를 완벽히 만족하며, 일관성 있는 리팩토링과 문서 동기화가 성실히 이루어졌으므로 PR 제출 및 병합 절차를 추진하기에 완벽히 적절합니다.
 
 ## Re-review 1
+
 ### Existing Problems Status
 
 - **기존 문제 1**: 해당 사항 없음. (최초 Review 시점에서 검출된 blocker 결함이 없었습니다.)
@@ -92,16 +93,16 @@
 
 ### Approved Fixes Verification
 
-[approved-fixes.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 6가지 승인된 수정(Approved Fixes) 사항의 이행 여부를 정합성 있게 대조 및 검증하였습니다:
+[approved-fixes.md](~/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 6가지 승인된 수정(Approved Fixes) 사항의 이행 여부를 정합성 있게 대조 및 검증하였습니다:
 
 1. **Daily topic pipeline을 역할별 패키지로 분리 (이행 완료)**:
-   - 기존에 한 파일에 섞여 있던 책임들이 [embedding_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/embedding_stage.py), [topic_selection_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/topic_selection_stage.py), [raw_acquisition_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/raw_acquisition_stage.py), [summary_persistence_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/summary_persistence_stage.py) 모듈들로 성공적으로 리팩토링 및 이관되었습니다.
+   - 기존에 한 파일에 섞여 있던 책임들이 [embedding_stage.py](~/news-lab/app/services/daily_topic_pipeline/embedding_stage.py), [topic_selection_stage.py](~/news-lab/app/services/daily_topic_pipeline/topic_selection_stage.py), [raw_acquisition_stage.py](~/news-lab/app/services/daily_topic_pipeline/raw_acquisition_stage.py), [summary_persistence_stage.py](~/news-lab/app/services/daily_topic_pipeline/summary_persistence_stage.py) 모듈들로 성공적으로 리팩토링 및 이관되었습니다.
 2. **실행 진입점의 책임 축소 (이행 완료)**:
-   - [run_daily_topic_pipeline.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/run_daily_topic_pipeline.py) 파일은 파라미터 유효성 검사, 실행 context 초기화, 단계별 함수 호출 및 통계 결합 등의 조정자 역할에 집중하도록 대폭 정리되었습니다.
+   - [run_daily_topic_pipeline.py](~/news-lab/scripts/run_daily_topic_pipeline.py) 파일은 파라미터 유효성 검사, 실행 context 초기화, 단계별 함수 호출 및 통계 결합 등의 조정자 역할에 집중하도록 대폭 정리되었습니다.
 3. **단계별 결과 타입 분리 (이행 완료)**:
-   - 각 단계간의 인터페이스 계약을 표현하는 결과 객체들(`PipelineContext`, `EmbeddingStageResult`, `TopicSelectionResult`, `RawAcquisitionResult`, `TopicSaveResult`)이 [models.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/models.py) 파일로 통합 정의되어 단방향 흐름이 보다 투명해졌습니다.
+   - 각 단계간의 인터페이스 계약을 표현하는 결과 객체들(`PipelineContext`, `EmbeddingStageResult`, `TopicSelectionResult`, `RawAcquisitionResult`, `TopicSaveResult`)이 [models.py](~/news-lab/app/services/daily_topic_pipeline/models.py) 파일로 통합 정의되어 단방향 흐름이 보다 투명해졌습니다.
 4. **파일 크기 제한 적용 (이행 완료)**:
-   - 진입점 스크립트인 [run_daily_topic_pipeline.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/run_daily_topic_pipeline.py)가 381줄로 경량화되었고, 서비스 모듈 중 가장 용량이 큰 [topic_selection_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/topic_selection_stage.py)가 182줄로, 500줄 제약 조건을 안정적으로 준수합니다.
+   - 진입점 스크립트인 [run_daily_topic_pipeline.py](~/news-lab/scripts/run_daily_topic_pipeline.py)가 381줄로 경량화되었고, 서비스 모듈 중 가장 용량이 큰 [topic_selection_stage.py](~/news-lab/app/services/daily_topic_pipeline/topic_selection_stage.py)가 182줄로, 500줄 제약 조건을 안정적으로 준수합니다.
 5. **기존 동작과 계약 유지 (이행 완료)**:
    - 단위 테스트(35개)와 회귀 테스트(150개)를 모두 구동한 결과, 기사 및 임베딩 준비, clustering, selected article 원문 확보 및 추출 격리 정책, 토픽별 요약 생성 및 저장에 있어 기존 비즈니스 규칙이 안전하게 유지되고 있음을 검증했습니다.
 6. **Import 및 의존성 구조 검증 (이행 완료)**:
@@ -109,7 +110,7 @@
 
 ### Verification Evidence
 
-실제 동작 검증 및 환경 검토는 [verification.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
 
 - **단위 테스트 실행**:
   - `python -m unittest tests.test_run_daily_topic_pipeline tests.test_article_embedding_storage tests.test_daily_topic_pipeline_cronjob_manifest` -> 35개 테스트 전수 통과
@@ -135,6 +136,7 @@
   - 승인된 6가지 Fix 가이드라인에 입각하여 역할 분리 패키지 구조가 정교하게 구현되었으며, 150건의 전체 단위 테스트 및 변경 금지 영역 보존 계약을 모두 우수하게 통과하였기에 최종 APPROVED 판정을 내립니다.
 
 ## Re-review 2
+
 ### Existing Problems Status
 
 - **기존 문제 1**: 해당 사항 없음. (이전 Review 및 Re-review 1 시점에서 검출된 blocker 결함이 없었습니다.)
@@ -142,14 +144,14 @@
 
 ### Approved Fixes Verification
 
-[approved-fixes.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 6가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지되고 있음을 재확인했습니다:
+[approved-fixes.md](~/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 6가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지되고 있음을 재확인했습니다:
 
 1. **Daily topic pipeline을 역할별 패키지로 분리 (이행 완료)**:
-   - 각 단계별 구현이 [embedding_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/embedding_stage.py), [topic_selection_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/topic_selection_stage.py), [raw_acquisition_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/raw_acquisition_stage.py), [summary_persistence_stage.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/summary_persistence_stage.py)에 깔끔하게 유지되고 있습니다.
+   - 각 단계별 구현이 [embedding_stage.py](~/news-lab/app/services/daily_topic_pipeline/embedding_stage.py), [topic_selection_stage.py](~/news-lab/app/services/daily_topic_pipeline/topic_selection_stage.py), [raw_acquisition_stage.py](~/news-lab/app/services/daily_topic_pipeline/raw_acquisition_stage.py), [summary_persistence_stage.py](~/news-lab/app/services/daily_topic_pipeline/summary_persistence_stage.py)에 깔끔하게 유지되고 있습니다.
 2. **실행 진입점의 책임 축소 (이행 완료)**:
-   - [run_daily_topic_pipeline.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/scripts/run_daily_topic_pipeline.py)가 단순 조율자 역할을 충실히 수행하고 있습니다.
+   - [run_daily_topic_pipeline.py](~/news-lab/scripts/run_daily_topic_pipeline.py)가 단순 조율자 역할을 충실히 수행하고 있습니다.
 3. **단계별 결과 타입 분리 (이행 완료)**:
-   - 각 단계의 입력/결과 인터페이스 타입들이 [models.py](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/models.py)에 분리 정의되어 결합도가 낮게 제어됩니다.
+   - 각 단계의 입력/결과 인터페이스 타입들이 [models.py](~/news-lab/app/services/daily_topic_pipeline/models.py)에 분리 정의되어 결합도가 낮게 제어됩니다.
 4. **파일 크기 제한 적용 (이행 완료)**:
    - 모든 관련 Python 소스 파일들의 줄 수가 500줄 이하 정책을 만족하고 있습니다.
 5. **기존 동작과 계약 유지 (이행 완료)**:
@@ -159,7 +161,7 @@
 
 ### Verification Evidence
 
-실제 동작 검증 및 환경 검토는 [verification.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
 
 - **단위 테스트 실행**:
   - `python -m unittest tests.test_run_daily_topic_pipeline tests.test_article_embedding_storage tests.test_daily_topic_pipeline_cronjob_manifest` -> 35개 테스트 전수 통과
@@ -185,6 +187,7 @@
   - 모든 요구사항 및 승인된 수정 가이드라인이 철저하게 충족되었으며, 150건의 단위 테스트 전체가 완벽히 성공하였기에 최종 APPROVED 판정을 유지합니다.
 
 ## Re-review 3
+
 ### Existing Problems Status
 
 - **기존 문제 1**: 해당 사항 없음. (이전 Review 및 Re-review 1, Re-review 2 시점에서 검출된 blocker 결함이 없었습니다.)
@@ -192,19 +195,19 @@
 
 ### Approved Fixes Verification
 
-[approved-fixes.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 8가지 승인된 수정(Approved Fixes) 사항의 이행 상태를 대조 검증하였습니다:
+[approved-fixes.md](~/news-lab/docs/fixes/docs-daily-pipeline-stage-design-approved-fixes.md)에 명시된 8가지 승인된 수정(Approved Fixes) 사항의 이행 상태를 대조 검증하였습니다:
 
 - **Approved Fix 1 ~ 6 (이행 유지됨)**:
   - 역할별 패키지 분리, scripts 책임 축소, 공통 context 및 결과 타입 분리, 500줄 제약(scripts 및 services), 기존 동작/계약 회귀 방지, import 및 의존성 구조(순환 참조 및 DB 연결 차단)가 안전하게 유지되고 있습니다.
 - **Approved Fix 7: 핵심 함수와 결과 타입의 역할을 한글 docstring으로 문서화 (이행 완료)**:
-  - 네 개 stage 진입 함수, [resolve_pipeline_context()](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/context.py#L16-L23), 주요 dataclasses([EmbeddingStageResult](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/models.py#L25-L31), [TopicSelectionResult](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/models.py#L52-L57) 등), DB/provider adapters, 그리고 부분 실패 격리 및 transaction 경계 함수들에 한글 docstring이 작성되어 각 단계의 결합 관계 및 처리 계약을 코드 레벨에서 명확히 이해할 수 있게 되었습니다.
+  - 네 개 stage 진입 함수, [resolve_pipeline_context()](~/news-lab/app/services/daily_topic_pipeline/context.py#L16-L23), 주요 dataclasses([EmbeddingStageResult](~/news-lab/app/services/daily_topic_pipeline/models.py#L25-L31), [TopicSelectionResult](~/news-lab/app/services/daily_topic_pipeline/models.py#L52-L57) 등), DB/provider adapters, 그리고 부분 실패 격리 및 transaction 경계 함수들에 한글 docstring이 작성되어 각 단계의 결합 관계 및 처리 계약을 코드 레벨에서 명확히 이해할 수 있게 되었습니다.
 - **Approved Fix 8: Timezone 정보가 없는 started_at_utc 입력 거부 (이행 완료)**:
-  - [resolve_pipeline_context()](file:///Users/seochanjin/workspace/NewsLab/news-lab/app/services/daily_topic_pipeline/context.py#L16-L23) 함수에서 timezone 정보가 누락된 naive datetime이 전달되면 즉시 `ValueError`를 발생시켜 잘못된 날짜(pipeline_date 및 topic_date)가 파이프라인 및 데이터베이스로 오염 전파되는 동작을 fail-fast 방식으로 확실히 방어하였습니다.
+  - [resolve_pipeline_context()](~/news-lab/app/services/daily_topic_pipeline/context.py#L16-L23) 함수에서 timezone 정보가 누락된 naive datetime이 전달되면 즉시 `ValueError`를 발생시켜 잘못된 날짜(pipeline_date 및 topic_date)가 파이프라인 및 데이터베이스로 오염 전파되는 동작을 fail-fast 방식으로 확실히 방어하였습니다.
   - UTC 이외의 timezone-aware offset 입력에 대해서는 동일 absolute instant의 UTC 값으로 올바르게 정규화 처리됩니다.
 
 ### Verification Evidence
 
-실제 동작 검증 및 환경 검토는 [verification.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/docs-daily-pipeline-stage-design.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
 
 - **단위 테스트 실행**:
   - `python -m unittest tests.test_run_daily_topic_pipeline tests.test_article_embedding_storage tests.test_daily_topic_pipeline_cronjob_manifest` -> **37개 테스트 전수 통과** (naive datetime 차단 및 UTC offset 정규화 신규 테스트 2종 포함)
