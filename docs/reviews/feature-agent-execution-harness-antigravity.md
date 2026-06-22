@@ -208,18 +208,18 @@
 
 ### Approved Fixes Verification
 
-[approved-fixes.md](~/news-lab/docs/fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지 및 보강되고 있음을 재확인했습니다:
+[approved-fixes.md](../docs/fixes/feature-agent-execution-harness-approved-fixes.md)에 명시된 2가지 승인된 수정(Approved Fixes) 사항의 이행 상태가 완벽하게 유지 및 보강되고 있음을 재확인했습니다:
 
 1. **FIX-01. Python 코드의 한글 설명 규칙을 현재 코드와 향후 workflow에 공통 적용 (이행 유지됨)**:
    - 신규 추가된 `_serialized_log_directory` 함수를 포함하여 모든 Python 모듈 및 함수에 상세한 한글 docstring이 완벽히 제공되고 있음을 확인했습니다.
 2. **FIX-02. 실제 pytest 검증 결과 반영 (이행 완료)**:
-   - pytest 9.1.1 환경 및 187개 테스트 전수 통과를 검증 완료했으며, [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 pytest 결과를 최신화했습니다.
+   - pytest 9.1.1 환경 및 187개 테스트 전수 통과를 검증 완료했으며, [verification.md](../docs/verification/feature-agent-execution-harness.md)의 pytest 결과를 최신화했습니다.
    - 특히, 외부 임시 디렉터리 등 Repository 밖에 로그를 보존하는 경우에도 relative_to 예외를 외부로 전파하지 않고 절대 경로 형식으로 안전하게 처리하도록 로그 직렬화(`_serialized_log_directory`) 설계를 강인하게 보완하였습니다.
    - Review 후 검증 failed/pending 시 suggested_action을 `resolve-verification`으로 제안하여 개발자가 검증 문제를 선결하도록 돕는 가이드라인 테스트가 추가되었습니다.
 
 ### Verification Evidence
 
-실제 동작 검증 및 환경 검토는 [verification.md](~/news-lab/docs/verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
+실제 동작 검증 및 환경 검토는 [verification.md](../docs/verification/feature-agent-execution-harness.md)의 증적 및 로컬 실행 기록을 토대로 하였습니다:
 
 - **Pytest 검증**:
   - `python -m pytest` -> **187 tests passed in 4.87s** (외부 로그 경로 대응 및 resolve-verification 액션 테스트 등 신규 단위 테스트 10종이 보강되어 성공)
