@@ -22,6 +22,11 @@
 - Review file은 명시적 요청 없이 수정하지 않는다.
 - 새 문제는 현재 작업 blocker, 범위 내 결함, 후속 작업 후보, 과거 기록으로
   분류하고 자동으로 scope를 확장하지 않는다.
+- Python 파일을 새로 만들거나 의미 있게 수정할 때는 module, class, function,
+  method와 테스트에 실제 역할과 검증 목적을 설명하는 한글 docstring을 작성한다.
+- 상세 기준과 기존 파일 적용 범위는
+  [Task 작성 가이드의 Python 문서화 정책](task-authoring-guide.md#python-문서화-정책)을
+  따른다.
 
 ## 검증과 기록
 
@@ -46,3 +51,11 @@
 
 상세 gate는 [Verification gate](verification-gates.md), 실행 금지는
 [금지 및 사람 통제 작업](forbidden-commands.md)을 따른다.
+
+## 직접 실행 하네스
+
+`scripts/agent_run.sh codex-implement`는 Task 전체를 대상으로 하고,
+`scripts/agent_run.sh codex-implement-unit`는 첫 번째 미완료 UNIT 하나만
+대상으로 한다. UNIT 실행에서는 후속 UNIT을 미리 구현하거나 자동 연속 실행하지
+않는다. 실행 로그는 `.agent-runs/`에 저장되며 workflow 문서를 자동 완료하지
+않는다.

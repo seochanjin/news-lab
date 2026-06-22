@@ -82,6 +82,16 @@ Review 결과만으로 구현을 수정하지 않는다. 사람이 승인한 항
 `docs/fixes/<safe-branch>-approved-fixes.md`에 기록된 경우에만 적용한다.
 PR과 devlog의 검증 주장은 `docs/verification/`을 source of truth로 사용한다.
 
+로컬 workflow 진입점:
+
+- Prompt-only와 상태 확인: `scripts/agent_next_step.sh`
+- 선택적인 Agent 직접 실행: `scripts/agent_run.sh`
+- 직접 실행 로그: `.agent-runs/`
+
+직접 실행 하네스는 로컬 gate, Agent CLI 실행, timeout과 로그 보존까지만
+담당한다. Task나 Verification을 자동 완료하지 않으며 production-impacting
+command의 실행 권한을 확대하지 않는다.
+
 ## 검증 원칙
 
 - Task 문서에는 checklist가 있어야 한다.

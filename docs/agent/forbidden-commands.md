@@ -48,6 +48,9 @@ Supabase 운영 SQL
 
 환경 변수명, Secret resource명, placeholder는 정책과 구조 설명에 사용할 수 있다.
 
+로컬 Agent 실행 하네스도 위 명령을 대신 실행하지 않는다. 하네스의 자동화 범위는
+로컬 gate, prompt 전달, subprocess 종료와 `.agent-runs/` 로그 보존까지다.
+
 ## 문서에 command를 적는 조건
 
 사람이 수행할 고위험 command를 runbook에 기록할 때:
