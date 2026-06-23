@@ -101,13 +101,26 @@ scripts/agent_next_step.sh antigravity-review-write
 
 `scripts/agent_next_step.sh status`에서 자동 실행 지원, 실행 상태, review 파일
 검증, 수동 review 필요 여부와 다음 action을 확인한다. 실행 파일 미설치,
-`UNSUPPORTED_CLIENT`, 인증 실패, 비대화형 실행 미지원, timeout, non-zero exit,
-review 파일 미생성·미변경·검증 실패는 서로 다른 failure category로 기록한다.
+자동 실행 미지원, 지원되지 않는 client, 인증 실패, 비대화형 실행 미지원,
+timeout, non-zero exit, review 파일 미생성·미변경·검증 실패는 다음 내부
+failure category로 구분해 기록한다.
 
-`UNSUPPORTED_CLIENT`가 발생하면 해당 client로 재시도해 성공으로 간주하지 않는다.
-수동 fallback을 사용하고, review 파일이 완료 조건을 충족하는지 status로 다시
-확인한다. 자동 실행 실패 또는 미완성 review 상태에서는 `codex-fix`나 PR 초안
-단계로 진행하지 않는다.
+- `executable_missing`
+- `automatic_review_unavailable`
+- `unsupported_client`
+- `authentication_failed`
+- `noninteractive_unsupported`
+- `timeout`
+- `nonzero_exit`
+- `review_file_missing`
+- `review_file_unchanged`
+- `review_file_validation_failed`
+
+외부 Gemini 오류의 `reasonCode: UNSUPPORTED_CLIENT`는 내부
+`unsupported_client` category로 기록한다. 이 오류가 발생하면 해당 client로
+재시도해 성공으로 간주하지 않는다. 수동 fallback을 사용하고, review 파일이 완료
+조건을 충족하는지 status로 다시 확인한다. 자동 실행 실패 또는 미완성 review
+상태에서는 `codex-fix`나 PR 초안 단계로 진행하지 않는다.
 
 ## 최초 Review와 Re-review
 

@@ -35,8 +35,8 @@
 
 ## Verification Review
 
-- `docs/verification/fix-antigravity-cli-review-adapter.md`에 각 검증 단계의 상세 명령어, subtest 개수, 정적 분석 검사 코드 및 결과가 투명하게 기록되었습니다.
-- Antigravity가 직접 `pytest`, `unittest`, `compileall` 및 `git diff --check`를 수행하여 **222건의 전체 테스트가 모두 성공(passed)**함을 확인했습니다.
+- `docs/verification/fix-antigravity-cli-review-adapter.md` 문서에는 UNIT-01부터 UNIT-04까지의 테스트 명령어, 컴파일 검증, 변경 금지 영역 diff 체크, 그리고 정합성 검토 결과가 객체 지향적인 검증 기포에 입각하여 상세히 작성되어 있습니다.
+- Antigravity가 로컬 workspace에서 `pytest`, `unittest`, `compileall`, `git diff --check` 명령어를 통해 재검증한 결과, **222건의 테스트 케이스가 전부 성공**하였으며 정적 에러나 syntax 에러가 없음이 실증적으로 증명되었습니다.
 - 실제 프로덕션 인프라나 K3s에 영향을 미치는 외부 변경이 수행되지 않았음이 보증됩니다.
 
 ## Documentation Review
@@ -78,4 +78,45 @@ git diff -- app/routers app/services/daily_topic_pipeline db/migrations k8s
 
 **APPROVED**
 
-(자동 실행 어댑터의 위험 요소를 차단하고 수동 fallback 상태를 안전하게 분리하였으며, 검증 로직 추가 및 한글 docstring 작성 요건이 완벽하게 준수되었습니다. 테스트와 변경 금지 제한이 철저히 지켜져 PR 진행을 승인합니다.)
+(모든 수용 조건(Acceptance Criteria)을 완전하게 충족하며, 코드 수준의 방어적 validation 및 테스트 구성이 뛰어나고, 변경 금지 영역과 하위 호환성 역시 철저히 준수되어 추가적인 수정 없이 PR 진행을 승인합니다.)
+
+## Re-review 1
+
+### Existing Problems Status
+
+- **최초 리뷰 발견 문제**: 최초 리뷰(Initial Review) 시 발견된 결함이나 PR 블로커 수준의 문제가 없었으므로, 해당 사항이 없습니다. (**적용 대상 아님**)
+
+### Approved Fixes Verification
+
+- **정상 종료 시 오분류 방지 및 회귀 테스트 추가 (Approved Fix #1)**: [docs/fixes/fix-antigravity-cli-review-adapter-approved-fixes.md](../docs/fixes/fix-antigravity-cli-review-adapter-approved-fixes.md)에 승인된 피드백이 완벽히 반영되었습니다.
+  - `runner.py` 내의 `classify_failure()` 함수 초기에 `if exit_code == 0: return None`가 안전하게 삽입되었습니다. 이로 인해 exit code가 0인 정상 종료의 경우, stdout/stderr 내에 에러 마커 문자열(예: `unsupported client` 등)이 포함되어 있더라도 실패 상태로 오분류하지 않습니다.
+  - `test_agent_workflow_runner.py`에 이 동작을 엄격히 검증하는 `test_successful_process_ignores_failure_markers` 회귀 테스트가 성공적으로 추가되었습니다.
+  - 판정: **해결됨**
+- **인자/에러 명명 규칙 분리 및 문서화 (Approved Fix #2)**:
+  - `docs/agent/antigravity-review.md` 및 `docs/agent/verification-gates.md` 에 외부 `reasonCode: UNSUPPORTED_CLIENT`와 내부 `unsupported_client`를 명확히 구분하여 설명하도록 보완되었습니다.
+  - `automatic_review_unavailable`을 포함하여 실제 런타임에 사용하는 소문자 failure category 목록이 가이드 문서에 일관되게 명시되었습니다.
+  - 판정: **해결됨**
+
+### Verification Evidence
+
+- [docs/verification/fix-antigravity-cli-review-adapter.md](../docs/verification/fix-antigravity-cli-review-adapter.md)에 승인된 피드백에 대한 단위 테스트 및 전체 회귀 테스트 검증 내역이 정상적으로 기록되었습니다.
+- Antigravity가 로컬 환경에서 직접 테스트들을 수행하여 신규 테스트를 포함한 223건의 테스트가 모두 성공적으로 작동함을 재검증했습니다.
+  - `pytest`: 223 passed
+  - `unittest`: Ran 223 tests OK
+  - `compileall`: exit code 0
+  - `git diff --check`: exit code 0
+  - 변경 금지 영역(`app/routers`, `app/services/daily_topic_pipeline`, `db/migrations`, `k8s`, `requirements.txt`, `app/main.py`): 변경 사항 없음
+
+### New Problems Found
+
+- **없음**: 새로 수정한 소스 코드와 신규 추가된 테스트 메서드 모두 한글 docstring 규칙을 명확히 준수하고 있으며, 추가적인 결함이나 scope creep이 발견되지 않았습니다.
+
+### Required Fixes Before PR
+
+- **없음**
+
+### Verdict
+
+**APPROVED**
+
+(승인된 피드백 사항이 실질적으로 반영되었고 이에 대한 회귀 테스트 및 검증 증적이 명확하게 확보되어 정상적으로 승인합니다.)

@@ -24,6 +24,177 @@ UNIT-04에서 자동·수동 review 차이, `UNSUPPORTED_CLIENT` 복구, review 
 
 ## Commands Run
 
+### Approved Fixes Verification
+
+#### FIX-01
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_workflow_runner.py -v
+```
+
+Result:
+
+- runner 테스트 11개와 6개 subtest가 모두 통과했다.
+- exit code 0인 process 출력에 unsupported client, 인증 또는 TTY 관련
+  문구가 포함되어도 failure category를 반환하지 않는 회귀 테스트가 통과했다.
+- 기존 non-zero marker 분류, timeout과 review 파일 검증 회귀도 함께 통과했다.
+
+Status: passed
+
+#### FIX-02
+
+Command:
+
+```bash
+rg -n "failure category|UNSUPPORTED_CLIENT|automatic_review_unavailable|unsupported_client" \
+  docs/agent/antigravity-review.md \
+  docs/agent/usage-guide.md \
+  docs/agent/verification-gates.md \
+  docs/agent/backend-workflow.md
+```
+
+Result:
+
+- `antigravity-review.md`와 `verification-gates.md`가 외부
+  `reasonCode: UNSUPPORTED_CLIENT`를 내부 `unsupported_client` category와
+  구분해 설명한다.
+- 문서의 failure category 목록과 복구 기준에
+  `automatic_review_unavailable`이 포함되어 있다.
+- `usage-guide.md`의 기존 category 목록도 구현의 소문자 값과 일치했다.
+
+Status: passed
+
+### Approved Fixes Full Regression
+
+Command:
+
+```bash
+python -m pytest \
+  tests/test_agent_workflow_runner.py \
+  tests/test_agent_workflow_gates.py \
+  tests/test_agent_workflow_state.py \
+  tests/test_agent_workflow_cli.py \
+  -v
+```
+
+Result:
+
+- 45개 테스트와 11개 subtest가 모두 통과했다.
+- 정상 종료 marker 오분류 방지와 기존 adapter, gate, state, CLI 회귀를 함께
+  검증했다.
+
+Status: passed
+
+Command:
+
+```bash
+rg -n '^[-] \[ \]' \
+  docs/fixes/fix-antigravity-cli-review-adapter-approved-fixes.md \
+  docs/tasks/fix-antigravity-cli-review-adapter.md || true
+```
+
+Result:
+
+- 출력이 없어 Task와 Approved Fixes에 미완료 checklist가 없었다.
+
+Status: passed
+
+Command:
+
+```bash
+scripts/agent_next_step.sh status
+```
+
+Result:
+
+- UNIT 4개 완료, pending UNIT 0개, Verification `passed`로 출력됐다.
+- Review와 review validation은 `completed`, Approved fixes는 `applied`였다.
+- 자동 review는 `unavailable`이지만 수동 review 필요는 `no`였고 다음 action은
+  `pr-draft`였다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_review_validation.py -v
+```
+
+Result:
+
+- review 검증 테스트 6개와 5개 subtest가 모두 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest
+```
+
+Result:
+
+- 전체 223개 테스트가 모두 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Result:
+
+- 전체 223개 테스트가 `OK`로 통과했다.
+- 출력된 argparse 오류와 provider 실패 문구는 실패 경로 테스트의 예상
+  출력이었다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m compileall app scripts tests
+```
+
+Result:
+
+- application, workflow script와 test module이 오류 없이 compile됐다.
+
+Status: passed
+
+Command:
+
+```bash
+git diff --check
+```
+
+Result:
+
+- 출력 없이 exit code 0이었다.
+
+Status: passed
+
+Command:
+
+```bash
+git diff -- \
+  app/routers \
+  app/services/daily_topic_pipeline \
+  db/migrations \
+  k8s
+```
+
+Result:
+
+- 출력 없이 변경 금지 application, Daily Topic pipeline, DB migration과 K3s
+  manifest diff가 없었다.
+
+Status: passed
+
 Command:
 
 ```bash

@@ -74,13 +74,16 @@ def classify_failure(
 ) -> str | None:
     """Process 결과를 workflow가 사용하는 failure category로 변환한다.
 
-    timeout을 최우선으로 처리하고 stdout과 stderr의 진단 문구에서 지원되지
-    않는 client, 인증 실패와 비대화형 실행 미지원을 판별한다. 알려진 패턴이
-    없는 비정상 종료는 `nonzero_exit`, 정상 종료는 None을 반환한다.
+    timeout을 최우선으로 처리하고 정상 종료는 출력 문구와 무관하게 None을
+    반환한다. 비정상 종료의 stdout과 stderr에서 지원되지 않는 client, 인증
+    실패와 비대화형 실행 미지원을 판별하며 알려진 패턴이 없으면
+    `nonzero_exit`를 반환한다.
     """
 
     if timed_out:
         return "timeout"
+    if exit_code == 0:
+        return None
     combined = f"{stdout}\n{stderr}".lower()
     if "unsupported_client" in combined or "unsupported client" in combined:
         return "unsupported_client"
@@ -102,9 +105,7 @@ def classify_failure(
     )
     if any(marker in combined for marker in noninteractive_markers):
         return "noninteractive_unsupported"
-    if exit_code != 0:
-        return "nonzero_exit"
-    return None
+    return "nonzero_exit"
 
 
 def _terminate_process_group(process: subprocess.Popen[str]) -> None:

@@ -150,6 +150,25 @@ class WorkflowRunnerTests(unittest.TestCase):
                     expected,
                 )
 
+    def test_successful_process_ignores_failure_markers(self) -> None:
+        """정상 종료의 stdout·stderr 실패 marker를 failure category로 오분류하지 않는다."""
+
+        cases = (
+            ("The unsupported client issue was resolved.", ""),
+            ("", "Authentication failed earlier; the user is now authenticated."),
+            ("This no longer requires a TTY.", ""),
+        )
+        for stdout, stderr in cases:
+            with self.subTest(stdout=stdout, stderr=stderr):
+                self.assertIsNone(
+                    classify_failure(
+                        exit_code=0,
+                        timed_out=False,
+                        stdout=stdout,
+                        stderr=stderr,
+                    )
+                )
+
     def test_unsupported_client_result_recommends_manual_review(self) -> None:
         """UNSUPPORTED_CLIENT 실행 기록에 수동 fallback과 다음 action이 남는지 검증한다."""
 

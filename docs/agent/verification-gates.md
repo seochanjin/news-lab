@@ -112,8 +112,11 @@ PR과 devlog는 이 기록을 근거로 작성한다.
 
 Antigravity review는 실행 파일 존재와 자동 실행 지원을 분리한다. 검증된
 비대화형 adapter가 없으면 직접 실행을 차단하고 prompt-only 수동 review를
-안내한다. Gemini CLI의 `UNSUPPORTED_CLIENT`, 인증 실패, 비대화형 실행 미지원,
-timeout과 일반 non-zero exit는 성공으로 처리하지 않는다.
+안내한다. 자동 실행 미지원 pre-flight 상태는
+`automatic_review_unavailable`로 기록한다. Gemini CLI의 외부
+`reasonCode: UNSUPPORTED_CLIENT`는 내부 `unsupported_client` category로
+분류하며, 인증 실패, 비대화형 실행 미지원, timeout과 일반 non-zero exit도
+성공으로 처리하지 않는다.
 
 자동 review 완료에는 process 성공뿐 아니라 review 파일 생성 또는 변경과 구조
 검증 통과가 필요하다. 수동 review는 실행 기록 없이도 파일 검증을 통과하면
