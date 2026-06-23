@@ -266,9 +266,11 @@ Rollback은 단순하지만 동일 window 결과가 계속 누적되고 retentio
 - 기존 Daily 실행·CronJob 회귀
   - 23 passed
 - 전체 `pytest`
-  - 261 passed in 8.94s
+  - UNIT-08 시점: 261 passed in 8.94s
+  - Approved fixes 적용 후 최종 회귀: 265 passed
 - 전체 `unittest`
-  - 261 tests in 6.604s, OK
+  - UNIT-08 시점: 261 tests in 6.604s, OK
+  - Approved fixes 적용 후 최종 회귀: 265 tests, OK
 - `python -m compileall app scripts tests`
   - passed
 - `git diff --check`
@@ -284,6 +286,8 @@ Rollback은 단순하지만 동일 window 결과가 계속 누적되고 retentio
   - 제거 후 compileall과 diff 검사 통과
 - UNIT-07 최초 CLI 집중 테스트 실패
   - 실행 계약 수정 후 3일 실행·stage 20건과 Daily 회귀 23건 통과
+- Approved fixes 적용 중 execute-mode fixture의 Summary 근거 기사 부분집합 계약 위반 1건 발견
+  - fixture를 실제 계약에 맞게 보정한 뒤 3일 pipeline/repository 33건과 subtest 6건 통과
 
 테스트 환경:
 
@@ -358,7 +362,7 @@ NewsLab이 “오늘의 주요 이슈”뿐 아니라 며칠에 걸쳐 전개되
 
 ## 포트폴리오용 요약
 
-기존 Daily 뉴스 Topic과 독립적으로 최근 72시간 기사를 재클러스터링하는 3일 Topic pipeline을 설계·구현했다. 저장된 article embedding만 read-only로 재사용하고 누락 vector를 격리했으며, 대표·관련·Summary 근거 기사 집합과 72시간 변화 중심 Summary를 구성했다. PostgreSQL advisory lock과 transaction 기반 동일 window 원자 교체, 실행 감사 이력, 일부 성공 처리와 실패 시 기존 결과 보존 정책을 구현했다. 전용 migration, FastAPI archive/home/detail API, K3s CronJob과 운영 문서를 추가하고 전체 261건 회귀 테스트로 기존 Daily 계약을 보호했다.
+기존 Daily 뉴스 Topic과 독립적으로 최근 72시간 기사를 재클러스터링하는 3일 Topic pipeline을 설계·구현했다. 저장된 article embedding만 read-only로 재사용하고 누락 vector를 격리했으며, 대표·관련·Summary 근거 기사 집합과 72시간 변화 중심 Summary를 구성했다. PostgreSQL advisory lock과 transaction 기반 동일 window 원자 교체, 실행 감사 이력, 일부 성공 처리와 실패 시 기존 결과 보존 정책을 구현했다. 전용 migration, FastAPI archive/home/detail API, K3s CronJob과 운영 문서를 추가하고 전체 265건 회귀 테스트로 기존 Daily 계약을 보호했다.
 
 ## 다음 단계 후보
 
