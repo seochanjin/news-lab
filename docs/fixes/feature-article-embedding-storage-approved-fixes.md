@@ -302,14 +302,14 @@ Repository root가 아닌 위치에서 실행:
 ```bash
 cd /tmp
 python \
-  /Users/seochanjin/workspace/NewsLab/news-lab/tests/test_article_embedding_migration.py
+  <repo-root>/tests/test_article_embedding_migration.py
 ```
 
 또는 module import가 필요한 경우 repository를 `PYTHONPATH`에 지정한다.
 
 ```bash
 cd /tmp
-PYTHONPATH=/Users/seochanjin/workspace/NewsLab/news-lab \
+PYTHONPATH=<repo-root> \
 python -m unittest \
   tests.test_article_embedding_migration
 ```

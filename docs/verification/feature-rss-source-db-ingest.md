@@ -161,11 +161,11 @@ sed -n '1,360p' docs/tasks/feature-rss-source-db-ingest.md
 sed -n '1,520p' docs/verification/feature-rss-source-db-ingest.md
 sed -n '1,420p' docs/reviews/feature-rss-source-db-ingest-coderabbit.md
 sed -n '1,420p' scripts/collect_rss.py
-rg -n "file:///Users|/Users/seochanjin|collect_rss.py|extract_raw_articles.py|data-writing|default verification|기본 검증|verification command" docs README.md AGENTS.md app scripts db
+rg -n "local file URI under /Users|/Users/seo''chanjin|collect_rss.py|extract_raw_articles.py|data-writing|default verification|기본 검증|verification command" docs README.md AGENTS.md app scripts db
 rg -n "RSS_MAX_ENTRIES_PER_SOURCE|inserted_count|skipped_count|source_result|with engine.begin" scripts/collect_rss.py
 git diff -- docs/fixes/feature-rss-source-db-ingest-approved-fixes.md docs/reviews/feature-rss-source-db-ingest-coderabbit.md
 sed -n '1,180p' docs/reviews/feature-rss-source-db-ingest-antigravity.md
-rg -n "file:///Users|/Users/seochanjin|\.venv/bin/python scripts/collect_rss.py|python scripts/collect_rss.py" docs/reviews/feature-rss-source-db-ingest-antigravity.md docs/reviews/feature-rss-source-db-ingest-coderabbit.md docs/verification/feature-rss-source-db-ingest.md docs/pr/feature-rss-source-db-ingest.md docs/devlog/feature-rss-source-db-ingest.md docs/fixes/feature-rss-source-db-ingest-approved-fixes.md
+rg -n "local file URI under /Users|/Users/seo''chanjin|\.venv/bin/python scripts/collect_rss.py|python scripts/collect_rss.py" docs/reviews/feature-rss-source-db-ingest-antigravity.md docs/reviews/feature-rss-source-db-ingest-coderabbit.md docs/verification/feature-rss-source-db-ingest.md docs/pr/feature-rss-source-db-ingest.md docs/devlog/feature-rss-source-db-ingest.md docs/fixes/feature-rss-source-db-ingest-approved-fixes.md
 find . -maxdepth 3 -type d -name __pycache__
 git status --short
 git diff --stat
@@ -174,7 +174,7 @@ git diff --check
 find app scripts -name __pycache__ -type d -prune -exec rm -rf {} +
 git diff -- k8s
 git diff -- app scripts db
-rg -n "file:///Users|/Users/seochanjin|Execute collector script" docs/reviews/feature-rss-source-db-ingest-antigravity.md docs/reviews/feature-rss-source-db-ingest-coderabbit.md docs/fixes/feature-rss-source-db-ingest-approved-fixes.md docs/verification/feature-rss-source-db-ingest.md docs/pr/feature-rss-source-db-ingest.md docs/devlog/feature-rss-source-db-ingest.md
+rg -n "local file URI under /Users|/Users/seo''chanjin|Execute collector script" docs/reviews/feature-rss-source-db-ingest-antigravity.md docs/reviews/feature-rss-source-db-ingest-coderabbit.md docs/fixes/feature-rss-source-db-ingest-approved-fixes.md docs/verification/feature-rss-source-db-ingest.md docs/pr/feature-rss-source-db-ingest.md docs/devlog/feature-rss-source-db-ingest.md
 git grep -n -i -E "K3S_TOKEN|node-token|admin-password|password:|private key|BEGIN|ssh-key|API_KEY|TOKEN|SECRET|PASSWORD|PRIVATE KEY|\.env"
 .venv/bin/python -c "import os; import scripts.collect_rss as c; os.environ['RSS_MAX_ENTRIES_PER_SOURCE'] = 'abc'; print(c.get_positive_int_env('RSS_MAX_ENTRIES_PER_SOURCE', 30)); os.environ['RSS_MAX_ENTRIES_PER_SOURCE'] = '0'; print(c.get_positive_int_env('RSS_MAX_ENTRIES_PER_SOURCE', 30)); os.environ['RSS_MAX_ENTRIES_PER_SOURCE'] = '5'; print(c.get_positive_int_env('RSS_MAX_ENTRIES_PER_SOURCE', 30))"
 ```
@@ -184,7 +184,7 @@ Applied CodeRabbit approved fixes:
 - `scripts/collect_rss.py` now validates `RSS_MAX_ENTRIES_PER_SOURCE` as a positive integer.
 - Invalid or non-positive `RSS_MAX_ENTRIES_PER_SOURCE` values fall back to default `30` with a warning.
 - Per-source inserted/skipped counters are accumulated locally inside the source transaction and only promoted to global/source result counters after the transaction exits successfully.
-- Feature RSS review docs no longer contain local `file:///Users/...` links or local absolute user paths.
+- Feature RSS review docs no longer contain local `local file URI under /Users/...` links or local absolute user paths.
 - Data-writing collector execution was removed from default review verification commands and is labeled as human-approved data-writing verification where mentioned.
 - `docs/fixes/feature-rss-source-db-ingest-approved-fixes.md` was updated from pending to applied for the CodeRabbit fixes.
 
@@ -193,7 +193,7 @@ Validation results:
 - `git diff --check`: exit code `0`.
 - `.venv/bin/python -m compileall app scripts`: exit code `0`.
 - `RSS_MAX_ENTRIES_PER_SOURCE` parser check: invalid `abc` returned `30` with warning, `0` returned `30` with warning, and valid `5` returned `5`.
-- `rg -n "file:///Users|/Users/seochanjin|Execute collector script" ...feature-rss...`: exit code `1`, no matches.
+- `rg -n "local file URI under /Users|/Users/seo''chanjin|Execute collector script" ...feature-rss...`: exit code `1`, no matches.
 - `git diff -- k8s`: no output.
 - `git diff -- app scripts db`: showed only the approved `scripts/collect_rss.py` CodeRabbit runtime fixes.
 - Security grep matched existing safe references, GitHub secret expressions, documented command strings, Kubernetes Secret names, and Python `engine.begin()` false positives. No credential value was found in the CodeRabbit fix changes.

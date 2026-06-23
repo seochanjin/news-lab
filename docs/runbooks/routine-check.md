@@ -62,6 +62,8 @@ curl -i https://api.newslab.ai.kr/health
 curl https://api.dev-scj.site/version
 curl https://api.dev-scj.site/collector/status
 curl https://api.dev-scj.site/extractor/status
+curl https://api.dev-scj.site/topics/home
+curl https://api.dev-scj.site/three-day-topics/home
 ```
 
 ## 4. Scheduled workload
@@ -91,6 +93,8 @@ NewsLab routine operation check
 - Collector latest run: [ ] healthy [ ] failed [ ] not checked
 - Extractor latest run: [ ] healthy [ ] failed [ ] not checked
 - Daily topic latest run: [ ] healthy [ ] failed [ ] not checked
+- Three-day topic latest run: [ ] healthy [ ] failed [ ] not checked
+- Three-day topic home API: [ ] success [ ] failed [ ] not checked
 - Follow-up owner/action:
 - Sanitized evidence:
 ```

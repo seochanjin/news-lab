@@ -301,7 +301,7 @@ Repository root에서 1 test가 통과했다.
 Status: passed
 
 Command:
-`python /Users/seochanjin/workspace/NewsLab/news-lab/tests/test_article_embedding_migration.py`
+`python <repo-root>/tests/test_article_embedding_migration.py`
 
 Result:
 `/tmp` 작업 디렉터리에서 1 test가 통과했다.

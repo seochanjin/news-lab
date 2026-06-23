@@ -6,7 +6,7 @@
 
 그러나 실제 파일들을 대조하고 검증하는 과정에서 다음과 같은 중대한 불일치 및 오류가 확인되었습니다:
 
-1. **검증 스크립트 실행 실패**: [docs/verification/infra-monitoring-baseline.md](file:///Users/seochanjin/workspace/news-lab/docs/verification/infra-monitoring-baseline.md)에 기록된 YAML 렌더링 검증 어설션 스크립트가 실제 Grafana 리소스 메모리 설정 값과의 차이로 인해 실패(`RuntimeError`)합니다.
+1. **검증 스크립트 실행 실패**: [docs/verification/infra-monitoring-baseline.md](../verification/infra-monitoring-baseline.md)에 기록된 YAML 렌더링 검증 어설션 스크립트가 실제 Grafana 리소스 메모리 설정 값과의 차이로 인해 실패(`RuntimeError`)합니다.
 2. **설정값과 문서(Devlog, PR) 간 불일치**: Grafana의 메모리 제한량(256Mi/512Mi vs 128Mi/256Mi)과 Prometheus의 Retention 기간(1d vs 3d)이 리소스 설정 파일과 문서 사이에서 서로 다르게 기술되어 있습니다.
 3. **검증 로그 상태 불일치**: 검증 상태는 "Pending human operator execution"(대기 중)으로 적혀 있으나, 하단에는 가상의 혹은 조기 작성된 구체적인 "Production Verification Results"가 포함되어 있어 혼선을 줍니다.
 
@@ -16,7 +16,7 @@
 
 ## Requirement Coverage
 
-[docs/tasks/infra-monitoring-baseline.md](file:///Users/seochanjin/workspace/news-lab/docs/tasks/infra-monitoring-baseline.md)의 요구사항과 비교한 결과는 다음과 같습니다:
+[docs/tasks/infra-monitoring-baseline.md](../tasks/infra-monitoring-baseline.md)의 요구사항과 비교한 결과는 다음과 같습니다:
 
 - **Prometheus/Grafana 최소 구성**: 충족. `kube-prometheus-stack` 차트를 사용하여 Alertmanager를 비활성화하고 필요한 구성 요소만 활성화하도록 설정했습니다.
 - **Alertmanager 제외**: 충족. `alertmanager.enabled: false`가 설정되어 배포 대상에서 제외되었습니다.
@@ -47,7 +47,7 @@
 
 ## Operational Risk
 
-- **Helm 차트 버전 고정 부재**: [docs/verification/infra-monitoring-baseline.md](file:///Users/seochanjin/workspace/news-lab/docs/verification/infra-monitoring-baseline.md) 및 [docs/tasks/infra-monitoring-baseline.md](file:///Users/seochanjin/workspace/news-lab/docs/tasks/infra-monitoring-baseline.md)에 기술된 `helm upgrade --install` 명령에 `--version 86.2.0` 옵션이 명시되어 있지 않습니다. 이로 인해 운영자가 나중에 명령을 실행할 때 원치 않는 최신 버전이 설치되어 호환성 이슈를 겪을 수 있습니다.
+- **Helm 차트 버전 고정 부재**: [docs/verification/infra-monitoring-baseline.md](../verification/infra-monitoring-baseline.md) 및 [docs/tasks/infra-monitoring-baseline.md](../tasks/infra-monitoring-baseline.md)에 기술된 `helm upgrade --install` 명령에 `--version 86.2.0` 옵션이 명시되어 있지 않습니다. 이로 인해 운영자가 나중에 명령을 실행할 때 원치 않는 최신 버전이 설치되어 호환성 이슈를 겪을 수 있습니다.
 - **임시 저장소 기반 모니터링**: Prometheus 데이터가 Persistent Volume Claim(PVC) 없이 에페머럴 스토리지로 배포되므로 Pod 재시작 시 메트릭 유실 위험이 있습니다. 이는 Task의 baseline 목표를 위해 수용한 트레이드오프로 명시되어 있으나 운영상 유의해야 합니다.
 
 ---
@@ -61,7 +61,7 @@
 ## Verification Review
 
 - **검증 어설션 스크립트 오류**:
-  [docs/verification/infra-monitoring-baseline.md](file:///Users/seochanjin/workspace/news-lab/docs/verification/infra-monitoring-baseline.md)의 L71-72에 작성된 Ruby Assertion 스크립트는 Grafana의 메모리 request/limit을 `128Mi` 및 `256Mi`로 기대하지만, [k8s/monitoring/kube-prometheus-stack-values.yaml](file:///Users/seochanjin/workspace/news-lab/k8s/monitoring/kube-prometheus-stack-values.yaml)에는 `256Mi` 및 `512Mi`로 기재되어 있어 명령 수행 시 반드시 오류가 납니다. 검증 로그의 `Rendered manifest assertions: OK` 결과는 실제 렌더링 파일 검증 과정에서 검토되지 않은 잘못된 성공 기록입니다.
+  [docs/verification/infra-monitoring-baseline.md](../verification/infra-monitoring-baseline.md)의 L71-72에 작성된 Ruby Assertion 스크립트는 Grafana의 메모리 request/limit을 `128Mi` 및 `256Mi`로 기대하지만, [k8s/monitoring/kube-prometheus-stack-values.yaml](../../k8s/monitoring/kube-prometheus-stack-values.yaml)에는 `256Mi` 및 `512Mi`로 기재되어 있어 명령 수행 시 반드시 오류가 납니다. 검증 로그의 `Rendered manifest assertions: OK` 결과는 실제 렌더링 파일 검증 과정에서 검토되지 않은 잘못된 성공 기록입니다.
 - **프로덕션 검증 상태의 모순**:
   L139의 `Status: Pending human operator execution`과 L186의 `No production verification is claimed`가 명시되어 있음에도 불구하고, L189의 `## Production Verification Results` 섹션에는 구체적인 Pod 상태 정보와 리소스 사용량이 기입되어 있어 실제 설치가 수행되었는지 여부를 명확히 파악할 수 없습니다.
 
@@ -95,7 +95,7 @@
 
 ## Required Fixes Before PR
 
-PR 승인 및 병합을 위해 아래 조치들이 반드시 필요합니다. 단, 해당 조치들은 [docs/fixes/infra-monitoring-baseline-approved-fixes.md](file:///Users/seochanjin/workspace/news-lab/docs/fixes/infra-monitoring-baseline-approved-fixes.md)에 기록되고 운영자(인간)의 승인을 득한 후 수정되어야 합니다.
+PR 승인 및 병합을 위해 아래 조치들이 반드시 필요합니다. 단, 해당 조치들은 [docs/fixes/infra-monitoring-baseline-approved-fixes.md](../fixes/infra-monitoring-baseline-approved-fixes.md)에 기록되고 운영자(인간)의 승인을 득한 후 수정되어야 합니다.
 
 1. **Grafana 메모리 규격 통일**:
    - 실제 배포 리소스인 YAML 파일에 맞추어 Devlog, PR 문서, 검증 어설션 스크립트 모두 Grafana request `256Mi`, limit `512Mi`로 통일하거나 혹은 그 반대로 통일해야 합니다.

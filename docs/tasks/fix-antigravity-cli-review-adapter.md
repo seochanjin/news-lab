@@ -397,7 +397,7 @@ tierName: Gemini Code Assist for individuals
 
 - `antigravity`: 설치되지 않음
 - `gemini`: `/opt/homebrew/bin/gemini`, version `0.45.0`
-- `agy`: `/Users/seochanjin/.local/bin/agy`, version `1.0.9`
+- `agy`: `~/.local/bin/agy`, version `1.0.9`
 
 `agy --help`는 `--print`/`--prompt` 단일 prompt 비대화형 실행,
 `--print-timeout`, `--sandbox`를 명시한다. 반면 현재 sandbox에서는

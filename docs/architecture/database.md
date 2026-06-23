@@ -21,6 +21,9 @@ Migration 실행은 사람이 수행한다.
 | `topics` | 생성된 주제와 요약 metadata |
 | `topic_articles` | topic과 article 연결 |
 | `article_embeddings` | 기사 제목·RSS 요약 기반 최신 embedding |
+| `three_day_topic_runs` | 3일 Topic pipeline 실행 window, 상태와 통계 |
+| `three_day_topics` | 현재 활성 72시간 Topic 결과와 Summary metadata |
+| `three_day_topic_articles` | 3일 Topic의 관련·대표·Summary 근거 기사 연결 |
 
 `sources`와 `articles`의 초기 schema는 repository 밖에서 시작되었고, 현재
 repository migration은 `sources.feed_url`, 실행 이력, raw article, topic
@@ -34,6 +37,8 @@ sources 1 ── N articles
 articles 1 ── 0..1 raw_articles
 topics N ── N articles (topic_articles)
 articles 1 ── N article_embeddings
+three_day_topic_runs 1 ── N three_day_topics
+three_day_topics N ── N articles (three_day_topic_articles)
 ```
 
 `crawl_runs`와 `extraction_runs`는 batch 실행 단위의 상태와 count, 오류 정보를
@@ -59,6 +64,25 @@ articles 1 ── N article_embeddings
 
 초기 MVP에는 HNSW/IVFFlat index를 두지 않는다. 실제 row 수와 query latency를
 확인한 뒤 별도 task에서 검토한다.
+
+## 3일 Topic 저장
+
+`db/migrations/007_create_three_day_topic_tables.sql`은 기존 `topics` 계열과
+분리된 세 table을 정의한다.
+
+- `three_day_topic_runs`는 재실행을 포함한 모든 실행 이력을 보존한다.
+- `three_day_topics`는 현재 window 결과를 저장하고
+  `(window_start, window_end, topic_candidate_id)`로 중복을 방어한다.
+- `three_day_topic_articles`는 Topic별 article을 한 번만 연결하고 rank,
+  대표 기사와 Summary 근거 기사 여부를 저장한다.
+
+동일 window 재실행은 run row를 새로 남기되 활성 Topic set은 transaction 안에서
+교체한다. 결과 교체 전에 PostgreSQL advisory transaction lock을 사용하며, 삭제와
+삽입 중 하나라도 실패하면 기존 결과가 유지된다. `reference_date`가 같아도
+absolute window가 다르면 별도 결과로 취급한다.
+
+Migration 적용 전후 확인과 중단 기준은
+[Database runbook](../runbooks/database-check.md)을 따른다.
 
 ## 변경 원칙
 

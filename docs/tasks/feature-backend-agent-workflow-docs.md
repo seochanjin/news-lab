@@ -36,7 +36,7 @@ WIP 1
 대상 repository는 다음과 같다.
 
 ```text
-/Users/seochanjin/workspace/NewsLab/news-lab
+<repo-root>
 ```
 
 frontend repository와 frontend 문서는 이번 작업에서 다루지 않는다.
