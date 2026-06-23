@@ -107,3 +107,19 @@ PR과 devlog는 이 기록을 근거로 작성한다.
 
 이 gate는 production 명령을 허용하지 않으며 Agent의 구현 품질이나 Task 완료를
 자동 판정하지 않는다.
+
+## Antigravity review gate
+
+Antigravity review는 실행 파일 존재와 자동 실행 지원을 분리한다. 검증된
+비대화형 adapter가 없으면 직접 실행을 차단하고 prompt-only 수동 review를
+안내한다. 자동 실행 미지원 pre-flight 상태는
+`automatic_review_unavailable`로 기록한다. Gemini CLI의 외부
+`reasonCode: UNSUPPORTED_CLIENT`는 내부 `unsupported_client` category로
+분류하며, 인증 실패, 비대화형 실행 미지원, timeout과 일반 non-zero exit도
+성공으로 처리하지 않는다.
+
+자동 review 완료에는 process 성공뿐 아니라 review 파일 생성 또는 변경과 구조
+검증 통과가 필요하다. 수동 review는 실행 기록 없이도 파일 검증을 통과하면
+완료될 수 있다. 파일 없음, 빈 파일, 초기 템플릿, 필수 section·본문·Verdict
+누락과 허용되지 않은 Verdict는 미완성으로 유지하며 fix 또는 PR gate를 열지
+않는다.

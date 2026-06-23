@@ -12,7 +12,7 @@ import os
 from pathlib import Path
 import sys
 
-from .gates import GateError, gate_message, validate_action
+from .gates import AgentCommand, GateError, gate_message, validate_action
 from .prompt_builder import build_prompt
 from .runner import planned_log_directory, run_agent
 from .state import format_status, load_state, run_git
@@ -36,9 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def preview_text(
-    state: "WorkflowState", action: str, agent: str, log_dir: Path, timeout: int
+    state: "WorkflowState",
+    action: str,
+    command: AgentCommand,
+    log_dir: Path,
+    timeout: int,
 ) -> str:
-    """실행 전 확인할 Agent, branch, mode, UNIT, 로그와 timeout 정보를 반환한다."""
+    """실행 전 Agent adapter, 지원 상태, branch, 로그와 timeout 정보를 반환한다."""
 
     unit = state.task.current_unit
     current_unit = (
@@ -50,7 +54,14 @@ def preview_text(
     return "\n".join(
         [
             f"Action: {action}",
-            f"Target Agent: {agent}",
+            f"Target Agent: {command.agent}",
+            f"Adapter: {command.adapter}",
+            f"Executable: {command.executable or 'not found'}",
+            "Automatic execution supported: "
+            f"{'yes' if command.automatic_execution_supported else 'no'}",
+            f"Failure category: {command.failure_category or 'none'}",
+            "Manual fallback required: "
+            f"{'yes' if command.manual_fallback_required else 'no'}",
             f"Current branch: {state.branch}",
             f"Task path: {state.paths.task.relative_to(state.repo)}",
             f"Execution mode: {mode}",
@@ -97,13 +108,32 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         assert command is not None
         log_dir = planned_log_directory(state, args.action)
-        print(preview_text(state, args.action, command.agent, log_dir, args.timeout))
+        print(preview_text(state, args.action, command, log_dir, args.timeout))
         if args.action == "codex-implement" and state.task.execution_mode == "unit":
             print("경고: UNIT Task를 일반 모드로 실행하므로 Task 전체가 대상입니다.")
         if args.preview:
             print("\n--- Prompt ---\n")
             print(prompt)
             return 0
+        if not command.automatic_execution_supported:
+            print("\n자동 Antigravity review를 실행할 수 없습니다.", file=sys.stderr)
+            if command.failure_category == "executable_missing":
+                print("원인: 확인된 Antigravity CLI 실행 파일을 찾지 못했습니다.", file=sys.stderr)
+            else:
+                print(
+                    "원인: 현재 환경에서 비대화형 Antigravity review 계약이 검증되지 않았습니다.",
+                    file=sys.stderr,
+                )
+            print(
+                f"수동 review 요청: {command.next_action}",
+                file=sys.stderr,
+            )
+            print(
+                "review 파일 작성 prompt: "
+                "scripts/agent_next_step.sh antigravity-review-write",
+                file=sys.stderr,
+            )
+            return 2
         if not args.yes:
             if not sys.stdin.isatty():
                 print("오류: 비대화형 실행에서는 --yes가 필요합니다.", file=sys.stderr)
@@ -115,9 +145,23 @@ def main(argv: list[str] | None = None) -> int:
         result = run_agent(state, args.action, command, prompt, args.timeout, log_directory=log_dir)
         print(f"\nAgent 종료 코드: {result.exit_code}")
         print(f"Timeout: {'yes' if result.timed_out else 'no'}")
+        print(f"Failure category: {result.failure_category or 'none'}")
+        print(
+            "Manual fallback required: "
+            f"{'yes' if result.manual_fallback_required else 'no'}"
+        )
+        print(f"Review file validation: {result.review_file_validation}")
+        print(f"Review completed: {'yes' if result.review_completed else 'no'}")
+        if result.failure_category == "unsupported_client":
+            print(
+                "지원되지 않는 client입니다. "
+                "scripts/agent_next_step.sh antigravity-review로 수동 review를 진행하세요."
+            )
         print(f"실행 시간: {result.duration_seconds}초")
         print(f"로그 위치: {result.log_directory}")
         print("Agent 종료만으로 Task 또는 Verification 완료를 판단하지 않습니다.")
+        if result.exit_code == 0 and result.failure_category is not None:
+            return 1
         return result.exit_code
     except (GateError, TaskParseError, FileNotFoundError, ValueError, OSError) as error:
         print(f"오류: {gate_message(error)}", file=sys.stderr)
