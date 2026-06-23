@@ -38,7 +38,9 @@ spec:
                 - "3"
                 - --max-reference-topics
                 - "10"
-                - --max-articles-per-topic
+                - --max-related-articles-per-topic
+                - "20"
+                - --max-summary-articles-per-topic
                 - "3"
                 - --max-raw-chars-per-article
                 - "3000"

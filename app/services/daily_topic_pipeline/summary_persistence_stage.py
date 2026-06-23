@@ -1,4 +1,10 @@
-"""Topic summary generation and persistence planning stage."""
+"""Summary 근거 기사로 요약을 만들고 관련 기사 전체의 저장 계획을 구성한다.
+
+원문이 확보된 Summary 기사만 provider 입력으로 전달하고, 생성된 Topic에는
+선정 단계의 관련 기사 전체를 기존 순서와 대표 기사 역할로 연결한다. 실제 DB
+transaction 실행은 주입된 save executor에 위임하며 provider 실패는 Topic별로
+격리한다.
+"""
 
 import logging
 
@@ -30,7 +36,7 @@ def summarize_and_save_topics(
     summary_provider=None,
     save_executor=None,
 ):
-    """Selected topic의 원문으로 summary를 만들고 topic 저장 계획을 처리한다.
+    """Summary 기사로 요약을 만들고 관련 기사 전체의 저장 계획을 처리한다.
 
     Topic별 summary provider 예외는 해당 topic에 한정해 격리한다. 원문이 없는
     topic은 기존 save-plan 정책에 따라 skip한다. Execute 모드에서 저장 후보가
@@ -42,15 +48,23 @@ def summarize_and_save_topics(
     """
 
     LOGGER.info(
-        "summary/save stage start: pipeline_date=%s",
+        "summary/save stage start: pipeline_date=%s related_article_count=%d "
+        "summary_article_count=%d",
         pipeline_context.pipeline_date,
+        len(topic_result.related_article_ids),
+        len(topic_result.summary_article_ids),
     )
     provider = summary_provider or create_summary_provider(args)
+    summary_topics = _summary_article_topics(topic_result)
     summary_inputs = build_topic_summary_inputs(
-        topic_result.selected_topics,
+        summary_topics,
         raw_result.article_raw_texts,
         max_topics=args.max_topics,
-        max_articles_per_topic=args.max_articles_per_topic,
+        max_articles_per_topic=getattr(
+            args,
+            "max_summary_articles_per_topic",
+            args.max_articles_per_topic,
+        ),
         max_raw_chars_per_article=args.max_raw_chars_per_article,
     )
     LOGGER.info(
@@ -90,10 +104,18 @@ def summarize_and_save_topics(
         args,
         topic_date=pipeline_context.pipeline_date,
     )
+    _apply_related_articles(save_plan, topic_result.selected_topics)
+    save_plan["analysis"]["related_article_count"] = sum(
+        len(topic["articles"]) for topic in save_plan["topics"]
+    )
+    save_plan["analysis"]["summary_article_count"] = sum(
+        summary["article_count"]
+        for summary in summaries
+        if summary["status"] == "ready"
+    )
     save_plan["analysis"]["raw_extraction_performed"] = bool(
         raw_result.extraction_results
     )
-    _apply_similarity_scores(save_plan, topic_result.selected_topics)
     if args.execute and save_plan["topics"]:
         if save_executor is None:
             raise ValueError("execute mode requires save_executor")
@@ -121,21 +143,60 @@ def summarize_and_save_topics(
     )
 
 
-def _apply_similarity_scores(save_plan, topics):
-    metadata_by_article = {
-        article["id"]: {
-            "role": (
-                "representative"
-                if article.get("representative_candidate_rank") == 1
-                else "supporting"
-            ),
-            "similarity_score": article.get("similarity_to_seed"),
+def _summary_article_topics(topic_result):
+    """선택 Topic 구조에서 Summary 근거 기사만 남긴 provider 입력용 복사본을 만든다."""
+
+    summary_ids = set(topic_result.summary_article_ids)
+    return [
+        {
+            **{key: value for key, value in topic.items() if key != "articles"},
+            "articles": [
+                article
+                for article in topic["articles"]
+                if article["id"] in summary_ids
+            ],
         }
-        for topic in topics
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") is not None
+        for topic in topic_result.selected_topics
+    ]
+
+
+def _apply_related_articles(save_plan, topics):
+    """저장 후보 Topic의 기사 관계와 집계값을 관련 기사 전체 기준으로 교체한다.
+
+    Summary 생성에 성공해 저장 후보가 된 Topic만 대상으로 한다. 선정 단계의
+    기사 순서를 rank로 유지하고 article ID 중복은 최초 관계만 보존한다.
+    """
+
+    topics_by_candidate_id = {
+        topic["topic_candidate_id"]: topic for topic in topics
     }
     for topic in save_plan["topics"]:
-        for article in topic["articles"]:
-            metadata = metadata_by_article.get(article["article_id"], {})
-            article.update(metadata)
+        selected_topic = topics_by_candidate_id[topic["topic_candidate_id"]]
+        related_articles = []
+        seen_article_ids = set()
+        for article in selected_topic["articles"]:
+            if article.get("representative_candidate_rank") is None:
+                continue
+            if article["id"] in seen_article_ids:
+                continue
+            seen_article_ids.add(article["id"])
+            related_articles.append(
+                {
+                    "article_id": article["id"],
+                    "role": (
+                        "representative"
+                        if article.get("representative_candidate_rank") == 1
+                        else "supporting"
+                    ),
+                    "similarity_score": article.get("similarity_to_seed"),
+                }
+            )
+        topic["articles"] = related_articles
+        topic["article_count"] = len(related_articles)
+        topic["source_count"] = len(
+            {
+                article.get("source")
+                for article in selected_topic["articles"]
+                if article["id"] in seen_article_ids and article.get("source")
+            }
+        )

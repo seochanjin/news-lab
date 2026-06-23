@@ -1,3 +1,11 @@
+"""Daily topic pipeline의 CLI 설정과 네 단계 실행을 조정한다.
+
+최근 기사 조회부터 embedding, topic 선정, 원문 확보, summary 저장 계획까지
+service package의 단계를 순서대로 호출한다. 기본 실행은 dry-run이며
+`--execute`가 지정된 경우에만 주입된 adapter를 통해 DB 쓰기와 원문 추출이
+발생한다.
+"""
+
 import argparse
 import json
 import logging
@@ -38,7 +46,8 @@ DEFAULT_MAX_ARTICLES = 100
 DEFAULT_SIMILARITY_THRESHOLD = 0.78
 DEFAULT_MAX_TOPICS = 5
 DEFAULT_MAX_REFERENCE_TOPICS = 10
-DEFAULT_MAX_ARTICLES_PER_TOPIC = 3
+DEFAULT_MAX_RELATED_ARTICLES_PER_TOPIC = 20
+DEFAULT_MAX_SUMMARY_ARTICLES_PER_TOPIC = 3
 DEFAULT_MAX_RAW_CHARS_PER_ARTICLE = 3000
 DEFAULT_EXTRACTION_LIMIT = 5
 MAX_DAILY_PROVIDER_ARTICLES = 300
@@ -50,6 +59,13 @@ _topic_selection_key = topic_selection_key
 
 
 def parse_args(argv=None):
+    """Daily pipeline CLI 인자를 읽고 기사 상한 관계와 provider 조건을 검증한다.
+
+    기존 `--max-articles-per-topic`은 deprecated alias로 유지하며 단독 사용 시
+    관련 기사와 Summary 기사 상한을 같은 값으로 설정해 과거 실행 의미를
+    보존한다. 신규 상한 옵션과 alias를 함께 지정하면 모호한 구성을 차단한다.
+    """
+
     load_dotenv()
     parser = argparse.ArgumentParser(
         description="Manual recent-24-hour topic pipeline (dry-run by default).",
@@ -73,9 +89,20 @@ def parse_args(argv=None):
         default=DEFAULT_MAX_REFERENCE_TOPICS,
     )
     parser.add_argument(
+        "--max-related-articles-per-topic",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
+        "--max-summary-articles-per-topic",
+        type=int,
+        default=None,
+    )
+    parser.add_argument(
         "--max-articles-per-topic",
         type=int,
-        default=DEFAULT_MAX_ARTICLES_PER_TOPIC,
+        default=None,
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--max-raw-chars-per-article",
@@ -102,8 +129,40 @@ def parse_args(argv=None):
         parser.error("--max-topics must be between 1 and 10")
     if not 0 <= args.max_reference_topics <= 10:
         parser.error("--max-reference-topics must be between 0 and 10")
-    if not 1 <= args.max_articles_per_topic <= 3:
-        parser.error("--max-articles-per-topic must be between 1 and 3")
+    if args.max_articles_per_topic is not None:
+        if (
+            args.max_related_articles_per_topic is not None
+            or args.max_summary_articles_per_topic is not None
+        ):
+            parser.error(
+                "--max-articles-per-topic cannot be combined with the new "
+                "per-topic article limit options"
+            )
+        args.max_related_articles_per_topic = args.max_articles_per_topic
+        args.max_summary_articles_per_topic = args.max_articles_per_topic
+    else:
+        args.max_related_articles_per_topic = (
+            args.max_related_articles_per_topic
+            if args.max_related_articles_per_topic is not None
+            else DEFAULT_MAX_RELATED_ARTICLES_PER_TOPIC
+        )
+        args.max_summary_articles_per_topic = (
+            args.max_summary_articles_per_topic
+            if args.max_summary_articles_per_topic is not None
+            else DEFAULT_MAX_SUMMARY_ARTICLES_PER_TOPIC
+        )
+    if args.max_related_articles_per_topic < 1:
+        parser.error("--max-related-articles-per-topic must be at least 1")
+    if args.max_summary_articles_per_topic < 1:
+        parser.error("--max-summary-articles-per-topic must be at least 1")
+    if (
+        args.max_summary_articles_per_topic
+        > args.max_related_articles_per_topic
+    ):
+        parser.error(
+            "--max-summary-articles-per-topic cannot exceed "
+            "--max-related-articles-per-topic"
+        )
     if not 1 <= args.max_raw_chars_per_article <= 5000:
         parser.error("--max-raw-chars-per-article must be between 1 and 5000")
     if not 1 <= args.extraction_limit <= 5:
@@ -128,8 +187,10 @@ def parse_args(argv=None):
 
     args.all = False
     args.effective_max_articles = args.max_articles
-    args.max_candidates_per_topic = args.max_articles_per_topic
-    args.max_targets_per_topic = args.max_articles_per_topic
+    # 기존 downstream 호출자는 Summary 기사 상한을 단일 기사 상한으로 사용한다.
+    args.max_articles_per_topic = args.max_summary_articles_per_topic
+    args.max_candidates_per_topic = args.max_summary_articles_per_topic
+    args.max_targets_per_topic = args.max_summary_articles_per_topic
     return args
 
 
@@ -222,6 +283,8 @@ def _build_analysis(
     save_result,
     pipeline_started_at,
 ):
+    """단계별 결과를 관련·Summary·원문·저장 수가 분리된 실행 통계로 합친다."""
+
     candidate_count = (
         len(embedding_result.articles_with_embeddings)
         + embedding_result.failed_count
@@ -244,6 +307,11 @@ def _build_analysis(
         "reference_topic_count": len(topic_result.reference_topics),
         "selected_article_ids": topic_result.selected_article_ids,
         "selected_article_count": len(topic_result.selected_article_ids),
+        "related_article_ids": topic_result.related_article_ids,
+        "related_article_count": len(topic_result.related_article_ids),
+        "summary_article_ids": topic_result.summary_article_ids,
+        "summary_article_count": len(topic_result.summary_article_ids),
+        "raw_acquisition_target_count": len(topic_result.summary_article_ids),
         "embedding_provider": (
             "openai" if args.use_embedding_provider else "deterministic"
         ),
@@ -259,6 +327,9 @@ def _build_analysis(
         "raw_missing_count": len(raw_result.missing_article_ids),
         "generated_topic_count": save_result.generated_topic_count,
         "saved_topic_count": save_result.saved_topic_count,
+        "saved_topic_article_count": save_result.save_plan["analysis"][
+            "linked_article_count"
+        ],
         "skipped_topic_count": save_result.skipped_topic_count,
         "failed_topic_count": save_result.failed_topic_count,
         "db_write_performed": save_result.save_plan["analysis"][
@@ -365,10 +436,13 @@ def _create_extraction_executor(args):
 
 
 def _log_pipeline_config(args, pipeline_context):
+    """검증된 실행 설정과 공통 pipeline 날짜를 민감정보 없이 기록한다."""
+
     LOGGER.info(
         "pipeline config: window_hours=%d time_basis=%s max_articles=%d "
         "similarity_threshold=%.2f max_topics=%d max_reference_topics=%d "
-        "max_articles_per_topic=%d max_raw_chars_per_article=%d "
+        "max_related_articles_per_topic=%d "
+        "max_summary_articles_per_topic=%d max_raw_chars_per_article=%d "
         "extraction_limit=%d use_embedding_provider=%s "
         "use_summary_provider=%s summary_model=%s execute=%s",
         args.window_hours,
@@ -377,7 +451,8 @@ def _log_pipeline_config(args, pipeline_context):
         args.similarity_threshold,
         args.max_topics,
         args.max_reference_topics,
-        args.max_articles_per_topic,
+        args.max_related_articles_per_topic,
+        args.max_summary_articles_per_topic,
         args.max_raw_chars_per_article,
         args.extraction_limit,
         args.use_embedding_provider,

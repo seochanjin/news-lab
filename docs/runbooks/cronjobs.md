@@ -47,8 +47,10 @@ curl "https://api.dev-scj.site/topics/home"
 ## Daily topic embedding reuse 확인
 
 Daily topic pipeline은 기존 실행 단위와 `04:00 Asia/Seoul` schedule을 유지하며
-`article_embeddings`를 clustering 입력으로 재사용한다. Topic 선정 뒤 selected
-article만 원문 확보 대상으로 삼고, 기존 `raw_articles.raw_text`는 재사용한다.
+`article_embeddings`를 clustering 입력으로 재사용한다. Topic별 관련 기사는
+최대 20건까지 저장 대상으로 유지하고, 그중 Summary 근거 기사 최대 3건만 원문
+확보와 Summary provider 입력 대상으로 삼는다. 기존 `raw_articles.raw_text`는
+우선 재사용한다.
 
 사람이 안전한 환경 변수 주입과 DB write 영향을 확인한 뒤 동일 조건으로 두 번
 실행한다.
@@ -60,7 +62,8 @@ python scripts/run_daily_topic_pipeline.py \
   --similarity-threshold 0.70 \
   --max-topics 3 \
   --max-reference-topics 10 \
-  --max-articles-per-topic 3 \
+  --max-related-articles-per-topic 20 \
+  --max-summary-articles-per-topic 3 \
   --max-raw-chars-per-article 3000 \
   --use-embedding-provider \
   --use-summary-provider \
@@ -78,10 +81,14 @@ embedding_reused
 embedding_failed
 clustering_input_count
 topic_count
+related_article_count
+summary_article_count
+raw_acquisition_target_count
 raw_reused_count
 raw_extracted_count
 raw_failed_count
 raw_missing_count
+saved_topic_article_count
 pipeline_date
 business_timezone
 pipeline_elapsed_seconds
@@ -98,6 +105,11 @@ pipeline_elapsed_seconds
 - `clustering_input_count = candidate_articles - embedding_failed`
 - 실패 article ID와 짧은 오류 요약만 log에 있고 credential과 전체 원문이 없음
 - 정상 vector가 2건 미만이면 `topic_count=0`이고 topic DB save를 수행하지 않음
+- `summary_article_count <= related_article_count`
+- `raw_acquisition_target_count = summary_article_count`
+- 저장된 Topic의 `article_count`와 API 관련 기사 목록이 관련 기사 전체를 반영함
+- 저장된 Topic의 `source_count`가 관련 기사 전체의 source 기준과 일치함
+- Topic 상세 응답의 첫 대표 기사와 이후 supporting 기사 순서가 유지됨
 - 기존 topic clustering threshold와 summary/save 계약이 유지됨
 - `pipeline_date`와 저장된 `topics.topic_date`가 `Asia/Seoul` 기준으로 일치함
 
