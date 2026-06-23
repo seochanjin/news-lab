@@ -45,7 +45,7 @@
 - 요약은 단일 시점의 사건 설명보다 최근 72시간 동안의 변화, 진행 상황과 여러 출처의 공통 내용을 설명해야 한다.
 - Topic 하나의 원문 확보 또는 요약이 실패해도 다른 Topic 처리는 계속하는 실패 격리 정책을 적용한다.
 - 3일 Topic 전용 저장 구조와 실행 이력 구조를 추가한다.
-- 동일한 기준일 또는 동일한 window 범위로 재실행할 때 중복 데이터가 누적되지 않도록 idempotency 정책을 적용한다.
+- 동일한 절대 `window_start`, `window_end` 범위로 재실행할 때 중복 데이터가 누적되지 않도록 idempotency 정책을 적용한다.
 - 기존 성공 결과를 먼저 삭제한 뒤 pipeline 중간 실패로 결과가 사라지지 않도록 저장·교체 순서를 설계한다.
 - 3일 Topic 목록·상세·홈 API를 추가한다.
 - 3일 Topic pipeline을 정기 실행하는 K3s CronJob manifest를 추가한다.
@@ -169,7 +169,7 @@ updated_at
 검토할 제약과 인덱스:
 
 ```text
-- 동일한 기준일 또는 동일한 window 범위의 결과 중복 방지
+- 동일한 절대 `window_start`, `window_end` 범위의 결과 중복 방지
 - 최신 3일 Topic 조회를 위한 reference_date/window_end 정렬 인덱스
 - status 기반 조회가 필요할 경우 status 포함 인덱스
 ```
@@ -230,7 +230,10 @@ created_at
 
 ### 재실행 정책
 
-- 동일한 `reference_date` 또는 동일한 `window_start`, `window_end` 실행은 중복 결과를 누적하지 않는다.
+- 동일한 `window_start`, `window_end` 실행은 중복 결과를 누적하지 않는다.
+- `reference_date`는 서울 기준 표시, archive filter와 운영 조회 metadata이며
+  결과 교체나 advisory lock의 고유 key가 아니다.
+- 같은 `reference_date`에도 실행 시각에 따라 서로 다른 절대 window가 존재할 수 있다.
 - pipeline 중간 실패로 기존 성공 결과가 먼저 제거되지 않아야 한다.
 - 결과 교체가 필요한 경우 transaction 안에서 기존 window 결과와 신규 결과를 안전하게 교체한다.
 - 실행 실패 이력은 `three_day_topic_runs`에 남긴다.
@@ -530,7 +533,7 @@ kubectl logs job/<manual-job-name>
 - Topic 하나의 실패가 다른 Topic 처리를 중단시키지 않는다.
 - 3일 흐름에 맞는 summary prompt 또는 prompt version이 적용된다.
 - `three_day_topics`, `three_day_topic_articles`, `three_day_topic_runs` migration이 추가된다.
-- 동일 기준일 또는 동일 window로 재실행해도 Topic 결과가 중복 누적되지 않는다.
+- 동일 절대 window로 재실행해도 Topic 결과가 중복 누적되지 않는다.
 - pipeline 실패 시 기존 성공 결과가 불완전하게 삭제되지 않는다.
 - 실행 통계와 오류가 `three_day_topic_runs`에 기록된다.
 - `GET /three-day-topics`가 archive 목록을 반환한다.

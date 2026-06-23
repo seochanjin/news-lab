@@ -208,7 +208,7 @@ Repository root 외부:
 
 ```bash
 cd /tmp
-PYTHONPATH=/Users/seochanjin/workspace/NewsLab/news-lab \
+PYTHONPATH=<repo-root> \
 python -m unittest \
   tests.test_article_embedding_migration
 ```

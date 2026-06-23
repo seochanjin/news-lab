@@ -20,7 +20,7 @@ Command:
 
 Result:
 - `requirements.txt`와 `requirements-dev.txt`의 모든 package가 현재 Python 환경에 이미 설치되어 있었다.
-- 마지막 pyenv rehash 단계에서 `/Users/seochanjin/.pyenv/shims` 쓰기 권한이 없어 exit code 1로 종료됐다.
+- 마지막 pyenv rehash 단계에서 `~/.pyenv/shims` 쓰기 권한이 없어 exit code 1로 종료됐다.
 - 신규 package 설치나 dependency 변경은 발생하지 않았다.
 
 Status: failed

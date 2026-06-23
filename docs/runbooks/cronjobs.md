@@ -105,6 +105,11 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob \
   `--execute`를 사용한다.
 - `DATABASE_URL`, `OPENAI_SUMMARY_API_KEY`만 기존 Secret에서 참조하고 embedding
   key를 요구하지 않는다.
+- 기존 privilege escalation 차단, capability drop과 RuntimeDefault seccomp가
+  유지되고 `/tmp`는 `emptyDir`로 mount된다.
+- 현재 image는 Dockerfile 최종 `USER`가 없어 non-root 실행을 보장하지 않는다.
+  `runAsNonRoot`와 `readOnlyRootFilesystem` 적용은 image hardening 후 별도
+  검증한다.
 
 ## 3일 Topic 수동 Job과 확인
 

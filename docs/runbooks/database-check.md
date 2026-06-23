@@ -166,9 +166,14 @@ select conrelid::regclass as table_name,
        pg_get_constraintdef(oid) as definition
 from pg_constraint
 where conrelid in (
-  'public.three_day_topic_runs'::regclass,
-  'public.three_day_topics'::regclass,
-  'public.three_day_topic_articles'::regclass
+  select relation
+  from (
+    values
+      (to_regclass('public.three_day_topic_runs')),
+      (to_regclass('public.three_day_topics')),
+      (to_regclass('public.three_day_topic_articles'))
+  ) as expected(relation)
+  where relation is not null
 )
 order by table_name::text, conname;
 
@@ -189,6 +194,12 @@ order by tablename, indexname;
 - 기존 동명 table, constraint 또는 index와 예상하지 않은 충돌
 - run status check 또는 window/topic unique constraint 누락
 - migration transaction 실패 또는 일부 object만 생성된 불명확한 상태
+
+Table 존재 여부 확인에서 세 table이 모두 `public.<table_name>`으로 반환되어야
+정상 적용 완료다. Constraint 조회 query는 일부 table이 누락된 상태에서도
+실행되도록 존재하는 relation만 대상으로 삼지만, 누락 table 자체가 정상이라는
+의미는 아니다. 일부 object만 있으면 자동 drop이나 무조건 재실행을 하지 말고
+migration 이력과 실제 object를 먼저 비교한다.
 
 Migration은 additive다. 실행 실패 시 transaction 결과를 확인하고 재시도 전에
 남은 object와 migration SQL을 비교한다. 운영 rollback이 필요하면 저장된 3일

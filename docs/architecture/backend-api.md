@@ -31,8 +31,8 @@ Root endpoint `GET /`는 주요 endpoint 링크를 반환한다.
 - `/topics`는 주제 archive와 detail을 제공한다.
 - `/topics/home`은 home 화면용 bounded topic card payload를 제공한다.
 - `/three-day-topics`는 3일 Topic archive와 detail을 제공한다.
-- `/three-day-topics/home`은 성공 또는 부분 성공한 최신 72시간 window 하나의
-  bounded Topic card payload를 제공한다.
+- `/three-day-topics/home`은 성공 또는 부분 성공한 최신 72시간 publishable
+  window 하나의 bounded Topic card payload를 제공한다.
 
 Topic 저장 시 `article_count`와 `source_count`는 Summary 근거 기사만이 아니라
 저장된 관련 기사 전체를 기준으로 계산한다. `/topics/home`은 저장된 집계값을

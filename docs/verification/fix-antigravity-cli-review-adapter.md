@@ -705,7 +705,7 @@ Result:
 - `antigravity` command는 발견되지 않았다.
 - `gemini`는 `/opt/homebrew/bin/gemini`, version `0.45.0`이었다.
 - Gemini help는 `--prompt` headless mode와 `--approval-mode`를 제공한다.
-- `agy`는 `/Users/seochanjin/.local/bin/agy`, version `1.0.9`이었다.
+- `agy`는 `~/.local/bin/agy`, version `1.0.9`이었다.
 - `agy` help는 `--print`/`--prompt` 단일 prompt 비대화형 mode,
   `--print-timeout`, `--sandbox`를 제공한다.
 

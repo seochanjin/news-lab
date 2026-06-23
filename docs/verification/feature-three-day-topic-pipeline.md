@@ -753,7 +753,10 @@ Result:
 - 기존 UNIT-01부터 UNIT-04 산출물과 workflow 문서의 미커밋 변경을 보존했다.
 - UNIT-05만 구현하고 API, 실행 script, CronJob과 production 작업은 수행하지
   않는 범위를 확인했다.
-- Approved Fixes 문서에 승인된 항목이 없음을 확인했다.
+- 당시 UNIT 검증에서는 Approved Fixes 적용 대상이 없었다. 이후
+  `docs/fixes/feature-three-day-topic-pipeline-approved-fixes.md`의 FIX-01부터
+  FIX-09까지 승인 항목을 적용하고 이 문서의 Approved Fixes Verification에
+  별도로 기록했다.
 
 Status: passed
 
@@ -1745,6 +1748,187 @@ Status: human-required
   원문 추출, 외부 Summary API와 Kubernetes command를 실행하지 않았다.
 - UNIT-08은 문서와 전체 로컬 회귀만 검증했으며 실제 DB, provider, cluster와
   production API에 접근하지 않았다.
-- review 문서는 수정 근거로 사용하지 않았고 Approved Fixes에는 승인 항목이
-  없었다.
+- review 문서는 수정 근거로 직접 사용하지 않았고
+  `docs/fixes/feature-three-day-topic-pipeline-approved-fixes.md`의 승인 항목만
+  적용했다.
 - production verification, rollout, deployment와 merge 완료를 주장하지 않는다.
+
+## Approved Fixes Verification
+
+### 53. Approved fixes 적용 전 상태 확인
+
+Command:
+
+```bash
+pwd && git branch --show-current && rg --files -g 'AGENTS.md' -g 'docs/tasks/feature-three-day-topic-pipeline.md' -g 'docs/verification/feature-three-day-topic-pipeline.md' -g 'docs/fixes/feature-three-day-topic-pipeline-approved-fixes.md' -g 'docs/agent/backend-workflow.md' -g 'docs/agent/codex-instructions.md' -g 'docs/agent/verification-gates.md' -g 'docs/agent/forbidden-commands.md' -g 'docs/agent/task-authoring-guide.md'
+git status --short
+```
+
+Result:
+
+- 현재 작업 경로는 `<repo-root>`였고 branch는
+  `feature/three-day-topic-pipeline`이었다.
+- 필수 문서가 모두 존재했다.
+- 작업 전 변경 파일은
+  `docs/fixes/feature-three-day-topic-pipeline-approved-fixes.md`와
+  `docs/reviews/feature-three-day-topic-pipeline-coderabbit.md`였다.
+
+Status: passed
+
+### 54. 3일 Pipeline 및 저장 회귀
+
+Command:
+
+```bash
+python -m pytest tests/test_run_three_day_topic_pipeline.py tests/test_three_day_topic_pipeline.py tests/test_three_day_topic_repository.py -v
+```
+
+Result:
+
+- 첫 실행은 신규 execute-mode fixture가 `summary articles must be a subset of
+  related articles` model 불변식을 어겨 1개 실패했다.
+- 테스트 fixture의 `related_article_ids`를 실제 계약에 맞게 보정했다.
+- 재실행 결과 33개 테스트와 6개 subtest가 모두 통과했다.
+- 검증 범위: Dry-run provider 호출 0회, Dry-run API key 불필요, Dry-run 결과
+  교체 미실행, execute mode 원문·Summary·repository stage 유지, 후보 조회
+  connection 조기 반환, 절대 window 기반 repository 교체 계약.
+
+Status: passed
+
+### 55. 설정 검증 및 공통 Selection 회귀
+
+Command:
+
+```bash
+python -m pytest tests/test_three_day_topic_pipeline.py tests/test_daily_topic_article_selection.py tests/test_run_daily_topic_pipeline.py -v
+```
+
+Result:
+
+- 39개 테스트와 6개 subtest가 모두 통과했다.
+- 비문자열, 빈 문자열과 공백 embedding 설정값이 field 이름을 포함한
+  `ValueError`로 처리됨을 확인했다.
+- `_as_utc()`의 기존 UTC 변환 동작과 Daily Topic 기사 선정 회귀가 없음을
+  확인했다.
+
+Status: passed
+
+### 56. API 및 CronJob manifest 검증
+
+Command:
+
+```bash
+python -m pytest tests/test_three_day_topics_api.py tests/test_three_day_topic_pipeline_cronjob_manifest.py -v
+```
+
+Result:
+
+- 9개 테스트가 모두 통과했다.
+- Home API가 최신 publishable window의 경량 payload를 유지하고, CronJob이
+  기존 schedule, command, Secret, resource, deadline, capability drop,
+  seccomp와 `/tmp` `emptyDir` mount 계약을 만족함을 확인했다.
+- Dockerfile 최종 `USER`가 없어 `runAsNonRoot`와 `readOnlyRootFilesystem`은
+  적용하지 않고 별도 image hardening 작업으로 문서화했다.
+
+Status: passed
+
+### 57. 전체 pytest 회귀
+
+Command:
+
+```bash
+python -m pytest
+```
+
+Result:
+
+- 265개 테스트가 모두 통과했다.
+
+Status: passed
+
+### 58. unittest 전체 회귀
+
+Command:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Result:
+
+- 265개 테스트가 모두 통과했다.
+- 출력된 argparse usage/error, provider failure와 clustering skipped 로그는
+  잘못된 입력과 실패 격리를 검증하는 테스트의 예상 출력이었다.
+
+Status: passed
+
+### 59. Compile 검증
+
+Command:
+
+```bash
+python -m compileall app scripts tests
+```
+
+Result:
+
+- `app`, `scripts`, `tests`가 모두 compile되었다.
+- 생성된 `__pycache__` 디렉터리는 검증 후 제거했다.
+
+Status: passed
+
+### 60. Whitespace와 문서 정합성
+
+Command:
+
+```bash
+git diff --check
+rg -n 'file://''/|/Users/seo''chanjin|reference_date.*id''empot|id''empot.*reference_date' docs README.md
+rg -n 'to_regclass|::regclass|three_day_topic_runs|three_day_topics|three_day_topic_articles' docs/runbooks/database-check.md
+```
+
+Result:
+
+- `git diff --check`는 exit code 0으로 완료했다.
+- 개인 workspace URI와 `reference_date`를 결과 교체 key처럼 설명하는 문구
+  검색은 exit code 1로 match가 없었다.
+- `docs/runbooks/database-check.md`에서 3일 Topic table 존재 여부는
+  `to_regclass()`로 확인하고, constraint 조회는 존재하는 relation만 대상으로
+  사용한다. 출력에 남은 `article_embeddings`의 `::regclass`와
+  `conrelid::regclass` 표시 cast는 부분 적용될 수 있는 3일 Topic relation을
+  직접 변환하는 용도가 아니다.
+
+Status: passed
+
+### 61. 변경 금지 영역 확인
+
+Command:
+
+```bash
+git diff -- app/services/daily_topic_pipeline scripts/run_daily_topic_pipeline.py k8s/news-daily-topic-pipeline-cronjob.yaml
+```
+
+Result:
+
+- 출력이 없었다.
+- 기존 Daily Topic pipeline package, 실행 script와 Daily CronJob manifest는
+  변경하지 않았다.
+
+Status: passed
+
+### 62. Kubernetes dry-run
+
+Command:
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply --dry-run=client -f k8s/news-three-day-topic-pipeline-cronjob.yaml
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply --dry-run=server -f k8s/news-three-day-topic-pipeline-cronjob.yaml
+```
+
+Result:
+
+- 실행하지 않았다.
+- `kubectl apply`는 project forbidden command에 포함되므로 client/server dry-run도
+  사람이 수행할 항목으로 남겼다.
+
+Status: human-required

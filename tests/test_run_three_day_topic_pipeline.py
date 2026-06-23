@@ -21,6 +21,7 @@ from app.services.three_day_topic_pipeline import (
 from scripts.run_three_day_topic_pipeline import (
     _completion_from_analysis,
     build_pipeline,
+    load_candidates_for_context,
     parse_args,
 )
 
@@ -74,6 +75,16 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
         self.assertTrue(parsed.execute)
 
     @patch("scripts.run_three_day_topic_pipeline.load_dotenv")
+    def test_dry_run_allows_summary_provider_flag_without_api_key(self, load_dotenv):
+        """Dry-run은 provider flag가 있어도 외부 API key를 요구하지 않는지 확인한다."""
+
+        with patch.dict(os.environ, {}, clear=True):
+            parsed = parse_args(["--use-summary-provider"])
+
+        self.assertFalse(parsed.execute)
+        self.assertTrue(parsed.use_summary_provider)
+
+    @patch("scripts.run_three_day_topic_pipeline.load_dotenv")
     def test_window_end_accepts_timezone_and_rejects_naive_value(self, load_dotenv):
         """재현 실행 종료 경계가 timezone-aware ISO 8601만 허용하는지 확인한다."""
 
@@ -95,15 +106,13 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
     @patch("scripts.run_three_day_topic_pipeline.summarize_and_persist_three_day_topics")
     @patch("scripts.run_three_day_topic_pipeline.acquire_three_day_topic_raw_texts")
     @patch("scripts.run_three_day_topic_pipeline.cluster_and_select_three_day_topics")
-    @patch("scripts.run_three_day_topic_pipeline.load_three_day_candidates")
     def test_build_pipeline_passes_one_context_and_reports_stage_counts(
         self,
-        load_candidates,
         select_topics,
         acquire_raw,
         summarize,
     ):
-        """모든 stage가 같은 context를 받고 실행 계약 통계가 합쳐지는지 확인한다."""
+        """선정 stage가 같은 context를 받고 dry-run 부수 효과가 차단되는지 확인한다."""
 
         context = resolve_three_day_pipeline_context(
             started_at_utc=datetime(2026, 6, 23, 3, tzinfo=timezone.utc)
@@ -137,42 +146,121 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
             failures=[],
             run_status="success",
         )
-        load_candidates.return_value = candidate_result
         select_topics.return_value = topic_result
         acquire_raw.return_value = raw_result
         summarize.return_value = processing_result
         raw_state_loader = Mock(return_value={})
+        summary_provider = Mock()
 
         result = build_pipeline(
-            Mock(),
+            candidate_result,
             _args(),
             pipeline_context=context,
-            summary_provider=Mock(),
+            summary_provider=summary_provider,
             raw_state_loader=raw_state_loader,
         )
 
         self.assertIs(
-            load_candidates.call_args.kwargs["pipeline_context"],
-            context,
-        )
-        self.assertIs(
             select_topics.call_args.kwargs["pipeline_context"],
             context,
         )
-        self.assertIs(
-            acquire_raw.call_args.kwargs["pipeline_context"],
-            context,
-        )
-        self.assertIs(
-            summarize.call_args.kwargs["pipeline_context"],
-            context,
-        )
-        raw_state_loader.assert_called_once_with([])
+        acquire_raw.assert_not_called()
+        summarize.assert_not_called()
+        raw_state_loader.assert_not_called()
+        summary_provider.summarize.assert_not_called()
         self.assertEqual(result["analysis"]["candidate_count"], 2)
         self.assertEqual(result["analysis"]["embedding_count"], 1)
         self.assertEqual(result["analysis"]["missing_embedding_count"], 1)
         self.assertEqual(result["analysis"]["run_status"], "success")
         self.assertIsNone(result["analysis"]["run_id"])
+
+    @patch("scripts.run_three_day_topic_pipeline.summarize_and_persist_three_day_topics")
+    @patch("scripts.run_three_day_topic_pipeline.acquire_three_day_topic_raw_texts")
+    @patch("scripts.run_three_day_topic_pipeline.cluster_and_select_three_day_topics")
+    def test_execute_mode_calls_raw_summary_and_repository_stages(
+        self,
+        select_topics,
+        acquire_raw,
+        summarize,
+    ):
+        """Execute 모드에서만 원문 확보와 Summary 저장 stage가 호출되는지 검증한다."""
+
+        context = resolve_three_day_pipeline_context(
+            started_at_utc=datetime(2026, 6, 23, 3, tzinfo=timezone.utc)
+        )
+        candidate_result = ThreeDayCandidateStageResult(
+            articles_with_embeddings=[({"id": 1}, (1.0, 0.0))],
+            missing_embeddings=[],
+        )
+        topic_result = ThreeDayTopicSelectionResult(
+            selected_topics=[],
+            representative_article_ids=[],
+            related_article_ids=[1],
+            summary_article_ids=[1],
+            cluster_count=0,
+            topic_candidate_count=0,
+        )
+        raw_result = ThreeDayRawAcquisitionResult(
+            article_raw_texts={},
+            reused_article_ids=[],
+            extracted_article_ids=[],
+            failed_article_ids=[],
+            missing_article_ids=[],
+            extraction_results=[],
+        )
+        processing_result = ThreeDayTopicProcessingResult(
+            topics=[],
+            generated_topic_count=0,
+            saved_topic_count=0,
+            failed_topic_count=0,
+            saved_topic_ids=[],
+            failures=[],
+            run_status="success",
+        )
+        select_topics.return_value = topic_result
+        acquire_raw.return_value = raw_result
+        summarize.return_value = processing_result
+        raw_state_loader = Mock(return_value={1: {"has_raw_text": False}})
+        repository = Mock()
+
+        build_pipeline(
+            candidate_result,
+            _args(execute=True),
+            pipeline_context=context,
+            summary_provider=Mock(),
+            repository=repository,
+            run_id=10,
+            raw_state_loader=raw_state_loader,
+        )
+
+        raw_state_loader.assert_called_once_with([1])
+        acquire_raw.assert_called_once()
+        summarize.assert_called_once()
+        self.assertIs(summarize.call_args.kwargs["repository"], repository)
+
+    @patch("scripts.run_three_day_topic_pipeline.load_three_day_candidates")
+    def test_candidate_connection_is_closed_before_downstream_processing(
+        self,
+        load_candidates,
+    ):
+        """후보 조회 connection이 materialize 후 반환되는 구조를 검증한다."""
+
+        context = resolve_three_day_pipeline_context(
+            started_at_utc=datetime(2026, 6, 23, 3, tzinfo=timezone.utc)
+        )
+        expected = ThreeDayCandidateStageResult([], [])
+        load_candidates.return_value = expected
+        engine = _RecordingEngine()
+
+        result = load_candidates_for_context(
+            engine,
+            _args(),
+            pipeline_context=context,
+        )
+
+        self.assertIs(result, expected)
+        self.assertEqual(engine.events, ["connect", "execute", "close"])
+        self.assertTrue(engine.connection.closed)
 
     def test_completion_uses_actual_analysis_counts(self):
         """Run 종료 model이 pipeline 결과의 실제 count와 상태를 보존하는지 확인한다."""
@@ -194,6 +282,48 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
         self.assertEqual(completion.candidate_count, 10)
         self.assertEqual(completion.saved_topic_count, 2)
         self.assertEqual(completion.failed_topic_count, 1)
+
+class _RecordingConnection:
+    """후보 조회 connection 반환 시점을 기록하는 테스트용 connection이다."""
+
+    def __init__(self, engine):
+        """부모 engine과 close 여부를 보관한다."""
+
+        self.engine = engine
+        self.closed = False
+
+    def __enter__(self):
+        """Context manager 진입 시 자기 자신을 반환한다."""
+
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        """Context manager 종료 시 close 기록을 남긴다."""
+
+        self.closed = True
+        self.engine.events.append("close")
+
+    def execute(self, *_args, **_kwargs):
+        """read-only 설정 SQL 실행을 기록한다."""
+
+        self.engine.events.append("execute")
+
+
+class _RecordingEngine:
+    """후보 조회 helper가 connection scope를 좁히는지 확인하는 가짜 engine이다."""
+
+    def __init__(self):
+        """이벤트 목록과 마지막 connection을 초기화한다."""
+
+        self.events = []
+        self.connection = None
+
+    def connect(self):
+        """새 connection을 만들고 connect 이벤트를 기록한다."""
+
+        self.events.append("connect")
+        self.connection = _RecordingConnection(self)
+        return self.connection
 
 
 if __name__ == "__main__":

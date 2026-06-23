@@ -65,7 +65,7 @@
 - Runbook index와 CronJob, database check, routine check 절차를 갱신했다.
 - `docs/design/three-day-topic-pipeline.md`에 시간 범위, 단계 경계, 저장 원자성, idempotency와 운영 판단 기준을 기록했다.
 
-Approved Fixes 문서에는 승인되어 적용된 항목이 없다.
+Approved Fixes 문서의 FIX-01부터 FIX-09까지 승인 항목을 적용했다.
 
 ## 추가/변경된 API
 
@@ -97,7 +97,8 @@ Approved Fixes 문서에는 승인되어 적용된 항목이 없다.
 
 ### `GET /three-day-topics/home`
 
-성공 또는 부분 성공한 최신 window 하나의 경량 Topic card payload를 반환한다.
+성공 또는 부분 성공한 최신 72시간 publishable window 하나의 경량 Topic card
+payload를 반환한다.
 
 - 전체 pagination count와 관련 기사 join을 수행하지 않는다.
 - 결과가 없으면 `reference_date`, `window_start`, `window_end`가 `null`이고 `items`가 빈 정상 응답을 반환한다.

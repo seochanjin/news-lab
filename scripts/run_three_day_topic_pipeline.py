@@ -23,6 +23,8 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from app.services.daily_topic_pipeline import create_raw_text_loader
 from app.services.three_day_topic_pipeline import (
     ThreeDayOpenAISummaryProvider,
+    ThreeDayRawAcquisitionResult,
+    ThreeDayTopicProcessingResult,
     ThreeDayTopicRepository,
     ThreeDayTopicRunCompletion,
     ThreeDayTopicRunStart,
@@ -123,7 +125,11 @@ def parse_args(argv=None):
             "--summary-model must be one of: "
             + ", ".join(sorted(SUPPORTED_SUMMARY_MODELS))
         )
-    if args.use_summary_provider and not os.getenv("OPENAI_SUMMARY_API_KEY"):
+    if (
+        args.execute
+        and args.use_summary_provider
+        and not os.getenv("OPENAI_SUMMARY_API_KEY")
+    ):
         parser.error("--use-summary-provider requires OPENAI_SUMMARY_API_KEY")
     if args.execute and not args.use_summary_provider:
         parser.error("--execute requires --use-summary-provider")
@@ -131,7 +137,7 @@ def parse_args(argv=None):
 
 
 def build_pipeline(
-    connection,
+    candidate_result,
     args,
     *,
     pipeline_context,
@@ -142,19 +148,15 @@ def build_pipeline(
     raw_text_loader=None,
     extraction_executor=None,
 ):
-    """한 context로 후보 조회부터 Summary와 선택적 원자 저장까지 실행한다.
+    """Materialized 후보로 선정부터 Summary와 선택적 원자 저장까지 실행한다.
 
-    Connection은 후보와 저장 embedding 조회에만 사용한다. 원문 상태·본문 loader,
-    extractor, provider와 repository는 주입 가능해 테스트와 dry-run에서 외부
-    부수 효과를 차단한다. 반환값은 실행 통계와 단계별 안전한 결과만 포함한다.
+    후보 조회 connection은 이 함수 호출 전에 반환되어야 한다. 원문 상태·본문
+    loader, extractor, provider와 repository는 주입 가능해 테스트와 dry-run에서
+    외부 부수 효과를 차단한다. 반환값은 실행 통계와 단계별 안전한 결과만
+    포함한다.
     """
 
     pipeline_started_at = time.monotonic()
-    candidate_result = load_three_day_candidates(
-        connection,
-        pipeline_context=pipeline_context,
-        max_articles=args.max_articles,
-    )
     topic_result = cluster_and_select_three_day_topics(
         candidate_result,
         pipeline_context=pipeline_context,
@@ -163,31 +165,50 @@ def build_pipeline(
         max_related_articles_per_topic=args.max_related_articles_per_topic,
         max_summary_articles_per_topic=args.max_summary_articles_per_topic,
     )
-    raw_states = (
-        raw_state_loader(topic_result.summary_article_ids)
-        if raw_state_loader is not None
-        else {}
-    )
-    raw_result = acquire_three_day_topic_raw_texts(
-        topic_result,
-        raw_states,
-        {},
-        pipeline_context=pipeline_context,
-        execute=args.execute,
-        extraction_limit=args.extraction_limit,
-        extraction_executor=extraction_executor,
-        raw_text_loader=raw_text_loader,
-    )
-    processing_result = summarize_and_persist_three_day_topics(
-        topic_result,
-        raw_result,
-        pipeline_context=pipeline_context,
-        summary_provider=summary_provider,
-        repository=repository,
-        run_id=run_id,
-        execute=args.execute,
-        max_raw_chars_per_article=args.max_raw_chars_per_article,
-    )
+    if args.execute:
+        raw_states = (
+            raw_state_loader(topic_result.summary_article_ids)
+            if raw_state_loader is not None
+            else {}
+        )
+        raw_result = acquire_three_day_topic_raw_texts(
+            topic_result,
+            raw_states,
+            {},
+            pipeline_context=pipeline_context,
+            execute=True,
+            extraction_limit=args.extraction_limit,
+            extraction_executor=extraction_executor,
+            raw_text_loader=raw_text_loader,
+        )
+        processing_result = summarize_and_persist_three_day_topics(
+            topic_result,
+            raw_result,
+            pipeline_context=pipeline_context,
+            summary_provider=summary_provider,
+            repository=repository,
+            run_id=run_id,
+            execute=True,
+            max_raw_chars_per_article=args.max_raw_chars_per_article,
+        )
+    else:
+        raw_result = ThreeDayRawAcquisitionResult(
+            article_raw_texts={},
+            reused_article_ids=[],
+            extracted_article_ids=[],
+            failed_article_ids=[],
+            missing_article_ids=[],
+            extraction_results=[],
+        )
+        processing_result = ThreeDayTopicProcessingResult(
+            topics=[],
+            generated_topic_count=0,
+            saved_topic_count=0,
+            failed_topic_count=0,
+            saved_topic_ids=[],
+            failures=[],
+            run_status="success",
+        )
     analysis = _build_analysis(
         args,
         pipeline_context,
@@ -204,6 +225,18 @@ def build_pipeline(
         "topic_failures": processing_result.failures,
         "saved_topic_ids": processing_result.saved_topic_ids,
     }
+
+
+def load_candidates_for_context(engine, args, *, pipeline_context):
+    """후보 조회 구간에만 read-only connection을 열고 결과를 materialize한다."""
+
+    with engine.connect() as connection:
+        connection.execute(text("set transaction read only"))
+        return load_three_day_candidates(
+            connection,
+            pipeline_context=pipeline_context,
+            max_articles=args.max_articles,
+        )
 
 
 def _build_analysis(
@@ -289,9 +322,9 @@ def _create_extraction_executor(args):
 
 
 def _create_summary_provider(args):
-    """CLI 설정에 따라 dry-run deterministic 또는 OpenAI 3일 provider를 만든다."""
+    """Execute 설정에서만 OpenAI 3일 provider를 만들고 dry-run은 가짜 provider를 쓴다."""
 
-    if not args.use_summary_provider:
+    if not args.execute or not args.use_summary_provider:
         return DeterministicSummaryProvider()
     return ThreeDayOpenAISummaryProvider(
         api_key=os.environ["OPENAI_SUMMARY_API_KEY"],
@@ -357,19 +390,22 @@ def _run():
         )
 
     try:
-        with engine.connect() as connection:
-            connection.execute(text("set transaction read only"))
-            result = build_pipeline(
-                connection,
-                args,
-                pipeline_context=context,
-                summary_provider=_create_summary_provider(args),
-                repository=repository,
-                run_id=run_id,
-                raw_state_loader=_create_raw_state_loader(engine),
-                raw_text_loader=create_raw_text_loader(engine),
-                extraction_executor=_create_extraction_executor(args),
-            )
+        candidate_result = load_candidates_for_context(
+            engine,
+            args,
+            pipeline_context=context,
+        )
+        result = build_pipeline(
+            candidate_result,
+            args,
+            pipeline_context=context,
+            summary_provider=_create_summary_provider(args),
+            repository=repository,
+            run_id=run_id,
+            raw_state_loader=_create_raw_state_loader(engine),
+            raw_text_loader=create_raw_text_loader(engine),
+            extraction_executor=_create_extraction_executor(args),
+        )
         if repository is not None:
             repository.finish_run(
                 run_id,

@@ -84,14 +84,17 @@ class ThreeDayTopicPipelineCronJobManifestTests(unittest.TestCase):
         """기존 image·Secret과 보안·resource 패턴을 필요한 환경 변수만 재사용한다."""
 
         self.assertEqual(self.container["image"], "seocj/news-api:latest")
+        security_context = self.container["securityContext"]
+        self.assertFalse(security_context["allowPrivilegeEscalation"])
+        self.assertEqual(security_context["capabilities"], {"drop": ["ALL"]})
+        self.assertEqual(security_context["seccompProfile"], {"type": "RuntimeDefault"})
+        self.assertNotIn("runAsNonRoot", security_context)
+        self.assertNotIn("readOnlyRootFilesystem", security_context)
         self.assertEqual(
-            self.container["securityContext"],
-            {
-                "allowPrivilegeEscalation": False,
-                "capabilities": {"drop": ["ALL"]},
-                "seccompProfile": {"type": "RuntimeDefault"},
-            },
+            self.container["volumeMounts"],
+            [{"name": "tmp", "mountPath": "/tmp"}],
         )
+        self.assertEqual(self.pod_spec["volumes"], [{"name": "tmp", "emptyDir": {}}])
         self.assertEqual(
             self.container["resources"],
             {

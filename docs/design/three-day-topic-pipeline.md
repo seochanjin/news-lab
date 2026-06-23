@@ -398,7 +398,8 @@ pipeline_elapsed_seconds
 API는 `three_day_topics` 계열만 읽고 기존 `/topics`를 변경하지 않는다.
 
 - archive는 `reference_date desc, window_end desc, id desc`로 정렬한다.
-- home은 최신 publishable window 하나의 Topic만 반환한다.
+- home은 성공 또는 부분 성공한 최신 72시간 publishable window 하나의 경량
+  Topic card payload만 반환한다.
 - detail 관련 기사는 `rank asc, article_id asc`로 반환한다.
 - `partial_success` 결과도 publishable하며 각 Topic의 `status`는 저장 가능한
   결과 상태를 나타낸다.
@@ -604,6 +605,13 @@ Manifest는 기존 `seocj/news-api:latest`, `news-api-secret`, app workload
 node selector와 security/resource pattern을 재사용한다. 신규 embedding을
 생성하지 않으므로 `OPENAI_EMBEDDING_API_KEY`는 주입하지 않고
 `DATABASE_URL`, `OPENAI_SUMMARY_API_KEY`만 참조한다.
+
+현재 Dockerfile은 최종 `USER`를 지정하지 않아 image가 non-root 실행을 보장하지
+않는다. 따라서 이번 manifest는 기존 `allowPrivilegeEscalation: false`,
+capability drop, `RuntimeDefault` seccomp를 유지하고 `/tmp`를 `emptyDir`로
+분리한다. `runAsNonRoot: true`와 `readOnlyRootFilesystem: true`는 image의
+runtime 쓰기 경로와 non-root 사용자 전환을 확인한 뒤 별도 container hardening
+작업에서 적용한다.
 
 Job 안전 설정은 다음과 같다.
 

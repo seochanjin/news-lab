@@ -53,7 +53,7 @@ Daily Topic은 최근 24시간의 주요 이슈를 생성하는 계약이다. Da
 - 기본 dry-run인 전용 CLI와 `05:00 Asia/Seoul` CronJob manifest를 추가했다.
 - README, Architecture, Runbook과 전용 설계 문서를 갱신했다.
 
-Approved Fixes 문서에는 승인되어 적용된 항목이 없다.
+Approved Fixes 문서의 FIX-01부터 FIX-09까지 승인 항목을 적용했다.
 
 ## 구현 상세
 
@@ -161,7 +161,7 @@ run row 생성
 - `GET /three-day-topics/home`
 - `GET /three-day-topics/{topic_id}`
 
-Archive는 bind parameter 기반 filter와 pagination을 제공한다. Home은 성공 또는 부분 성공한 최신 window 하나만 경량 payload로 반환한다. Detail은 대표 기사와 Summary 근거 여부를 포함하고 `rank`, `article_id` 순서로 기사를 반환한다.
+Archive는 bind parameter 기반 filter와 pagination을 제공한다. Home은 성공 또는 부분 성공한 최신 72시간 publishable window 하나의 경량 Topic card payload만 반환한다. Detail은 대표 기사와 Summary 근거 여부를 포함하고 `rank`, `article_id` 순서로 기사를 반환한다.
 
 데이터가 없을 때 home은 정상 빈 응답을 반환하며 존재하지 않는 detail은 404를 반환한다. 정적 `/home` route를 동적 `/{topic_id}`보다 먼저 등록했다.
 
@@ -182,6 +182,9 @@ CronJob `news-three-day-topic-pipeline`은 Daily Topic 이후인 `05:00 Asia/Seo
 - backoff limit
 - 기존 image와 Secret reference 재사용
 - embedding key 불필요
+- `/tmp` `emptyDir` mount
+- 기존 image는 Dockerfile 최종 `USER`가 없어 `runAsNonRoot`와
+  `readOnlyRootFilesystem`은 image hardening 후 별도 적용
 
 Manifest는 repository에만 추가했으며 실제 cluster에 적용하지 않았다.
 
@@ -342,7 +345,7 @@ README를 업데이트했다.
 - 신규 archive, home, detail API와 빈 응답·404·route 순서가 검증됐다.
 - Daily Topic의 외부 CLI, CronJob manifest와 기존 `/topics` API 계약은 유지됐다.
 - Python 변경 파일과 테스트에 한글 docstring이 반영됐다.
-- Approved Fixes에는 승인된 적용 항목이 없다.
+- Approved Fixes의 FIX-01부터 FIX-09까지 적용과 검증을 완료했다.
 - Production migration과 K3s 반영은 완료되지 않았다.
 
 ## 이번 단계의 의미

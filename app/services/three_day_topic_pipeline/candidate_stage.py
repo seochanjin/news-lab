@@ -160,6 +160,8 @@ def _validate_settings(
         ("model", model),
         ("source_text_type", source_text_type),
     ):
+        if not isinstance(value, str):
+            raise ValueError(f"{field_name} must be a string")
         if not value.strip():
             raise ValueError(f"{field_name} must not be blank")
 

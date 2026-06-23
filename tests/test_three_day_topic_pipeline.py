@@ -215,6 +215,34 @@ class ThreeDayCandidateStageTests(unittest.TestCase):
         self.assertEqual(result.embedding_count, 0)
         self.assertEqual(result.missing_embedding_count, 0)
 
+    def test_embedding_settings_reject_non_string_and_blank_values(self):
+        """문자열 metadata 설정 오류가 AttributeError 대신 field명 포함 ValueError가 된다."""
+
+        invalid_cases = [
+            ("provider", None),
+            ("provider", 1),
+            ("model", []),
+            ("model", {}),
+            ("source_text_type", ""),
+            ("source_text_type", "   "),
+        ]
+        for field_name, value in invalid_cases:
+            kwargs = {
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "source_text_type": "title_summary",
+                field_name: value,
+            }
+            with self.subTest(field_name=field_name, value=value):
+                with self.assertRaisesRegex(ValueError, field_name):
+                    load_three_day_candidates(
+                        FakeConnection([], []),
+                        pipeline_context=self.context,
+                        max_articles=10,
+                        dimension=3,
+                        **kwargs,
+                    )
+
     def _article(self, article_id, *, title, summary):
         """분류와 source hash 계산에 필요한 최소 기사 row를 만든다."""
 

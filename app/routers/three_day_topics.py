@@ -93,7 +93,7 @@ def get_three_day_topics(
 def get_three_day_home_topics(
     connection: Connection = Depends(get_connection),
 ):
-    """성공 또는 부분 성공한 최신 window 하나의 경량 Topic card를 반환한다."""
+    """성공 또는 부분 성공한 최신 72시간 publishable window card를 반환한다."""
 
     rows = connection.execute(
         text("""
