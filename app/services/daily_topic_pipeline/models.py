@@ -1,4 +1,9 @@
-"""Data contracts passed between daily topic pipeline stages."""
+"""Daily topic pipeline 단계 사이에서 전달하는 불변 결과 계약을 정의한다.
+
+각 dataclass는 단계별 정상 결과와 실패 통계를 다음 단계에 전달한다. 이 모듈은
+기사 선정, provider 호출, 파일 또는 DB 쓰기를 수행하지 않으며 집합 관계처럼
+단계 경계에서 반드시 지켜야 하는 계약만 검증한다.
+"""
 
 from dataclasses import dataclass
 from datetime import date, datetime
@@ -51,19 +56,40 @@ class EmbeddingStageResult:
 class TopicSelectionResult:
     """Clustering과 topic 선정 단계가 다음 단계에 전달하는 선택 결과다.
 
-    선택된 topic 및 대표·관련 기사 ID는 원문 확보 대상의 경계를 정의한다.
-    Reference topic은 보고용이며 원문 추출, summary 생성, 저장 대상에 포함되지
-    않는다.
+    `related_article_ids`는 Topic 관계로 유지할 기사 집합이고
+    `summary_article_ids`는 원문 확보와 Summary 입력에 사용할 부분집합이다.
+    두 집합은 같을 수 있다. Reference topic은 보고용이며 원문 추출, summary
+    생성, 저장 대상에 포함되지 않는다. 잘못된 부분집합 관계는 생성 시 즉시
+    차단한다.
     """
 
     selected_topics: list[dict]
     reference_topics: list[dict]
     representative_article_ids: list[int]
     related_article_ids: list[int]
-    selected_article_ids: list[int]
+    summary_article_ids: list[int]
     cluster_count: int
     selected_topic_count: int
     topic_candidate_count: int
+
+    def __post_init__(self):
+        """Summary 및 대표 기사 집합이 관련 기사 집합을 벗어나지 않게 검증한다."""
+
+        related_ids = set(self.related_article_ids)
+        summary_ids = set(self.summary_article_ids)
+        representative_ids = set(self.representative_article_ids)
+        if not summary_ids.issubset(related_ids):
+            raise ValueError("summary articles must be a subset of related articles")
+        if not representative_ids.issubset(summary_ids):
+            raise ValueError(
+                "representative articles must be included in summary articles"
+            )
+
+    @property
+    def selected_article_ids(self):
+        """기존 원문·Summary 단계가 사용하는 Summary 기사 ID alias를 반환한다."""
+
+        return self.summary_article_ids
 
 
 @dataclass(frozen=True)

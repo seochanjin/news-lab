@@ -1,4 +1,9 @@
-"""Clustering and topic selection stage."""
+"""Embedding 기사들을 clustering하고 Daily topic 선택 결과를 구성한다.
+
+기존 grouping과 대표 후보 정렬을 호출해 선택 topic과 reference topic을 나누고,
+다음 단계가 사용할 관련 기사와 Summary 기사 ID 계약을 만든다. 원문 조회,
+Summary provider 호출, DB 저장은 수행하지 않는다.
+"""
 
 import logging
 from datetime import timezone
@@ -53,7 +58,11 @@ def cluster_and_select_topics(
         )
     representatives = select_topic_representatives(
         grouped,
-        max_candidates_per_topic=args.max_articles_per_topic,
+        max_candidates_per_topic=getattr(
+            args,
+            "max_related_articles_per_topic",
+            args.max_articles_per_topic,
+        ),
     )
     _attach_report_metadata(representatives, clustering_articles)
     ordered_topics = sorted(representatives, key=topic_selection_key)
@@ -65,26 +74,28 @@ def cluster_and_select_topics(
     reference_topics = ordered_topics[
         args.max_topics : args.max_topics + args.max_reference_topics
     ]
-    selected_article_ids = _selected_topic_article_ids(selected_topics)
+    related_article_ids = _selected_topic_article_ids(selected_topics)
+    summary_article_ids = _summary_topic_article_ids(
+        selected_topics,
+        maximum=getattr(
+            args,
+            "max_summary_articles_per_topic",
+            args.max_articles_per_topic,
+        ),
+    )
     representative_article_ids = [
         article["id"]
         for topic in selected_topics
         for article in topic["articles"]
         if article.get("representative_candidate_rank") == 1
     ]
-    related_article_ids = [
-        article["id"]
-        for topic in selected_topics
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") not in {None, 1}
-    ]
     LOGGER.info("selected topic count: %d", len(selected_topics))
     return TopicSelectionResult(
         selected_topics=selected_topics,
         reference_topics=reference_topics,
         representative_article_ids=list(dict.fromkeys(representative_article_ids)),
-        related_article_ids=list(dict.fromkeys(related_article_ids)),
-        selected_article_ids=selected_article_ids,
+        related_article_ids=related_article_ids,
+        summary_article_ids=summary_article_ids,
         cluster_count=len(grouped),
         selected_topic_count=len(selected_topics),
         topic_candidate_count=len(ordered_topics),
@@ -172,6 +183,8 @@ def _attach_report_metadata(topics, articles):
 
 
 def _selected_topic_article_ids(topics):
+    """선택 topic별 관련 기사 순서를 유지하면서 중복 없는 ID 목록을 반환한다."""
+
     return list(
         dict.fromkeys(
             article["id"]
@@ -182,7 +195,64 @@ def _selected_topic_article_ids(topics):
     )
 
 
+def _summary_topic_article_ids(topics, *, maximum):
+    """관련 기사 순위에서 대표 기사와 중복 제거 정책을 지켜 Summary ID를 고른다.
+
+    기존 대표 후보 순위에는 관련도, 중요도, source 다양성과 결정론적 ID
+    tie-breaker가 반영되어 있다. Topic별로 그 순서를 유지하되 동일 URL 또는
+    공백·대소문자를 정규화한 제목이 같은 기사는 제외하고 설정 상한까지만
+    선택한다.
+    """
+
+    selected_ids = []
+    for topic in topics:
+        selected_ids.extend(_summary_article_ids_for_topic(topic, maximum=maximum))
+    return list(dict.fromkeys(selected_ids))
+
+
+def _summary_article_ids_for_topic(topic, *, maximum):
+    """단일 topic의 관련 기사 중 Summary 근거 기사 ID를 결정론적으로 선택한다."""
+
+    selected_ids = []
+    seen_urls = set()
+    seen_titles = set()
+    related_articles = sorted(
+        (
+            article
+            for article in topic["articles"]
+            if article.get("representative_candidate_rank") is not None
+        ),
+        key=lambda article: (
+            article["representative_candidate_rank"],
+            article["id"],
+        ),
+    )
+    for article in related_articles:
+        normalized_url = _normalize_duplicate_value(article.get("url"))
+        normalized_title = _normalize_duplicate_value(article.get("title"))
+        if normalized_url and normalized_url in seen_urls:
+            continue
+        if normalized_title and normalized_title in seen_titles:
+            continue
+        selected_ids.append(article["id"])
+        if normalized_url:
+            seen_urls.add(normalized_url)
+        if normalized_title:
+            seen_titles.add(normalized_title)
+        if len(selected_ids) >= maximum:
+            break
+    return selected_ids
+
+
+def _normalize_duplicate_value(value):
+    """URL과 제목 중복 비교에 사용할 공백 정규화·대소문자 무시 값을 반환한다."""
+
+    return " ".join(str(value or "").split()).casefold()
+
+
 def _as_utc(value):
+    """날짜 값을 UTC aware datetime으로 정규화한다."""
+
     if value is None:
         return None
     if value.tzinfo is None:

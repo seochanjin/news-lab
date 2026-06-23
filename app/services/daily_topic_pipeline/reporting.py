@@ -1,7 +1,13 @@
-"""Daily topic pipeline report rendering."""
+"""Daily topic pipeline의 단계별 통계와 공개 가능한 결과를 Markdown으로 렌더링한다.
+
+원문 본문은 노출하지 않고 관련 기사, Summary 기사, 원문 확보 및 실제 저장 수를
+구분해 운영 전 dry-run 검토에 필요한 정보를 제공한다.
+"""
 
 
 def render_report(result):
+    """Pipeline 통합 결과를 원문 비노출 Markdown 보고서로 변환한다."""
+
     analysis = result["analysis"]
     lines = [
         "# Daily topic pipeline report",
@@ -22,6 +28,9 @@ def render_report(result):
         f"- Reference topic count: {analysis['reference_topic_count']}",
         f"- Selected article IDs: `{analysis['selected_article_ids']}`",
         f"- Selected article count: {analysis['selected_article_count']}",
+        f"- Related article IDs/count: `{analysis['related_article_ids']}` / {analysis['related_article_count']}",
+        f"- Summary article IDs/count: `{analysis['summary_article_ids']}` / {analysis['summary_article_count']}",
+        f"- Raw acquisition target count: {analysis['raw_acquisition_target_count']}",
         "- Topic ordering: `article_count desc, source_count desc, average similarity desc, latest published_at desc, topic_candidate_id asc`",
         f"- Embedding provider/model: `{analysis['embedding_provider']}` / `{analysis['embedding_model']}`",
         f"- Summary provider/model: `{analysis['summary_provider']}` / `{analysis['summary_model']}`",
@@ -29,6 +38,7 @@ def render_report(result):
         f"- Raw extraction success/failure: {analysis['raw_extraction_success_count']} / {analysis['raw_extraction_failed_count']}",
         f"- Raw reused/extracted/failed/missing: {analysis['raw_reused_count']} / {analysis['raw_extracted_count']} / {analysis['raw_failed_count']} / {analysis['raw_missing_count']}",
         f"- Topic generated/saved/skipped/failed: {analysis['generated_topic_count']} / {analysis['saved_topic_count']} / {analysis['skipped_topic_count']} / {analysis['failed_topic_count']}",
+        f"- Saved topic_articles count: {analysis['saved_topic_article_count']}",
         f"- Pipeline date/timezone: `{analysis['pipeline_date']}` / `{analysis['business_timezone']}`",
         f"- Pipeline date source: `{analysis['pipeline_date_source']}`",
         f"- DB write performed: `{str(analysis['db_write_performed']).lower()}`",
@@ -77,6 +87,8 @@ def render_report(result):
 
 
 def _render_report_topic(topic, *, summary=None, reference=False):
+    """단일 선택 또는 reference Topic의 기사와 Summary 정보를 렌더링한다."""
+
     article_id_label = "Article IDs" if reference else "Selected article IDs"
     lines = [
         f"### {topic['topic_candidate_id']}",
@@ -130,8 +142,12 @@ def _render_report_topic(topic, *, summary=None, reference=False):
 
 
 def _format_similarity(value):
+    """Similarity 값을 보고서용 소수점 네 자리 문자열로 변환한다."""
+
     return "" if value is None else f"{float(value):.4f}"
 
 
 def _escape(value):
+    """표 구분자와 줄바꿈을 안전한 Markdown 셀 문자열로 변환한다."""
+
     return str(value or "").replace("|", "\\|").replace("\n", " ")
