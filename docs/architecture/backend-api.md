@@ -17,6 +17,8 @@
   `GET /raw-articles/{article_id}`
 - `topics.py`: `GET /topics`, `GET /topics/home`,
   `GET /topics/{topic_id}`
+- `three_day_topics.py`: `GET /three-day-topics`,
+  `GET /three-day-topics/home`, `GET /three-day-topics/{topic_id}`
 
 Root endpoint `GET /`는 주요 endpoint 링크를 반환한다.
 
@@ -28,12 +30,21 @@ Root endpoint `GET /`는 주요 endpoint 링크를 반환한다.
 - `/extractor/*`는 원문 extractor 실행 상태와 이력을 조회한다.
 - `/topics`는 주제 archive와 detail을 제공한다.
 - `/topics/home`은 home 화면용 bounded topic card payload를 제공한다.
+- `/three-day-topics`는 3일 Topic archive와 detail을 제공한다.
+- `/three-day-topics/home`은 성공 또는 부분 성공한 최신 72시간 window 하나의
+  bounded Topic card payload를 제공한다.
 
 Topic 저장 시 `article_count`와 `source_count`는 Summary 근거 기사만이 아니라
 저장된 관련 기사 전체를 기준으로 계산한다. `/topics/home`은 저장된 집계값을
 card field로 반환하고, `/topics/{topic_id}`는 `topic_articles` 관계 순서대로
 대표 기사와 supporting 기사 전체를 반환한다. Endpoint와 response field 이름 및
 타입은 이 집계 기준 변경으로 달라지지 않는다.
+
+3일 Topic API는 기존 `topics` 계열을 읽지 않는다. Archive는
+`reference_date`, 날짜 범위, keyword와 status filter를 지원하고, detail은
+`three_day_topic_articles`의 `rank`, `article_id` 순서로 대표 기사와 Summary
+근거 여부를 함께 반환한다. Home API는 전체 count나 관련 기사 join 없이 최신
+publishable window의 경량 card field만 조회한다.
 
 이 문서는 현재 구현의 영역만 요약한다. Request parameter, response schema,
 status code의 source of truth는 router 구현이다. Contract 변경은 별도 task로

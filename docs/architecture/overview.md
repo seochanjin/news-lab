@@ -12,7 +12,7 @@ NewsLab backend는 다음 책임으로 나뉜다.
 | Database | `app/database.py`, `db/migrations/` | PostgreSQL 연결과 schema 변경 기록 |
 | Collection | `scripts/collect_rss.py` | RSS source 동기화, 기사 수집, 실행 이력 |
 | Extraction | `scripts/extract_raw_articles.py` | 기사 HTML에서 원문 추출, 실행 이력 |
-| Topic pipeline | `scripts/run_daily_topic_pipeline.py` | 기사 후보 처리, 주제 생성·저장 |
+| Topic pipeline | `scripts/run_daily_topic_pipeline.py`, `scripts/run_three_day_topic_pipeline.py` | 1일·3일 기사 후보 처리, 주제 생성·저장 |
 | Runtime | `k8s/` | API Deployment와 scheduled CronJob 정의 |
 
 ## 주요 데이터 흐름
@@ -22,10 +22,12 @@ RSS feed
 → articles
 → raw_articles
 → topics / topic_articles
+→ three_day_topics / three_day_topic_articles
 → FastAPI read API
 ```
 
-실행 이력은 collector의 `crawl_runs`, extractor의 `extraction_runs`에 저장된다.
+실행 이력은 collector의 `crawl_runs`, extractor의 `extraction_runs`, 3일 Topic의
+`three_day_topic_runs`에 저장된다.
 세부 흐름은 [pipeline](pipeline.md), table 책임은 [database](database.md)를
 참고한다.
 

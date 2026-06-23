@@ -16,6 +16,8 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get jobs
 curl https://api.dev-scj.site/health
 curl https://api.dev-scj.site/collector/status
 curl https://api.dev-scj.site/extractor/status
+curl https://api.dev-scj.site/topics/home
+curl https://api.dev-scj.site/three-day-topics/home
 ```
 
 Production API `curl`도 task 또는 human operator가 허용한 경우에만 agent
