@@ -228,8 +228,8 @@ def _summary_article_ids_for_topic(topic, *, maximum):
         ),
     )
     for article in related_articles:
-        normalized_url = _normalize_duplicate_value(article.get("url"))
-        normalized_title = _normalize_duplicate_value(article.get("title"))
+        normalized_url = _normalize_duplicate_url(article.get("url"))
+        normalized_title = _normalize_duplicate_title(article.get("title"))
         if normalized_url and normalized_url in seen_urls:
             continue
         if normalized_title and normalized_title in seen_titles:
@@ -244,8 +244,14 @@ def _summary_article_ids_for_topic(topic, *, maximum):
     return selected_ids
 
 
-def _normalize_duplicate_value(value):
-    """URL과 제목 중복 비교에 사용할 공백 정규화·대소문자 무시 값을 반환한다."""
+def _normalize_duplicate_url(value):
+    """URL 중복 비교를 위해 앞뒤 공백만 제거하고 원래 대소문자를 보존한다."""
+
+    return str(value or "").strip()
+
+
+def _normalize_duplicate_title(value):
+    """제목 중복 비교를 위해 공백을 정규화하고 대소문자를 무시한다."""
 
     return " ".join(str(value or "").split()).casefold()
 

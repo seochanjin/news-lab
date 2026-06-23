@@ -115,6 +115,36 @@ class DailyTopicArticleSelectionTests(unittest.TestCase):
 
         self.assertEqual(result.summary_article_ids, [1, 4])
 
+    def test_summary_selection_preserves_case_sensitive_url_path_and_query(self):
+        """path와 query 대소문자가 다른 URL을 별도 Summary 기사로 유지한다."""
+
+        embedding_result = _embedding_result(
+            [
+                _article(
+                    1,
+                    source="A",
+                    importance=20,
+                    title="Uppercase URL variant",
+                    url=" https://example.com/Story?Ref=Alpha ",
+                ),
+                _article(
+                    2,
+                    source="B",
+                    importance=19,
+                    title="Lowercase URL variant",
+                    url="https://example.com/story?ref=alpha",
+                ),
+            ]
+        )
+
+        result = cluster_and_select_topics(
+            embedding_result,
+            _args(max_related=2, max_summary=2),
+            pipeline_context=_pipeline_context(),
+        )
+
+        self.assertEqual(result.summary_article_ids, [1, 2])
+
     def test_raw_acquisition_uses_only_summary_articles_and_isolates_failure(self):
         """관련 기사 4건 중 Summary 3건만 조회·추출하고 실패를 기사 단위로 남긴다."""
 

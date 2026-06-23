@@ -444,6 +444,69 @@ passed
 
 ---
 
+## Approved Fix Verification
+
+### Scope
+
+URL과 제목의 중복 비교 정규화를 분리했다. 제목은 공백 정규화와 대소문자
+무시를 유지하고, URL은 앞뒤 공백만 제거해 path와 query의 대소문자를
+보존한다.
+
+### Commands
+
+```bash
+python -m pytest tests/test_daily_topic_article_selection.py -v
+
+python -m pytest \
+  tests/test_run_daily_topic_pipeline.py \
+  tests/test_topic_representatives.py \
+  tests/test_raw_extraction_targets.py \
+  tests/test_daily_topic_pipeline_configuration.py \
+  -v
+
+python -m compileall app scripts tests
+
+git diff --check
+
+git diff --name-only -- \
+  db/migrations \
+  app/routers \
+  app/main.py \
+  k8s
+```
+
+### Results
+
+```text
+기사 선정 전용 pytest:
+4 passed in 0.12s
+
+Daily topic pipeline 관련 회귀 pytest:
+42 passed in 0.16s
+
+compileall:
+exit code 0
+
+git diff --check:
+exit code 0
+
+변경 금지 영역:
+no output
+```
+
+### Contract Verification
+
+- 동일 URL은 앞뒤 공백을 제거한 값으로 계속 중복 제외한다.
+- 제목은 연속 공백과 대소문자 차이를 무시해 계속 중복 제외한다.
+- URL path와 query의 대소문자가 다르면 서로 다른 기사로 유지한다.
+- DB schema, router 및 K3s manifest를 변경하지 않았다.
+
+### Status
+
+passed
+
+---
+
 ## Human-required Production Verification
 
 다음 작업은 수행하지 않았다.

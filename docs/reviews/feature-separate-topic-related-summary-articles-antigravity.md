@@ -3,6 +3,7 @@
 ## Review Summary
 
 본 작업은 Daily topic pipeline에서 기존에 저장 대상 기사 수와 요약 생성용 원문 확보 기사 수를 동시에 제한하던 `max_articles_per_topic` 설정을 다음 두 가지 역할로 분리하는 기능 개선을 다룹니다.
+
 - **Topic 관련 기사**: Topic 관계를 보존해 `topic_articles`에 저장할 기사 집합 (Daily 기본값 20건)
 - **Summary 근거 기사**: 원문 확보 및 Summary 생성의 입력에 활용할 기사 집합 (Daily 기본값 3건)
 
@@ -85,3 +86,41 @@ git diff -- db/migrations app/routers app/main.py
 **APPROVED**
 
 (모든 수용 조건(Acceptance Criteria)을 완전하게 충족하며, 코드 수준의 방어적 validation 및 테스트 구성이 뛰어나고, 변경 금지 영역과 하위 호환성 역시 철저히 준수되어 추가적인 수정 없이 PR 진행을 승인합니다.)
+
+## Re-review 1
+
+### Existing Problems Status
+
+- **최초 리뷰 발견 문제**: 최초 리뷰(Initial Review) 시 발견된 결함이나 PR 블로커 수준의 문제가 없었으므로, 해당 사항이 없습니다. (**적용 대상 아님**)
+
+### Approved Fixes Verification
+
+- **중복 비교 로직 분리 및 대소문자 보존 (Approved Fix #1)**: [docs/fixes/feature-separate-topic-related-summary-articles-approved-fixes.md](../docs/fixes/feature-separate-topic-related-summary-articles-approved-fixes.md)에 승인된 피드백이 완벽히 반영되었습니다.
+  - `topic_selection_stage.py` 내의 `_normalize_duplicate_value` 함수가 `_normalize_duplicate_url` 및 `_normalize_duplicate_title`로 분리되었습니다.
+  - URL 정규화는 `strip()`만 적용해 path와 query의 대소문자를 정상 보존하며, 제목 정규화는 기존의 공백 정규화 및 `casefold()` 방식을 유지합니다.
+  - `test_daily_topic_article_selection.py`에 path와 query의 대소문자가 다른 URL을 가진 기사가 중복으로 제외되지 않고 개별 Summary 기사로 유지되는지 확인하는 `test_summary_selection_preserves_case_sensitive_url_path_and_query` 테스트 케이스가 성공적으로 추가되었습니다.
+  - 판정: **해결됨**
+
+### Verification Evidence
+
+- [docs/verification/feature-separate-topic-related-summary-articles.md](../docs/verification/feature-separate-topic-related-summary-articles.md)에 승인된 Fix에 대한 단위 테스트 및 전체 회귀 테스트 검증 내역이 정상적으로 기록되었습니다.
+- Antigravity가 로컬 환경에서 직접 테스트들을 수행하여 신규 테스트를 포함한 202건의 테스트가 모두 성공적으로 작동함을 재검증했습니다.
+  - `pytest`: 202 passed
+  - `unittest`: Ran 202 tests OK
+  - `compileall`: exit code 0
+  - `git diff --check`: exit code 0
+  - 변경 금지 영역(`db/migrations`, `app/routers`, `app/main.py`): 변경 사항 없음
+
+### New Problems Found
+
+- **없음**: 새로 수정한 소스 코드와 신규 추가된 테스트 메서드 모두 한글 docstring 규칙을 명확히 준수하고 있으며, 추가적인 결함이나 scope creep이 발견되지 않았습니다.
+
+### Required Fixes Before PR
+
+- **없음**
+
+### Verdict
+
+**APPROVED**
+
+(승인된 피드백 사항이 실질적으로 반영되었고 이에 대한 회귀 테스트 및 검증 증적이 명확하게 확보되어 정상적으로 승인합니다.)
