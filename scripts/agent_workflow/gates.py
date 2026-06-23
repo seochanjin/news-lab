@@ -1,8 +1,9 @@
 """Agent action 실행 전에 필요한 안전 조건을 검사한다.
 
 WorkflowState와 action을 입력받아 branch, Task section, workflow 문서,
-Approved Fixes와 Agent CLI 가용성을 검증한다. 실행 가능한 Agent command를
-반환하지만 Agent subprocess나 파일 변경은 직접 수행하지 않는다.
+Approved Fixes와 Agent CLI 가용성을 검증한다. Agent 표시 이름, 실제 adapter,
+실행 파일과 자동 실행 지원 상태를 분리해 반환하지만 Agent subprocess나 파일
+변경은 직접 수행하지 않는다.
 """
 
 from __future__ import annotations
@@ -22,11 +23,20 @@ class GateError(RuntimeError):
 
 @dataclass(frozen=True)
 class AgentCommand:
-    """실행 대상 Agent 이름, executable 경로와 입력 adapter 종류를 보관한다."""
+    """실행 대상 Agent의 표시 정보와 자동 실행 가능 상태를 보관한다.
+
+    executable은 설치된 후보 경로이며 자동 실행 지원을 뜻하지 않는다.
+    automatic_execution_supported가 거짓이면 runner가 subprocess를 시작해서는
+    안 되며, failure_category와 next_action은 수동 fallback 안내에 사용한다.
+    """
 
     agent: str
-    executable: str
+    executable: str | None
     adapter: str
+    automatic_execution_supported: bool = True
+    failure_category: str | None = None
+    manual_fallback_required: bool = False
+    next_action: str | None = None
 
 
 REQUIRED_TASK_SECTIONS = ("Scope", "Do not change", "Test commands", "Acceptance criteria")
@@ -52,10 +62,12 @@ def _configured_executable(value: str, label: str) -> str:
 
 
 def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentCommand:
-    """Action과 환경 설정에 맞는 설치된 Agent executable을 찾는다.
+    """Action과 환경 설정에 맞는 Agent executable 및 지원 상태를 찾는다.
 
-    Codex 또는 Gemini/Antigravity command 정보를 반환하며 실행 파일을 찾지
-    못하면 GateError를 발생시킨다. CLI를 실제로 실행하지는 않는다.
+    Codex는 기존처럼 설치된 CLI를 요구한다. Antigravity는 확인된 실행 후보인
+    `agy`만 탐지하고 PATH의 `gemini`를 fallback으로 사용하지 않는다. 현재
+    repository에서 자동 실행 계약이 검증되지 않았으므로 실행 파일이 있어도
+    수동 review 필요 상태를 반환하며 CLI를 실제로 실행하지 않는다.
     """
 
     env = env or {}
@@ -74,17 +86,24 @@ def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentComman
 
     configured = env.get("AGENT_ANTIGRAVITY_BIN")
     if configured:
-        return AgentCommand(
-            "Antigravity",
-            _configured_executable(configured, "AGENT_ANTIGRAVITY_BIN"),
-            "stdin",
-        )
-    gemini = shutil.which("gemini")
-    if gemini:
-        return AgentCommand("Gemini/Antigravity", gemini, "gemini")
-    raise GateError(
-        "Antigravity 또는 Gemini CLI를 찾을 수 없습니다. "
-        "PATH 또는 AGENT_ANTIGRAVITY_BIN을 확인하고 prompt-only 방식을 사용하세요."
+        try:
+            executable = _configured_executable(configured, "AGENT_ANTIGRAVITY_BIN")
+        except GateError:
+            executable = None
+    else:
+        executable = shutil.which("agy")
+
+    failure_category = (
+        "automatic_review_unavailable" if executable else "executable_missing"
+    )
+    return AgentCommand(
+        agent="Antigravity",
+        executable=executable,
+        adapter="agy",
+        automatic_execution_supported=False,
+        failure_category=failure_category,
+        manual_fallback_required=True,
+        next_action="scripts/agent_next_step.sh antigravity-review",
     )
 
 

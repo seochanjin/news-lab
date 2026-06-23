@@ -8,10 +8,12 @@ Fixes 경로 및 요약 상태를 반환한다. 읽기 전용 Git subprocess와 
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 import subprocess
 
+from .review_validation import ReviewValidation, validate_review_file
 from .task_parser import TaskDocument, parse_task
 
 
@@ -63,6 +65,12 @@ class WorkflowState:
     has_changes: bool
     verification_status: str
     review_status: str
+    review_validation: str
+    review_verdict: str | None
+    automatic_review_status: str
+    review_execution_status: str
+    review_failure_category: str | None
+    manual_review_required: bool
     approved_fixes_status: str
 
     @property
@@ -74,25 +82,33 @@ class WorkflowState:
         안내한다.
         """
 
-        if self.approved_fixes_status == "approved":
+        if self.review_status == "completed" and self.approved_fixes_status == "approved":
             return "codex-fix"
         if (
             self.verification_status in {"failed", "pending"}
-            and self.review_status == "present"
+            and self.review_status == "completed"
         ):
             return "resolve-verification"
         if (
             self.verification_status == "passed"
-            and self.review_status == "present"
+            and self.review_status == "completed"
             and self.approved_fixes_status == "applied"
         ):
             return "pr-draft"
+        if self.verification_status == "passed" and self.review_status == "completed":
+            return (
+                "fixes-draft"
+                if self.review_verdict == "CHANGES REQUIRED"
+                else "pr-draft"
+            )
         if self.review_status == "not started":
             return (
                 "codex-implement-unit"
                 if self.task.execution_mode == "unit" and self.task.current_unit
                 else "codex-implement"
             )
+        if self.review_status in {"template only", "incomplete"}:
+            return "antigravity-review-write"
         return "antigravity-review"
 
 
@@ -149,6 +165,43 @@ def _verification_status(path: Path) -> str:
     return "present"
 
 
+def _review_status(validation: ReviewValidation) -> str:
+    """세부 review 검증 결과를 workflow의 사용자-facing 상태로 축약한다."""
+
+    if validation.status in {"not_started", "empty"}:
+        return "not started"
+    if validation.status == "template_only":
+        return "template only"
+    if validation.completed:
+        return "completed"
+    return "incomplete"
+
+
+def _latest_review_run(repo: Path, safe_branch: str) -> dict[str, object] | None:
+    """현재 branch의 최신 Antigravity 실행 result JSON을 읽어 반환한다.
+
+    로그가 없거나 JSON이 손상된 실행은 상태 판정 근거로 사용하지 않는다. 로그를
+    생성·수정하지 않으며 민감한 stdout·stderr 내용은 읽지 않는다.
+    """
+
+    run_root = repo / ".agent-runs" / safe_branch
+    if not run_root.exists():
+        return None
+    result_paths = sorted(
+        run_root.glob("*-antigravity-review/result.json"),
+        key=lambda path: path.parent.name,
+        reverse=True,
+    )
+    for path in result_paths:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(data, dict):
+            return data
+    return None
+
+
 def load_state(repo: str | Path = ".") -> WorkflowState:
     """Repository와 현재 branch를 조사해 WorkflowState를 생성한다.
 
@@ -170,6 +223,27 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
     )
     if not paths.task.exists():
         raise FileNotFoundError(f"현재 branch의 Task 문서가 없습니다: {paths.task}")
+    review_validation = validate_review_file(paths.review)
+    latest_review_run = _latest_review_run(root, safe)
+    automatic_review_status = "unavailable"
+    review_execution_status = "not started"
+    review_failure_category = None
+    if latest_review_run:
+        automatic_review_status = (
+            "available"
+            if latest_review_run.get("automatic_execution_supported") is True
+            else "unavailable"
+        )
+        review_failure_category_value = latest_review_run.get("failure_category")
+        if isinstance(review_failure_category_value, str):
+            review_failure_category = review_failure_category_value
+        if review_failure_category or latest_review_run.get("exit_code") not in {0, None}:
+            review_execution_status = "failed"
+        elif latest_review_run.get("review_completed") is True:
+            review_execution_status = "completed"
+        else:
+            review_execution_status = "incomplete"
+    review_status = _review_status(review_validation)
     return WorkflowState(
         repo=root,
         branch=branch,
@@ -178,7 +252,19 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
         task=parse_task(paths.task),
         has_changes=bool(run_git(root, "status", "--porcelain")),
         verification_status=_verification_status(paths.verification),
-        review_status=_document_status(paths.review),
+        review_status=review_status,
+        review_validation=review_validation.status,
+        review_verdict=review_validation.verdict,
+        automatic_review_status=automatic_review_status,
+        review_execution_status=review_execution_status,
+        review_failure_category=review_failure_category,
+        manual_review_required=(
+            review_status != "completed"
+            and (
+                automatic_review_status == "unavailable"
+                or review_execution_status == "failed"
+            )
+        ),
         approved_fixes_status=_document_status(paths.approved_fixes, "Approved Fixes"),
     )
 
@@ -254,6 +340,18 @@ def format_status(state: WorkflowState) -> str:
             "Review:",
             f"- {state.review_status}",
             "",
+            "Review validation:",
+            f"- {state.review_validation}",
+            "",
+            "Automatic review:",
+            f"- {state.automatic_review_status}",
+            "",
+            "Review execution:",
+            f"- {state.review_execution_status}",
+            "",
+            "Manual review required:",
+            f"- {'yes' if state.manual_review_required else 'no'}",
+            "",
             "Approved fixes:",
             f"- {state.approved_fixes_status}",
             "",
@@ -267,6 +365,23 @@ def format_status(state: WorkflowState) -> str:
                 "",
                 "Action required:",
                 "- 먼저 검증 문제를 해결하고 실제 결과를 Verification에 기록하세요.",
+            ]
+        )
+    elif state.manual_review_required:
+        lines.extend(
+            [
+                "",
+                "Action required:",
+                "- scripts/agent_next_step.sh antigravity-review",
+                "- scripts/agent_next_step.sh antigravity-review-write",
+            ]
+        )
+    if state.review_failure_category:
+        lines.extend(
+            [
+                "",
+                "Review failure category:",
+                f"- {state.review_failure_category}",
             ]
         )
     return "\n".join(lines)

@@ -56,6 +56,59 @@ Review output만으로 구현 수정이 승인되지는 않는다.
 Human operator가 fix를 승인하면 별도의 approved fixes 문서에 기록하고 Codex가
 그 항목만 적용한다.
 
+## 자동 실행과 수동 fallback
+
+자동 review는 검증된 비대화형 adapter가 있는 경우에만 허용한다. 실행 파일이
+설치되어 있어도 prompt 전달, 인증, permission 처리, review 파일 작성과 종료
+상태 계약이 확인되지 않았으면 자동 실행을 지원하지 않는다. 특히 Gemini CLI는
+Antigravity adapter로 간주하지 않으며 `UNSUPPORTED_CLIENT`를 성공으로
+처리하지 않는다.
+
+자동 실행이 불가능하거나 실패하면 다음 순서로 수동 review를 진행한다.
+
+```bash
+scripts/agent_next_step.sh antigravity-review
+scripts/agent_next_step.sh antigravity-review-write
+```
+
+- `antigravity-review`: review 대상과 기준을 포함한 chat prompt를 출력한다.
+- `antigravity-review-write`: review 결과를
+  `docs/reviews/<safe-branch>-antigravity.md`에 작성하는 prompt를 출력한다.
+
+`scripts/agent_run.sh antigravity-review`는 자동 실행 지원 여부를 먼저 출력한다.
+미지원 상태에서는 Agent process를 시작하지 않고 non-zero로 종료하며 위 수동
+명령을 안내한다. 실행 실패 로그가 있어도 수동으로 작성한 review 파일이 아래
+완료 조건을 충족하면 workflow review는 완료로 판정할 수 있다.
+
+## Review 완료 조건
+
+파일 존재만으로 review를 완료 처리하지 않는다. 파일 없음, 빈 파일, heading만
+있는 초기 템플릿, 필수 section 누락, 실제 review 본문 없음, Verdict 누락과
+허용되지 않은 Verdict는 모두 미완성이다.
+
+허용 Verdict는 다음 세 값뿐이다.
+
+- `APPROVED`
+- `APPROVED WITH NOTES`
+- `CHANGES REQUIRED`
+
+자동 review는 Agent process 성공, review 파일 생성 또는 변경, 위 구조 검증을
+모두 통과해야 완료다. 수동 review는 자동 실행 기록 없이도 같은 구조 검증을
+통과하면 완료다. Review finding은 사람이 Approved Fixes에 승인하기 전까지 구현
+변경 근거가 아니다.
+
+## 실패 후 복구
+
+`scripts/agent_next_step.sh status`에서 자동 실행 지원, 실행 상태, review 파일
+검증, 수동 review 필요 여부와 다음 action을 확인한다. 실행 파일 미설치,
+`UNSUPPORTED_CLIENT`, 인증 실패, 비대화형 실행 미지원, timeout, non-zero exit,
+review 파일 미생성·미변경·검증 실패는 서로 다른 failure category로 기록한다.
+
+`UNSUPPORTED_CLIENT`가 발생하면 해당 client로 재시도해 성공으로 간주하지 않는다.
+수동 fallback을 사용하고, review 파일이 완료 조건을 충족하는지 status로 다시
+확인한다. 자동 실행 실패 또는 미완성 review 상태에서는 `codex-fix`나 PR 초안
+단계로 진행하지 않는다.
+
 ## 최초 Review와 Re-review
 
 Antigravity review는 `docs/reviews/<safe-branch>-antigravity.md` 하나를 사용한다.

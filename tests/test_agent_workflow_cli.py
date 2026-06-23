@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 from scripts.agent_workflow.cli import main
+from scripts.agent_workflow.gates import AgentCommand
 from tests.test_agent_workflow_state import make_repo
 
 
@@ -86,3 +87,94 @@ class WorkflowCliTests(unittest.TestCase):
                 exit_code = main(["codex-implement", "--preview"])
             self.assertEqual(exit_code, 2)
             self.assertIn("main branch", error.getvalue())
+
+    def test_antigravity_preview_reports_manual_fallback_without_execution(self) -> None:
+        """Antigravity preview가 Gemini를 실행하지 않고 자동 미지원 상태를 표시한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = make_repo(root)
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            changed = repo / "change.txt"
+            changed.write_text("review target", encoding="utf-8")
+            marker = root / "gemini-executed"
+            gemini = root / "gemini"
+            gemini.write_text(
+                f"#!/bin/sh\ntouch '{marker}'\n",
+                encoding="utf-8",
+            )
+            gemini.chmod(gemini.stat().st_mode | stat.S_IXUSR)
+            output = io.StringIO()
+            env = {**os.environ, "PATH": f"{root}:{os.environ.get('PATH', '')}"}
+            with (
+                patch("pathlib.Path.cwd", return_value=repo),
+                patch.dict(os.environ, env, clear=True),
+                redirect_stdout(output),
+            ):
+                exit_code = main(["antigravity-review", "--preview"])
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(marker.exists())
+            self.assertIn("Target Agent: Antigravity", output.getvalue())
+            self.assertIn("Automatic execution supported: no", output.getvalue())
+            self.assertIn("Manual fallback required: yes", output.getvalue())
+
+    def test_antigravity_run_returns_manual_review_guidance(self) -> None:
+        """자동 실행 미지원 시 process 대신 수동 review 명령을 안내하는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "change.txt").write_text("review target", encoding="utf-8")
+            output = io.StringIO()
+            error = io.StringIO()
+            with (
+                patch("pathlib.Path.cwd", return_value=repo),
+                patch("scripts.agent_workflow.gates.shutil.which", return_value=None),
+                redirect_stdout(output),
+                redirect_stderr(error),
+            ):
+                exit_code = main(["antigravity-review", "--yes"])
+            self.assertEqual(exit_code, 2)
+            self.assertFalse((repo / ".agent-runs").exists())
+            self.assertIn(
+                "scripts/agent_next_step.sh antigravity-review",
+                error.getvalue(),
+            )
+
+    def test_review_validation_failure_returns_nonzero(self) -> None:
+        """Agent가 0으로 끝나도 review 파일이 없으면 CLI가 실패를 반환하는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = make_repo(root)
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "change.txt").write_text("review target", encoding="utf-8")
+            executable = root / "fake-antigravity"
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+            output = io.StringIO()
+            command = AgentCommand("Antigravity", str(executable), "test")
+            with (
+                patch("pathlib.Path.cwd", return_value=repo),
+                patch(
+                    "scripts.agent_workflow.cli.validate_action",
+                    return_value=command,
+                ),
+                redirect_stdout(output),
+            ):
+                exit_code = main(["antigravity-review", "--yes"])
+            self.assertEqual(exit_code, 1)
+            self.assertIn("Failure category: review_file_missing", output.getvalue())
+            self.assertIn("Review completed: no", output.getvalue())

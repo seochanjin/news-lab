@@ -1,13 +1,14 @@
 """Agent action 실행 전 workflow gate의 차단과 허용 조건을 검증한다.
 
-임시 repository 상태만 사용하고 Agent executable 확인은 비활성화하여 실제
-Codex, Gemini 또는 Antigravity를 실행하지 않는다.
+임시 repository 상태와 PATH mock만 사용해 Codex 및 Antigravity 탐지 계약을
+검증하며 실제 외부 Agent를 실행하지 않는다.
 """
 
 from pathlib import Path
 import stat
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.agent_workflow.gates import GateError, resolve_agent, validate_action
 from scripts.agent_workflow.state import load_state
@@ -119,19 +120,48 @@ class WorkflowGateTests(unittest.TestCase):
             self.assertEqual(command.executable, str(executable.resolve()))
 
     def test_configured_agent_binary_rejects_invalid_paths(self) -> None:
-        """존재하지 않거나 디렉터리인 Agent binary 환경변수를 차단한다."""
+        """잘못된 Antigravity binary 설정을 executable 미설치 상태로 분류한다."""
 
         with tempfile.TemporaryDirectory() as directory:
             for value in (str(Path(directory) / "missing"), directory):
-                with self.subTest(value=value), self.assertRaises(GateError) as context:
-                    resolve_agent(
+                with self.subTest(value=value):
+                    command = resolve_agent(
                         "antigravity-review",
                         {"AGENT_ANTIGRAVITY_BIN": value},
                     )
-                self.assertNotIn(value, str(context.exception))
+                self.assertIsNone(command.executable)
+                self.assertEqual(command.failure_category, "executable_missing")
+                self.assertTrue(command.manual_fallback_required)
 
     def test_configured_agent_command_name_uses_path_lookup(self) -> None:
         """환경변수에 command 이름을 지정하면 PATH에서 실행 파일을 찾는지 검증한다."""
 
         command = resolve_agent("codex-implement", {"AGENT_CODEX_BIN": "sh"})
         self.assertTrue(Path(command.executable).is_file())
+
+    def test_gemini_is_not_selected_as_antigravity_adapter(self) -> None:
+        """PATH에 Gemini만 있어도 Antigravity 자동 실행 가능으로 판정하지 않는다."""
+
+        def which(name: str) -> str | None:
+            return "/tmp/gemini" if name == "gemini" else None
+
+        with patch("scripts.agent_workflow.gates.shutil.which", side_effect=which):
+            command = resolve_agent("antigravity-review")
+        self.assertEqual(command.agent, "Antigravity")
+        self.assertEqual(command.adapter, "agy")
+        self.assertIsNone(command.executable)
+        self.assertFalse(command.automatic_execution_supported)
+        self.assertEqual(command.failure_category, "executable_missing")
+
+    def test_agy_installation_does_not_imply_automatic_support(self) -> None:
+        """설치된 agy 후보와 자동 review 지원 상태가 분리되는지 검증한다."""
+
+        with patch(
+            "scripts.agent_workflow.gates.shutil.which",
+            return_value="/tmp/agy",
+        ):
+            command = resolve_agent("antigravity-review")
+        self.assertEqual(command.executable, "/tmp/agy")
+        self.assertFalse(command.automatic_execution_supported)
+        self.assertEqual(command.failure_category, "automatic_review_unavailable")
+        self.assertTrue(command.manual_fallback_required)

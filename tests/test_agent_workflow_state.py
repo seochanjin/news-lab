@@ -15,6 +15,7 @@ from scripts.agent_workflow.state import (
     main_pointer_matches,
     safe_branch_name,
 )
+from tests.test_agent_review_validation import complete_review
 
 
 def git(repo: Path, *args: str) -> None:
@@ -188,7 +189,7 @@ class WorkflowStateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
-                "# Review\n\n## Re-review 1\n\nAPPROVED\n", encoding="utf-8"
+                complete_review(), encoding="utf-8"
             )
             (repo / "docs" / "fixes" / f"{safe}-approved-fixes.md").write_text(
                 "# Fixes\n\n## Approved Fixes\n\n- [x] FIX-01\n", encoding="utf-8"
@@ -206,7 +207,7 @@ class WorkflowStateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
-                "# Review\n\nCHANGES REQUIRED\n", encoding="utf-8"
+                complete_review("CHANGES REQUIRED"), encoding="utf-8"
             )
             state = load_state(repo)
             self.assertEqual(state.suggested_action, "resolve-verification")
@@ -223,9 +224,71 @@ class WorkflowStateTests(unittest.TestCase):
                 encoding="utf-8",
             )
             (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
-                "# Review\n\nReview present\n", encoding="utf-8"
+                complete_review(), encoding="utf-8"
             )
             self.assertEqual(load_state(repo).suggested_action, "resolve-verification")
+
+    def test_template_review_requires_manual_write_without_advancing(self) -> None:
+        """초기 템플릿을 review 완료로 오인하지 않고 수동 작성 action을 제안한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            review = repo / "docs" / "reviews" / "feature-example-antigravity.md"
+            review.write_text(
+                "# Review\n\n## Review Summary\n\n## Problems Found\n\n## Verdict\n",
+                encoding="utf-8",
+            )
+            state = load_state(repo)
+            output = format_status(state)
+            self.assertEqual(state.review_status, "template only")
+            self.assertTrue(state.manual_review_required)
+            self.assertEqual(state.suggested_action, "antigravity-review-write")
+            self.assertIn("Automatic review:\n- unavailable", output)
+            self.assertIn("Manual review required:\n- yes", output)
+
+    def test_completed_manual_review_can_reach_pr_draft(self) -> None:
+        """자동 실행 기록 없이도 유효한 수동 review가 완료로 판정되는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                complete_review(), encoding="utf-8"
+            )
+            state = load_state(repo)
+            self.assertEqual(state.review_status, "completed")
+            self.assertFalse(state.manual_review_required)
+            self.assertEqual(state.suggested_action, "pr-draft")
+
+    def test_failed_automatic_review_log_blocks_fix_and_pr_progression(self) -> None:
+        """자동 review 실패와 미완성 파일 상태에서 fix 또는 PR을 제안하지 않는다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            review = repo / "docs" / "reviews" / f"{safe}-antigravity.md"
+            review.write_text("# Review\n\n## Review Summary\n", encoding="utf-8")
+            log_dir = (
+                repo
+                / ".agent-runs"
+                / safe
+                / "20260623T120000-antigravity-review"
+            )
+            log_dir.mkdir(parents=True)
+            (log_dir / "result.json").write_text(
+                '{"automatic_execution_supported": true, "exit_code": 1, '
+                '"failure_category": "unsupported_client", '
+                '"review_completed": false}\n',
+                encoding="utf-8",
+            )
+            state = load_state(repo)
+            self.assertEqual(state.review_execution_status, "failed")
+            self.assertEqual(state.review_failure_category, "unsupported_client")
+            self.assertNotIn(state.suggested_action, {"codex-fix", "pr-draft"})
 
 
 if __name__ == "__main__":
