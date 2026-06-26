@@ -40,6 +40,7 @@ class AgentCommand:
 
 
 REQUIRED_TASK_SECTIONS = ("Scope", "Do not change", "Test commands", "Acceptance criteria")
+REVIEW_ACTIONS = {"antigravity-review-unit", "antigravity-review"}
 
 
 def _configured_executable(value: str, label: str) -> str:
@@ -64,10 +65,9 @@ def _configured_executable(value: str, label: str) -> str:
 def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentCommand:
     """Action과 환경 설정에 맞는 Agent executable 및 지원 상태를 찾는다.
 
-    Codex는 기존처럼 설치된 CLI를 요구한다. Antigravity는 확인된 실행 후보인
-    `agy`만 탐지하고 PATH의 `gemini`를 fallback으로 사용하지 않는다. 현재
-    repository에서 자동 실행 계약이 검증되지 않았으므로 실행 파일이 있어도
-    수동 review 필요 상태를 반환하며 CLI를 실제로 실행하지 않는다.
+    Codex는 기존처럼 설치된 CLI를 요구한다. Antigravity는 비대화형 `--print`
+    계약을 제공하는 `agy`만 탐지하고 PATH의 `gemini`를 fallback으로 사용하지
+    않는다. 실행 가능한 agy가 있으면 sandbox 단일 prompt adapter를 활성화한다.
     """
 
     env = env or {}
@@ -93,15 +93,18 @@ def resolve_agent(action: str, env: dict[str, str] | None = None) -> AgentComman
     else:
         executable = shutil.which("agy")
 
-    failure_category = (
-        "automatic_review_unavailable" if executable else "executable_missing"
-    )
+    if executable:
+        return AgentCommand(
+            agent="Antigravity",
+            executable=executable,
+            adapter="agy-print",
+        )
     return AgentCommand(
         agent="Antigravity",
-        executable=executable,
-        adapter="agy",
+        executable=None,
+        adapter="agy-print",
         automatic_execution_supported=False,
-        failure_category=failure_category,
+        failure_category="executable_missing",
         manual_fallback_required=True,
         next_action="scripts/agent_next_step.sh antigravity-review",
     )
@@ -139,7 +142,7 @@ def validate_action(
     ]
     if action.startswith("codex-"):
         required_docs.append(state.repo / "docs" / "agent" / "codex-instructions.md")
-    if action == "antigravity-review":
+    if action in REVIEW_ACTIONS:
         required_docs.append(state.repo / "docs" / "agent" / "antigravity-review.md")
     for path in required_docs:
         _require_file(path, "필수 workflow")
@@ -170,14 +173,25 @@ def validate_action(
         if state.approved_fixes_status != "approved":
             raise GateError("Approved Fixes section에 실제 승인 항목이 없습니다.")
 
-    if action == "antigravity-review":
+    if action in REVIEW_ACTIONS:
         _require_file(state.paths.verification, "Verification")
         if not state.has_changes:
             raise GateError("Review할 구현 변경사항이 없습니다.")
-        if state.verification_status in {"failed", "pending"}:
+        if state.verification_status == "failed":
             raise GateError(
-                "Verification이 failed 또는 pending 상태여서 review 실행을 차단합니다. "
+                "Verification이 failed 상태여서 review 실행을 차단합니다. "
                 "먼저 검증 문제를 해결하고 실제 결과를 기록하세요."
+            )
+        if action == "antigravity-review-unit":
+            if state.task.execution_mode != "unit":
+                raise GateError(
+                    "UNIT Review 전용 action은 Implementation Units가 있는 Task에서만 "
+                    "사용할 수 있습니다."
+                )
+        if state.verification_status == "pending" and action != "antigravity-review-unit":
+            raise GateError(
+                "최종 Review의 Verification이 pending 상태여서 review 실행을 차단합니다. "
+                "먼저 검증을 완료하고 실제 결과를 기록하세요."
             )
 
     if require_agent:

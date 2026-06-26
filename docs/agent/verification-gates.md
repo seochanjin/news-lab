@@ -110,16 +110,23 @@ PR과 devlog는 이 기록을 근거로 작성한다.
 
 ## Antigravity review gate
 
-Antigravity review는 실행 파일 존재와 자동 실행 지원을 분리한다. 검증된
-비대화형 adapter가 없으면 직접 실행을 차단하고 prompt-only 수동 review를
-안내한다. 자동 실행 미지원 pre-flight 상태는
-`automatic_review_unavailable`로 기록한다. Gemini CLI의 외부
-`reasonCode: UNSUPPORTED_CLIENT`는 내부 `unsupported_client` category로
-분류하며, 인증 실패, 비대화형 실행 미지원, timeout과 일반 non-zero exit도
-성공으로 처리하지 않는다.
+Antigravity UNIT Review는 Task 구현 상태와 `Unit Review Status`를 대조해
+구현 완료·Review 미통과인 가장 앞선 UNIT만 선택한다. 마지막 UNIT은 전체 통합
+Review이며, 모든 UNIT Review와 승인 Fix 적용이 끝난 뒤에만 Re-review를
+선택한다. UNIT Task는 전체 Verification이 `pending`이어도 완료 UNIT의 Review를
+허용하지만, 명시적 `failed`와 일반 Task의 `pending`은 차단한다.
 
-자동 review 완료에는 process 성공뿐 아니라 review 파일 생성 또는 변경과 구조
-검증 통과가 필요하다. 수동 review는 실행 기록 없이도 파일 검증을 통과하면
-완료될 수 있다. 파일 없음, 빈 파일, 초기 템플릿, 필수 section·본문·Verdict
-누락과 허용되지 않은 Verdict는 미완성으로 유지하며 fix 또는 PR gate를 열지
-않는다.
+`--dry-run`은 mode, UNIT, FIX, 최신 전체 테스트 snapshot과 prompt를 파일 쓰기
+없이 확인하는 gate다. 예상 heading, prompt line·byte 수와 제한 diff 파일 수도
+확인하며 prompt 상한 초과는 외부 실행 전에 차단한다. 실제 실행은
+`agy --print --sandbox` adapter만 사용하고 Gemini CLI를 fallback으로 사용하지
+않는다. 실행 파일 없음, 인증 실패, 비대화형 실행 미지원, timeout과 non-zero
+exit를 성공으로 처리하지 않는다.
+
+자동 Review 완료에는 process 성공, 단일 stdout section의 heading·필수
+section·본문·Verdict·finding ID 검증, 현재 FIX·Verification·Re-review 번호와의
+모순 검사 및 append-only writer 성공이 모두 필요하다. `PASS`만 선택 UNIT의
+Review Status를 완료한다. Agent 직접 파일 변경, 중복 응답 또는 validation
+실패에서는 실행 전 Review 파일을 보존하고 fix 또는 PR gate를 열지 않는다.
+Review subprocess의 재귀 호출과 실행·대기 의도를 나타내는 응답도 전용 gate에서
+차단한다.

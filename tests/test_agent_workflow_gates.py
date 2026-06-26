@@ -92,11 +92,33 @@ class WorkflowGateTests(unittest.TestCase):
                     load_state(repo), "antigravity-review", require_agent=False
                 )
 
-    def test_review_rejects_pending_verification(self) -> None:
-        """Verification pending 상태에서는 Review action이 gate를 통과하지 못한다."""
+    def test_unit_review_accepts_pending_verification(self) -> None:
+        """UNIT Task는 전체 Verification pending 중에도 완료 UNIT Review를 허용한다."""
 
         with tempfile.TemporaryDirectory() as directory:
             repo = make_repo(Path(directory))
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npending\n",
+                encoding="utf-8",
+            )
+            self.assertIsNone(
+                validate_action(
+                    load_state(repo), "antigravity-review-unit", require_agent=False
+                )
+            )
+
+    def test_general_review_rejects_pending_verification(self) -> None:
+        """일반 Task의 Verification pending 상태는 기존처럼 Review를 차단한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            task = repo / "docs" / "tasks" / "feature-example.md"
+            task.write_text(
+                "# Task: gate\n\n## Scope\n\n범위\n\n## Do not change\n\n없음\n\n"
+                "## Test commands\n\n테스트\n\n## Acceptance criteria\n\n기준\n",
+                encoding="utf-8",
+            )
             verification = repo / "docs" / "verification" / "feature-example.md"
             verification.write_text(
                 "# Verification\n\n## Verification Status\n\npending\n",
@@ -148,13 +170,13 @@ class WorkflowGateTests(unittest.TestCase):
         with patch("scripts.agent_workflow.gates.shutil.which", side_effect=which):
             command = resolve_agent("antigravity-review")
         self.assertEqual(command.agent, "Antigravity")
-        self.assertEqual(command.adapter, "agy")
+        self.assertEqual(command.adapter, "agy-print")
         self.assertIsNone(command.executable)
         self.assertFalse(command.automatic_execution_supported)
         self.assertEqual(command.failure_category, "executable_missing")
 
-    def test_agy_installation_does_not_imply_automatic_support(self) -> None:
-        """설치된 agy 후보와 자동 review 지원 상태가 분리되는지 검증한다."""
+    def test_agy_installation_enables_print_adapter(self) -> None:
+        """설치된 agy가 sandbox 단일 prompt 자동 adapter로 선택되는지 검증한다."""
 
         with patch(
             "scripts.agent_workflow.gates.shutil.which",
@@ -162,6 +184,7 @@ class WorkflowGateTests(unittest.TestCase):
         ):
             command = resolve_agent("antigravity-review")
         self.assertEqual(command.executable, "/tmp/agy")
-        self.assertFalse(command.automatic_execution_supported)
-        self.assertEqual(command.failure_category, "automatic_review_unavailable")
-        self.assertTrue(command.manual_fallback_required)
+        self.assertEqual(command.adapter, "agy-print")
+        self.assertTrue(command.automatic_execution_supported)
+        self.assertIsNone(command.failure_category)
+        self.assertFalse(command.manual_fallback_required)

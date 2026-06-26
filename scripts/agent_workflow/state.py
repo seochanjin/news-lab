@@ -188,7 +188,10 @@ def _latest_review_run(repo: Path, safe_branch: str) -> dict[str, object] | None
     if not run_root.exists():
         return None
     result_paths = sorted(
-        run_root.glob("*-antigravity-review/result.json"),
+        [
+            *run_root.glob("*-antigravity-review/result.json"),
+            *run_root.glob("*-antigravity-review-unit/result.json"),
+        ],
         key=lambda path: path.parent.name,
         reverse=True,
     )

@@ -75,25 +75,55 @@ scripts/agent_run.sh codex-implement --yes --timeout 1200
 기본 timeout은 1200초다. 실행 전 action, Agent, branch, Task, mode, UNIT,
 로그 경로와 timeout을 출력한다. 비대화형 실행은 `--yes`가 필요하다.
 
-Codex는 확인된 `codex exec -C <repo> -` 입력 형식을 사용한다. 현재 환경에서
-별도 Antigravity command의 완전한 비대화형 실행 계약은 확인되지 않았다.
-`agy`는 실행 후보로 탐지하지만 설치 여부만으로 자동 실행을 활성화하지 않으며,
-Gemini CLI를 fallback adapter로 사용하지 않는다. `AGENT_ANTIGRAVITY_BIN`을
-지정해도 현재 기본 계약에서는 설치 후보 정보만 제공하고 자동 실행은 지원하지
-않는다. prompt 전달, 사전 인증, 비대화형 permission, review 파일 작성과
-exit/output 계약이 모두 검증된 뒤에만 adapter 구현과 자동 실행 상태를 함께
-변경해야 한다.
+Codex는 확인된 `codex exec -C <repo> -` 입력 형식을 사용한다. Antigravity는
+`agy --print <prompt> --sandbox --print-timeout <초>s` 형식을 사용한다.
+`AGENT_ANTIGRAVITY_BIN`으로 실행 파일을 지정할 수 있으며, 지정하지 않으면
+PATH의 `agy`를 탐색한다. Gemini CLI는 fallback adapter로 사용하지 않는다.
+`agy`가 없으면 process와 로그를 만들지 않고 수동 fallback을 안내한다.
 
 ## Review와 승인 Fix
 
 ```bash
-scripts/agent_run.sh antigravity-review --preview
+scripts/agent_run.sh antigravity-review-unit --dry-run
+scripts/agent_run.sh antigravity-review-unit
+scripts/agent_run.sh antigravity-review --dry-run
 scripts/agent_run.sh antigravity-review
 ```
 
-Preview는 표시 Agent, adapter, 실행 파일, 자동 실행 지원, failure category와
-수동 fallback 필요 여부를 보여준다. 현재 자동 실행 미지원 상태에서 실제 실행을
-요청하면 process를 시작하지 않고 non-zero로 종료하며 다음 수동 흐름을 안내한다.
+`antigravity-review-unit`은 구현 완료됐지만 Review Status가 미완료인 UNIT 하나만
+검토한다. 마지막 UNIT도 이 action에서는 `UNIT Review`로 처리한다.
+`antigravity-review`는 UNIT Review를 실행하지 않고, 모든 UNIT Review 완료 뒤의
+Integration Review, Re-review 또는 일반 Task Review를 담당한다.
+
+`--dry-run`은 현재 branch의 Task, Review Status, Approved Fixes, Verification과
+제한된 Git diff를 읽고 선택 mode·UNIT, 예상 heading, prompt 크기, diff 파일 수,
+최신 evidence와 전체 prompt를 출력한다. Review 파일과 `.agent-runs`는 변경하지
+않는다. prompt byte 상한을 넘으면 외부 실행 전에 실패한다. `--preview`도 실행
+정보와 같은 Review prompt를 보여주지만 설치된 adapter 확인까지 포함한다.
+
+기본 실행은 다음 순서로 처리한다.
+
+```text
+현재 branch artifact 탐색
+→ action별 Review mode 결정
+→ UNIT action이면 구현 완료·Review 미통과 UNIT 하나 선택
+→ 최종 action이면 Integration Review, Re-review 또는 general Review 선택
+→ agy 비대화형 실행
+→ stdout 응답 구조와 current-state 모순 검증
+→ 검증된 section만 Review 파일에 append
+→ UNIT/Integration PASS인 경우에만 Unit Review Status 완료
+```
+
+Review 파일이 없으면 Task의 UNIT ID와 제목을 그대로 사용해
+`Unit Review Status`를 생성한다. 기존 Review 파일이 있으면 checklist와 Review
+이력을 보존한다. `CHANGES REQUIRED` 또는 `BLOCKED`이면 해당 UNIT은 미완료로
+남고, finding은 `REVIEW-<UNIT>-NN` checklist 형식으로 추적한다.
+
+Review subprocess는 재귀 실행 차단 환경을 사용한다. Agent가 명령 실행 또는
+background 대기 의도를 반환하면 `review_agent_attempted_execution`으로
+실패하며 검증 writer를 호출하지 않는다.
+
+`agy` 미설치 또는 실행·응답 검증 실패 시 다음 수동 흐름을 사용할 수 있다.
 
 ```bash
 scripts/agent_next_step.sh antigravity-review
@@ -113,7 +143,12 @@ scripts/agent_run.sh codex-fix --preview
 scripts/agent_run.sh codex-fix
 ```
 
-Approved Fixes가 없거나 비어 있으면 gate가 실행을 차단한다.
+`## Approved Fixes` 아래에 canonical checklist가 없고
+`### FIX-NN: 제목` 상세 heading만 있으면 `codex-fix` 진입 시 동일 ID와 제목의
+unchecked checklist를 section 바로 아래에 자동 생성한다. 기존 checklist가
+있으면 체크 상태를 보존하며, checklist와 상세 heading의 ID·제목·순서가
+다르거나 FIX ID가 중복·누락되면 문서를 변경하지 않고 실행을 차단한다.
+Approved Fixes가 없거나 일반 설명만 있으면 기존처럼 gate가 실행을 차단한다.
 
 ## 상태와 로그
 
@@ -155,34 +190,42 @@ prompt와 result는 유지된다. 비정상 종료도 exit code를 보존한다.
 
 Antigravity review 실행 기록은 agent 표시 이름, adapter, 실행 파일, 자동 실행
 지원 여부, exit code, timeout, failure category, 수동 fallback 필요 여부,
-review 파일 검증, 완료 판정과 다음 action을 포함한다. 인증 정보와 stdout·stderr
-본문은 상태 판정에 노출하지 않는다.
+review 응답 검증, 완료 판정과 다음 action을 포함한다. `prompt.md`, `stdout.log`,
+`stderr.log`, `response.md`, `result.json`을 보존하되 인증 정보를 workflow
+문서에 기록하지 않는다.
 
 실패 category와 복구 기준은 다음과 같다.
 
-- `executable_missing`, `automatic_review_unavailable`: 수동 review를 진행한다.
+- `executable_missing`: `agy`를 설치·지정하거나 수동 review를 진행한다.
 - `unsupported_client`: 해당 Gemini client를 재사용하지 않고 수동 review로
   전환한다.
 - `authentication_failed`, `noninteractive_unsupported`: 인증 또는 headless
   계약이 확인되기 전 자동 실행을 재시도하지 않는다.
 - `timeout`, `nonzero_exit`: 실행 로그와 working tree를 확인하고 수동 fallback
   또는 검증된 adapter 수정 후 재시도한다.
-- `review_file_missing`, `review_file_unchanged`,
-  `review_file_validation_failed`: review 파일을 수동 작성·보완한 뒤 status로
-  완료 여부를 다시 확인한다.
+- `review_file_modified_by_agent`: Agent의 직접 파일 변경은 실행 전 상태로
+  복구된다. prompt와 adapter 권한을 확인한다.
+- `review_response_invalid`: heading, section, Verdict, finding ID, 선택 UNIT,
+  Re-review 번호, FIX 또는 최신 테스트 evidence 오류를 수정한 뒤 재검토한다.
 
 어떤 실패에서도 Task checklist와 Verification을 자동 완료하지 않는다.
 
 ## Review 완료 판정
 
-Review 파일은 최초 review 또는 최신 Re-review의 필수 section, 실제 검토 본문과
-허용 Verdict를 모두 포함해야 한다. 허용 Verdict는 `APPROVED`,
-`APPROVED WITH NOTES`, `CHANGES REQUIRED`다. 빈 파일, 초기 템플릿, 누락된
-section이나 Verdict, 임의 Verdict는 완료가 아니다.
+자동 UNIT Review Verdict는 `PASS`, `CHANGES REQUIRED`, `BLOCKED`만 허용한다.
+선택 mode별 필수 section이 모두 실제 본문을 포함해야 하며, 응답은 정확한 UNIT
+또는 Re-review heading 하나로 시작해야 한다. 동일 응답 fingerprint는 중복
+append하지 않는다.
 
-자동 review는 process 성공과 파일 생성·변경·검증을 모두 요구한다. 수동 review는
-자동 실행 기록이 없어도 동일한 파일 검증을 통과하면 완료다. 자동 실행 실패 후
-파일이 미완성이면 `codex-fix`와 PR 초안으로 진행하지 않는다.
+`PASS`만 Unit Review Status를 `[x]`로 바꾼다. 마지막 UNIT의 PASS는 전체 통합
+Review 통과를 뜻한다. 승인 Fix 적용 후 Re-review에서는 하네스가 계산한 다음
+번호와 현재 FIX ID, Verification의 종류별 최신 전체 테스트 수가 응답과
+일치해야 한다. 과거 Review 수치를 현재 결과로 작성하면 파일을 변경하지 않고
+실패한다.
+
+기존 prompt-only 수동 Review 파일 판정은 기존 `APPROVED`,
+`APPROVED WITH NOTES`, `CHANGES REQUIRED` 계약을 유지한다. 어느 경로든 Review
+finding은 사람이 Approved Fixes에 승인하기 전까지 구현 변경 근거가 아니다.
 
 ## 다른 저장소에 동일 기준 적용
 
