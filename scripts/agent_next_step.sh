@@ -214,7 +214,7 @@ Review 모드:
 - 해결 판정에는 Approved Fixes, 현재 diff와 verification evidence를 함께 기록한다.
 - 새 문제는 Re-review N의 New Problems Found에 기록한다.
 - 현재 재검토 기준의 PR blocker는 해당 Re-review N의 Required Fixes Before PR에 기록한다.
-- 최종 판단은 APPROVED, APPROVED WITH NOTES, CHANGES REQUIRED 중 하나를 사용한다.
+- 최종 판단은 PASS, CHANGES REQUIRED, BLOCKED 중 하나를 사용한다.
 EOF
 }
 
@@ -271,6 +271,11 @@ $(print_review_rules "$safe")
 ### New Problems Found
 ### Required Fixes Before PR
 ### Verdict
+
+허용 Verdict:
+- PASS
+- CHANGES REQUIRED
+- BLOCKED
 EOF
 }
 
@@ -341,6 +346,11 @@ $(print_review_rules "$safe")
 ### New Problems Found
 ### Required Fixes Before PR
 ### Verdict
+
+허용 Verdict:
+- PASS
+- CHANGES REQUIRED
+- BLOCKED
 EOF
 }
 

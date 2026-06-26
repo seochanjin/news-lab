@@ -15,7 +15,7 @@ from scripts.agent_workflow.review_validation import (
 )
 
 
-def complete_review(verdict: str = "APPROVED") -> str:
+def complete_review(verdict: str = "PASS") -> str:
     """필수 section과 실질 본문을 포함한 테스트용 최초 review Markdown을 반환한다."""
 
     parts = ["# Review"]
@@ -67,15 +67,15 @@ class ReviewValidationTests(unittest.TestCase):
             self.assertEqual(validate_review_file(path).status, "no_review_body")
 
             path.write_text(
-                complete_review().replace("- **APPROVED**", ""),
+                complete_review().replace("- **PASS**", ""),
                 encoding="utf-8",
             )
             self.assertEqual(validate_review_file(path).status, "missing_verdict")
 
     def test_invalid_verdict_is_rejected(self) -> None:
-        """PASS와 허용 Verdict를 임의 확장한 문구가 완료로 인정되지 않는지 검증한다."""
+        """예전 Verdict와 허용 Verdict를 임의 확장한 문구를 거부하는지 검증한다."""
 
-        for verdict in ("PASS", "APPROVED MAYBE"):
+        for verdict in ("APPROVED", "PASS MAYBE"):
             with self.subTest(verdict=verdict), tempfile.TemporaryDirectory() as directory:
                 path = Path(directory) / "review.md"
                 path.write_text(complete_review(verdict), encoding="utf-8")
@@ -99,8 +99,8 @@ class ReviewValidationTests(unittest.TestCase):
             path = Path(directory) / "review.md"
             path.write_text(
                 complete_review().replace(
-                    "- **APPROVED**",
-                    "- **APPROVED** (검토 조건을 충족함)",
+                    "- **PASS**",
+                    "- **PASS** (검토 조건을 충족함)",
                 ),
                 encoding="utf-8",
             )

@@ -15,6 +15,7 @@ from unittest.mock import patch
 
 from scripts.agent_workflow.cli import main
 from scripts.agent_workflow.gates import AgentCommand
+from tests.test_agent_workflow_runner import complete_unit_response
 from tests.test_agent_workflow_state import make_repo
 
 
@@ -88,8 +89,8 @@ class WorkflowCliTests(unittest.TestCase):
             self.assertEqual(exit_code, 2)
             self.assertIn("main branch", error.getvalue())
 
-    def test_antigravity_preview_reports_manual_fallback_without_execution(self) -> None:
-        """Antigravity preview가 Gemini를 실행하지 않고 자동 미지원 상태를 표시한다."""
+    def test_antigravity_preview_reports_agy_adapter_without_execution(self) -> None:
+        """Antigravity preview가 agy adapter와 prompt를 표시하고 실행하지 않는다."""
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -113,14 +114,88 @@ class WorkflowCliTests(unittest.TestCase):
             with (
                 patch("pathlib.Path.cwd", return_value=repo),
                 patch.dict(os.environ, env, clear=True),
+                patch(
+                    "scripts.agent_workflow.gates.shutil.which",
+                    side_effect=lambda name: str(gemini) if name == "gemini" else "/tmp/agy",
+                ),
                 redirect_stdout(output),
             ):
-                exit_code = main(["antigravity-review", "--preview"])
+                exit_code = main(["antigravity-review-unit", "--preview"])
             self.assertEqual(exit_code, 0)
             self.assertFalse(marker.exists())
             self.assertIn("Target Agent: Antigravity", output.getvalue())
-            self.assertIn("Automatic execution supported: no", output.getvalue())
-            self.assertIn("Manual fallback required: yes", output.getvalue())
+            self.assertIn("Adapter: agy-print", output.getvalue())
+            self.assertIn("Automatic execution supported: yes", output.getvalue())
+            self.assertIn("## UNIT Review: UNIT-01", output.getvalue())
+
+    def test_antigravity_dry_run_is_read_only_and_shows_target(self) -> None:
+        """dry-run이 Review 파일이나 로그를 만들지 않고 mode와 prompt를 출력한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npending\n",
+                encoding="utf-8",
+            )
+            (repo / "change.txt").write_text("review target", encoding="utf-8")
+            output = io.StringIO()
+            review = repo / "docs" / "reviews" / "feature-example-antigravity.md"
+            with patch("pathlib.Path.cwd", return_value=repo), redirect_stdout(output):
+                exit_code = main(["antigravity-review-unit", "--dry-run"])
+            self.assertEqual(exit_code, 0)
+            self.assertFalse(review.exists())
+            self.assertFalse((repo / ".agent-runs").exists())
+            self.assertIn("Action: antigravity-review-unit", output.getvalue())
+            self.assertIn("Resolved review mode: unit", output.getvalue())
+            self.assertIn("Target UNIT: UNIT-01: 완료", output.getvalue())
+            self.assertIn("Expected heading: ## UNIT Review: UNIT-01", output.getvalue())
+            self.assertIn("Prompt lines:", output.getvalue())
+            self.assertIn("Prompt bytes:", output.getvalue())
+            self.assertIn("Diff files:", output.getvalue())
+            self.assertIn("Latest pytest passed:", output.getvalue())
+
+    def test_antigravity_recursion_guard_blocks_before_agent_execution(self) -> None:
+        """활성 Review 하위 process의 동일 action을 즉시 non-zero로 차단한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            error = io.StringIO()
+            with (
+                patch("pathlib.Path.cwd", return_value=repo),
+                patch.dict(
+                    os.environ,
+                    {"NEWSLAB_ANTIGRAVITY_REVIEW_ACTIVE": "1"},
+                    clear=False,
+                ),
+                redirect_stderr(error),
+            ):
+                exit_code = main(["antigravity-review-unit", "--yes"])
+            self.assertEqual(exit_code, 2)
+            self.assertIn("재귀 실행할 수 없습니다", error.getvalue())
+            self.assertFalse((repo / ".agent-runs").exists())
+
+    def test_antigravity_prompt_size_limit_blocks_before_agent_execution(self) -> None:
+        """Prompt byte 상한 초과를 외부 Agent와 로그 생성 전에 차단한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npending\n",
+                encoding="utf-8",
+            )
+            (repo / "change.txt").write_text("review target", encoding="utf-8")
+            error = io.StringIO()
+            with (
+                patch("pathlib.Path.cwd", return_value=repo),
+                patch("scripts.agent_workflow.cli.MAX_REVIEW_PROMPT_BYTES", 1),
+                redirect_stderr(error),
+            ):
+                exit_code = main(["antigravity-review-unit", "--dry-run"])
+            self.assertEqual(exit_code, 2)
+            self.assertIn("prompt가 실행 상한을 초과", error.getvalue())
+            self.assertFalse((repo / ".agent-runs").exists())
 
     def test_antigravity_run_returns_manual_review_guidance(self) -> None:
         """자동 실행 미지원 시 process 대신 수동 review 명령을 안내하는지 검증한다."""
@@ -141,7 +216,7 @@ class WorkflowCliTests(unittest.TestCase):
                 redirect_stdout(output),
                 redirect_stderr(error),
             ):
-                exit_code = main(["antigravity-review", "--yes"])
+                exit_code = main(["antigravity-review-unit", "--yes"])
             self.assertEqual(exit_code, 2)
             self.assertFalse((repo / ".agent-runs").exists())
             self.assertIn(
@@ -149,8 +224,8 @@ class WorkflowCliTests(unittest.TestCase):
                 error.getvalue(),
             )
 
-    def test_review_validation_failure_returns_nonzero(self) -> None:
-        """Agent가 0으로 끝나도 review 파일이 없으면 CLI가 실패를 반환하는지 검증한다."""
+    def test_invalid_review_response_returns_nonzero_without_review_write(self) -> None:
+        """빈 stdout의 실행 성공을 validation 실패로 바꾸고 Review 파일을 보존한다."""
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -174,7 +249,62 @@ class WorkflowCliTests(unittest.TestCase):
                 ),
                 redirect_stdout(output),
             ):
-                exit_code = main(["antigravity-review", "--yes"])
+                exit_code = main(["antigravity-review-unit", "--yes"])
             self.assertEqual(exit_code, 1)
-            self.assertIn("Failure category: review_file_missing", output.getvalue())
+            self.assertIn("Failure category: review_response_invalid", output.getvalue())
             self.assertIn("Review completed: no", output.getvalue())
+            self.assertFalse(
+                (repo / "docs" / "reviews" / "feature-example-antigravity.md").exists()
+            )
+
+    def test_configured_agy_executes_generated_prompt_and_saves_response(self) -> None:
+        """CLI가 PASS 응답을 실행·저장하고 선택 UNIT status를 완료 처리한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = make_repo(root)
+            verification = repo / "docs" / "verification" / "feature-example.md"
+            verification.write_text(
+                "# Verification\n\n## Verification Status\n\npending\n",
+                encoding="utf-8",
+            )
+            (repo / "change.txt").write_text("review target", encoding="utf-8")
+            executable = root / "fake-agy"
+            executable.write_text(
+                "#!/usr/bin/env python3\n"
+                "import sys\n"
+                "assert sys.argv[1] == '--print'\n"
+                "assert '## UNIT Review: UNIT-01' in sys.argv[2]\n"
+                "assert sys.argv[3:6] == ['--sandbox', '--print-timeout', '15s']\n"
+                f"print({complete_unit_response()!r})\n",
+                encoding="utf-8",
+            )
+            executable.chmod(executable.stat().st_mode | stat.S_IXUSR)
+            output = io.StringIO()
+            env = {**os.environ, "AGENT_ANTIGRAVITY_BIN": str(executable)}
+            with (
+                patch("pathlib.Path.cwd", return_value=repo),
+                patch.dict(os.environ, env, clear=True),
+                redirect_stdout(output),
+            ):
+                exit_code = main(
+                    ["antigravity-review-unit", "--yes", "--timeout", "15"]
+                )
+            self.assertEqual(exit_code, 0)
+            response_paths = list(
+                (repo / ".agent-runs" / "feature-example").glob(
+                    "*-antigravity-review-unit/response.md"
+                )
+            )
+            self.assertEqual(len(response_paths), 1)
+            self.assertIn(
+                "## UNIT Review: UNIT-01",
+                response_paths[0].read_text(encoding="utf-8"),
+            )
+            review = repo / "docs" / "reviews" / "feature-example-antigravity.md"
+            self.assertTrue(review.exists())
+            review_text = review.read_text(encoding="utf-8")
+            self.assertIn("- [x] UNIT-01: 완료", review_text)
+            self.assertIn("## UNIT Review: UNIT-01", review_text)
+            self.assertIn("Review file validation: completed", output.getvalue())
+            self.assertIn("Review completed: yes", output.getvalue())

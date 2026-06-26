@@ -280,7 +280,8 @@ class WorkflowStateTests(unittest.TestCase):
             )
             log_dir.mkdir(parents=True)
             (log_dir / "result.json").write_text(
-                '{"automatic_execution_supported": true, "exit_code": 1, '
+                '{"action": "antigravity-review", '
+                '"automatic_execution_supported": true, "exit_code": 1, '
                 '"failure_category": "unsupported_client", '
                 '"review_completed": false}\n',
                 encoding="utf-8",
@@ -289,6 +290,189 @@ class WorkflowStateTests(unittest.TestCase):
             self.assertEqual(state.review_execution_status, "failed")
             self.assertEqual(state.review_failure_category, "unsupported_client")
             self.assertNotIn(state.suggested_action, {"codex-fix", "pr-draft"})
+
+    def test_latest_failed_review_log_blocks_completed_review_progression(self) -> None:
+        """과거 PASS Review가 있어도 최신 자동 Review 실패가 다음 진행을 차단한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                complete_review(), encoding="utf-8"
+            )
+            (repo / "docs" / "fixes" / f"{safe}-approved-fixes.md").write_text(
+                "# Fixes\n\n## Approved Fixes\n\n- [x] FIX-01\n",
+                encoding="utf-8",
+            )
+            log_dir = (
+                repo
+                / ".agent-runs"
+                / safe
+                / "20260623T120000-antigravity-review"
+            )
+            log_dir.mkdir(parents=True)
+            (log_dir / "result.json").write_text(
+                '{"action": "antigravity-review", '
+                '"automatic_execution_supported": true, "exit_code": 1, '
+                '"failure_category": "review_response_invalid", '
+                '"review_completed": false, '
+                '"started_at": "2026-06-23T12:00:00+00:00"}\n',
+                encoding="utf-8",
+            )
+
+            state = load_state(repo)
+            output = format_status(state)
+
+        self.assertEqual(state.review_status, "completed")
+        self.assertEqual(state.review_execution_status, "failed")
+        self.assertEqual(state.review_execution_action, "antigravity-review")
+        self.assertTrue(state.manual_review_required)
+        self.assertEqual(state.suggested_action, "antigravity-review")
+        self.assertIn("Review failure category:\n- review_response_invalid", output)
+        self.assertIn("Latest review action:\n- antigravity-review", output)
+        self.assertIn("Latest review failure started at:", output)
+        self.assertIn(
+            "Review recovery action:\n- scripts/agent_run.sh antigravity-review",
+            output,
+        )
+
+    def test_latest_failed_unit_review_log_recovers_same_action(self) -> None:
+        """UNIT Review 실패 로그가 최종 Review action으로 잘못 라우팅되지 않는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                complete_review(), encoding="utf-8"
+            )
+            log_dir = (
+                repo
+                / ".agent-runs"
+                / safe
+                / "20260623T120000-antigravity-review-unit"
+            )
+            log_dir.mkdir(parents=True)
+            (log_dir / "result.json").write_text(
+                '{"action": "antigravity-review-unit", '
+                '"automatic_execution_supported": true, "exit_code": 1, '
+                '"failure_category": "review_response_invalid", '
+                '"review_completed": false, '
+                '"started_at": "2026-06-23T12:00:00+00:00"}\n',
+                encoding="utf-8",
+            )
+
+            state = load_state(repo)
+            output = format_status(state)
+
+        self.assertEqual(state.review_execution_status, "failed")
+        self.assertEqual(state.review_execution_action, "antigravity-review-unit")
+        self.assertEqual(state.suggested_action, "antigravity-review-unit")
+        self.assertIn("Latest review action:\n- antigravity-review-unit", output)
+        self.assertIn(
+            "Review recovery action:\n- scripts/agent_run.sh antigravity-review-unit",
+            output,
+        )
+
+    def test_unknown_failed_review_action_blocks_progression(self) -> None:
+        """실패 로그의 action을 판별할 수 없으면 PR이나 완료 단계로 진행하지 않는다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                complete_review(), encoding="utf-8"
+            )
+            log_dir = (
+                repo
+                / ".agent-runs"
+                / safe
+                / "20260623T120000-antigravity-review"
+            )
+            log_dir.mkdir(parents=True)
+            (log_dir / "result.json").write_text(
+                '{"automatic_execution_supported": true, "exit_code": 1, '
+                '"failure_category": "review_response_invalid", '
+                '"review_completed": false, '
+                '"started_at": "2026-06-23T12:00:00+00:00"}\n',
+                encoding="utf-8",
+            )
+
+            state = load_state(repo)
+            output = format_status(state)
+
+        self.assertEqual(state.review_execution_status, "failed")
+        self.assertIsNone(state.review_execution_action)
+        self.assertEqual(state.suggested_action, "resolve-review-failure")
+        self.assertNotIn(state.suggested_action, {"codex-fix", "pr-draft"})
+        self.assertIn("Latest review action:\n- unknown", output)
+        self.assertIn(
+            "Review recovery action:\n- unknown; inspect latest .agent-runs result.json",
+            output,
+        )
+
+    def test_later_successful_review_log_clears_previous_failure_gate(self) -> None:
+        """최신 유효 Review 성공 로그가 과거 실패 gate를 해제하는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            repo = make_repo(Path(directory))
+            safe = "feature-example"
+            (repo / "docs" / "verification" / f"{safe}.md").write_text(
+                "# Verification\n\n## Verification Status\n\npassed\n",
+                encoding="utf-8",
+            )
+            (repo / "docs" / "reviews" / f"{safe}-antigravity.md").write_text(
+                complete_review(), encoding="utf-8"
+            )
+            (repo / "docs" / "fixes" / f"{safe}-approved-fixes.md").write_text(
+                "# Fixes\n\n## Approved Fixes\n\n- [x] FIX-01\n",
+                encoding="utf-8",
+            )
+            failed_log = (
+                repo
+                / ".agent-runs"
+                / safe
+                / "20260623T120000-antigravity-review"
+            )
+            failed_log.mkdir(parents=True)
+            (failed_log / "result.json").write_text(
+                '{"action": "antigravity-review", '
+                '"automatic_execution_supported": true, "exit_code": 1, '
+                '"failure_category": "review_response_invalid", '
+                '"review_completed": false}\n',
+                encoding="utf-8",
+            )
+            success_log = (
+                repo
+                / ".agent-runs"
+                / safe
+                / "20260623T130000-antigravity-review"
+            )
+            success_log.mkdir(parents=True)
+            (success_log / "result.json").write_text(
+                '{"action": "antigravity-review", '
+                '"automatic_execution_supported": true, "exit_code": 0, '
+                '"failure_category": null, "review_completed": true}\n',
+                encoding="utf-8",
+            )
+
+            state = load_state(repo)
+
+        self.assertEqual(state.review_execution_status, "completed")
+        self.assertIsNone(state.review_failure_category)
+        self.assertFalse(state.manual_review_required)
+        self.assertEqual(state.suggested_action, "pr-draft")
 
 
 if __name__ == "__main__":
