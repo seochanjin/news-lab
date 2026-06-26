@@ -535,3 +535,48 @@ scripts/agent_next_step.sh status
 
 ### Verdict
 - PASS
+
+## Re-review 3
+### Existing Problems Status
+이전 Re-review 2까지 식별되었던 구현 및 검증 관련 문제점들은 Approved Fixes (FIX-01 ~ FIX-24)의 적용을 통해 모두 해결되었습니다.
+
+### Approved Fixes Verification
+- FIX-01: 적용 완료. Review Agent의 명령·도구 실행 금지 계약을 강화하여 외부 실행 시도를 차단하였습니다.
+- FIX-02: 적용 완료. Task 및 Verification 원문 전체 주입을 제거하고 Review Context를 최소화하였습니다.
+- FIX-03: 적용 완료. Antigravity Review의 재귀 실행을 차단하는 Guard를 추가하였습니다.
+- FIX-04: 적용 완료. Review Agent 실행 시도 전용 오류 분류를 추가하여 예외 처리를 정밀화하였습니다.
+- FIX-05: 적용 완료. 실제 실패 응답 회귀 테스트를 위한 Fixture를 추가하였습니다.
+- FIX-06: 적용 완료. Prompt 상단과 하단에 예상 Heading을 명시하여 출력을 제어하였습니다.
+- FIX-07: 적용 완료. 실제 외부 실행 전 Prompt 크기와 Context 요약을 출력하도록 수정하였습니다.
+- FIX-08: 적용 완료. agy CLI의 Shell 및 Tool 비활성화 설정을 조사하고 적용하였습니다.
+- FIX-09: 보류 (human-verification 분류). 실제 외부 Antigravity 최종 재검증 항목으로, 현재 pending 상태이며 이번 Re-review PASS 판정 이후 수동 검증을 거쳐 최종 완료됩니다.
+- FIX-10: 적용 완료. Approved Fixes 상세 항목에 기반한 체크리스트가 자동으로 생성되도록 구현하였습니다.
+- FIX-11: 적용 완료. agy --print CLI 계약에 맞춰 Prompt 인자 순서를 수정하였습니다.
+- FIX-12: 적용 완료. Review 응답 내 단일 Markdown bullet 표현이 정규화되도록 개선하였습니다.
+- FIX-13: 적용 완료. 정상 Review 본문에 포함된 명령 경로 언급이 실행 시도로 오탐지되지 않도록 예외 필터를 보강하였습니다.
+- FIX-14: 적용 완료. Review scalar 값의 허용된 종결부호를 정규화하였습니다.
+- FIX-15: 적용 완료. Integration Review 완료 후 최상위 Review 요약이 자동 반영되도록 수정하였습니다.
+- FIX-16: 적용 완료. UNIT Review Action과 최종 Review Action을 논리적으로 분리하였습니다.
+- FIX-17: 적용 완료. Re-review 시 모든 Approved Fix ID와 상태를 개별 검증하도록 Prompt를 보강하였습니다.
+- FIX-18: 적용 완료. Review 관련 문서와 현재 Action, Verdict, FIX 상태 계약의 정합성을 개선하였습니다.
+- FIX-19: 적용 완료. human-verification만 pending 상태일 때 Re-review 진입이 가능하도록 조건을 완화하였습니다.
+- FIX-20: 적용 완료. tracked diff와 changed files 추출 시 민감 경로 필터를 적용하였습니다.
+- FIX-21: 적용 완료. Unit Review Status 초기 생성 시 파일 쓰기를 원자적으로 처리하도록 개선하였습니다.
+- FIX-22: 적용 완료. Review 실행 의도 탐지 범위를 Expected heading 이전 preamble 영역으로 제한하였습니다.
+- FIX-23: 적용 완료. 최신 Review 실행 실패 이력을 Workflow Gate와 다음 Action 판단 로직에 연동하였습니다.
+- FIX-24: 적용 완료. 실패한 Review 실행의 Action 유형을 보존하고, 동일 Action으로 복구 및 상태 라우팅을 수행하도록 보완하였습니다.
+
+### Verification Evidence
+Verification 문서에 기록된 검증 결과에 따라 다음 테스트가 성공적으로 통과되었음을 확인하였습니다.
+- pytest: 339 passed
+- unittest: 339 passed
+- Status: passed
+
+### New Problems Found
+없음
+
+### Required Fixes Before PR
+없음
+
+### Verdict
+PASS

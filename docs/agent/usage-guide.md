@@ -276,6 +276,11 @@ git status --short --branch
   prompt-only 흐름을 사용한다.
 - Review 차단: 구현 diff, Verification 문서, review 파일 검증과 명시적 test
   실패를 확인한다.
+- Review 실행 실패: `scripts/agent_next_step.sh status`의 Latest review action과
+  Review recovery action을 따른다. 실패 action이 `antigravity-review-unit`이면
+  UNIT Review action으로, `antigravity-review`이면 최종 Review action으로
+  복구한다. action을 판별할 수 없는 실패 로그는 최신 `.agent-runs`의
+  `result.json`을 확인한 뒤 처리한다.
 
 ## 처음부터 PR 초안까지
 

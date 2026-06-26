@@ -189,6 +189,10 @@ exit, Agent 직접 파일 변경과 응답 검증 실패는 다음 내부 failur
 재시도해 성공으로 간주하지 않는다. 수동 fallback을 사용하고, review 파일이 완료
 조건을 충족하는지 status로 다시 확인한다. 자동 실행 실패 또는 미완성 review
 상태에서는 `codex-fix`나 PR 초안 단계로 진행하지 않는다.
+최신 실패 로그의 `action`이 `antigravity-review-unit`이면 같은 UNIT Review
+action으로 복구하고, `antigravity-review`이면 최종 Review action으로 복구한다.
+실패 로그에서 action을 판별할 수 없으면 임의로 최종 Review에 라우팅하지 않고
+상태 출력을 차단 상태로 남겨 최신 `.agent-runs`의 `result.json` 확인을 요구한다.
 
 ## 최초 Review와 Re-review
 

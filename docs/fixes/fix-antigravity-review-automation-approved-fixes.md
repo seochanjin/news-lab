@@ -25,6 +25,7 @@
 - [x] FIX-21: Unit Review Status 초기 생성의 원자적 파일 쓰기 적용
 - [x] FIX-22: Review 실행 의도 탐지를 Expected heading 이전 preamble로 제한
 - [x] FIX-23: 최신 Review 실행 실패를 Workflow Gate와 다음 Action 판단에 반영
+- [x] FIX-24: 실패한 Review 실행의 Action 유형을 보존하고 동일 Action으로 복구하도록 상태 라우팅 수정
 
 ---
 
@@ -895,6 +896,75 @@ nonzero_exit
 8. `scripts/agent_next_step.sh status`가 최신 실패 category, 실행 시각과
    복구에 필요한 다음 Action을 명확히 출력하도록 한다.
 
+### FIX-24: 실패한 Review 실행의 Action 유형을 보존하고 동일 Action으로 복구하도록 상태 라우팅 수정
+
+최신 Review 실행 실패를 Workflow Gate에 반영하는 과정에서 실패 상태만
+보존하고 해당 실행이 `antigravity-review-unit`인지
+`antigravity-review`인지 구분하지 않는 문제가 확인됐다.
+
+현재 `WorkflowState.suggested_action`은 모든 Review 실패에 대해 다음 Action을
+반환한다.
+
+```text
+antigravity-review
+```
+
+이로 인해 `antigravity-review-unit` 실행이 실패한 경우에도 최종 Review
+Action으로 잘못 안내돼 실패한 UNIT Review를 다시 실행할 수 없다.
+
+다음을 수정한다.
+
+1. 최신 Review run 결과에서 실행 Action을 함께 파싱한다.
+
+```text
+antigravity-review-unit
+antigravity-review
+```
+
+2. `WorkflowState`에 최신 Review 실행 Action을 보존한다.
+
+예:
+
+```text
+review_execution_action
+```
+
+3. 최신 실패 실행이 `antigravity-review-unit`이면
+   `suggested_action`도 `antigravity-review-unit`을 반환한다.
+4. 최신 실패 실행이 `antigravity-review`이면
+   `suggested_action`도 `antigravity-review`를 반환한다.
+5. 최신 Review Action을 판별할 수 없는 실패 상태는 임의로 최종 Review에
+   라우팅하지 않고 명시적인 오류 또는 안전한 차단 상태로 처리한다.
+6. `format_status()`에 다음 정보를 출력한다.
+   - Latest review action
+   - Latest review status
+   - Failure category
+   - Recovery action
+7. 다음 회귀 테스트를 추가한다.
+
+```text
+과거 UNIT Review PASS
+→ 최신 antigravity-review-unit 실패
+→ suggested_action=antigravity-review-unit
+```
+
+```text
+과거 Integration Review PASS
+→ 최신 antigravity-review 실패
+→ suggested_action=antigravity-review
+```
+
+```text
+최신 Review 실패
+→ Action 유형 불명
+→ PR 또는 완료 Action 미제안
+```
+
+8. 후속 동일 Action Review가 성공하면 실패 상태가 해제되고 정상 다음 단계로
+   이동하는 것을 검증한다.
+9. 기존 과거 Review markdown bytes 보존 계약은 유지한다.
+10. `scripts/agent_next_step.sh status`에서도 올바른 복구 Action을 안내한다.
+
 ---
 
 ## Manual Verification Required
@@ -1096,14 +1166,33 @@ PROBLEM_COUNT: 0
 - 후속 Review 성공 로그가 최신 실행이면 이전 실패 gate가 해제되는 회귀 테스트를
   추가했다.
 
+### FIX-24
+
+적용 완료:
+
+- 최신 Review 실행 로그의 `action`을 `WorkflowState.review_execution_action`에
+  보존한다.
+- 최신 실패 실행이 `antigravity-review-unit`이면 `suggested_action`과 status
+  복구 안내도 `antigravity-review-unit`을 반환한다.
+- 최신 실패 실행이 `antigravity-review`이면 같은 최종 Review action으로 복구를
+  안내한다.
+- 실패 로그에서 action을 판별할 수 없으면 `resolve-review-failure`로 차단하고
+  PR 또는 완료 단계로 진행하지 않는다.
+- `format_status()`에 Latest review action과 action별 Review recovery action을
+  출력한다.
+- 실패 action별 라우팅, unknown action 차단과 후속 성공 로그의 gate 해제를
+  회귀 테스트로 검증했다.
+- Usage Guide와 Antigravity Review Guide의 실패 복구 설명을 현재 action 보존
+  계약에 맞게 갱신했다.
+
 ---
 
 ## Verification Required
 
-현재 FIX-23까지 적용과 검증이 완료됐다. 아래 FIX-17 항목은 해당 수정 당시의
+현재 FIX-24까지 적용과 검증이 완료됐다. 아래 FIX-17 항목은 해당 수정 당시의
 검증 기준 기록이며, FIX-18 이후 검증 결과는
 `docs/verification/fix-antigravity-review-automation.md`의 `FIX-18 Verification`
-및 `FIX-19 ~ FIX-23 Verification` section에 기록한다.
+및 이후 FIX별 Verification section에 기록한다.
 
 ### FIX-17 집중 테스트
 

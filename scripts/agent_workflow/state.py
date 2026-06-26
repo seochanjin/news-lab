@@ -69,6 +69,7 @@ class WorkflowState:
     review_verdict: str | None
     automatic_review_status: str
     review_execution_status: str
+    review_execution_action: str | None
     review_failure_category: str | None
     review_failure_started_at: str | None
     manual_review_required: bool
@@ -84,7 +85,12 @@ class WorkflowState:
         """
 
         if self.review_execution_status == "failed":
-            return "antigravity-review"
+            if self.review_execution_action in {
+                "antigravity-review-unit",
+                "antigravity-review",
+            }:
+                return self.review_execution_action
+            return "resolve-review-failure"
         if self.review_status == "completed" and self.approved_fixes_status == "approved":
             return "codex-fix"
         if (
@@ -208,6 +214,20 @@ def _latest_review_run(repo: Path, safe_branch: str) -> dict[str, object] | None
     return None
 
 
+def _review_run_action(run: dict[str, object]) -> str | None:
+    """실행 결과 JSON에서 Review action을 검증해 반환한다.
+
+    최신 실패 복구는 실패한 action과 같은 action으로만 라우팅해야 한다. JSON에
+    action이 없거나 지원 Review action이 아니면 None을 반환해 임의의 최종 Review
+    action으로 진행하지 않게 한다.
+    """
+
+    action = run.get("action")
+    if action in {"antigravity-review-unit", "antigravity-review"}:
+        return str(action)
+    return None
+
+
 def load_state(repo: str | Path = ".") -> WorkflowState:
     """Repository와 현재 branch를 조사해 WorkflowState를 생성한다.
 
@@ -233,9 +253,11 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
     latest_review_run = _latest_review_run(root, safe)
     automatic_review_status = "unavailable"
     review_execution_status = "not started"
+    review_execution_action = None
     review_failure_category = None
     review_failure_started_at = None
     if latest_review_run:
+        review_execution_action = _review_run_action(latest_review_run)
         automatic_review_status = (
             "available"
             if latest_review_run.get("automatic_execution_supported") is True
@@ -267,6 +289,9 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
         review_verdict=review_validation.verdict,
         automatic_review_status=automatic_review_status,
         review_execution_status=review_execution_status,
+        review_execution_action=(
+            review_execution_action if review_execution_status != "not started" else None
+        ),
         review_failure_category=review_failure_category,
         review_failure_started_at=(
             review_failure_started_at if review_execution_status == "failed" else None
@@ -365,6 +390,9 @@ def format_status(state: WorkflowState) -> str:
             "Review execution:",
             f"- {state.review_execution_status}",
             "",
+            "Latest review action:",
+            f"- {state.review_execution_action or 'unknown'}",
+            "",
             "Manual review required:",
             f"- {'yes' if state.manual_review_required else 'no'}",
             "",
@@ -408,7 +436,11 @@ def format_status(state: WorkflowState) -> str:
                 f"- {state.review_failure_started_at}",
                 "",
                 "Review recovery action:",
-                "- scripts/agent_run.sh antigravity-review",
+                (
+                    f"- scripts/agent_run.sh {state.review_execution_action}"
+                    if state.review_execution_action
+                    else "- unknown; inspect latest .agent-runs result.json"
+                ),
             ]
         )
     return "\n".join(lines)

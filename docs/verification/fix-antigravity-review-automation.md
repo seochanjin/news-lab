@@ -534,6 +534,46 @@ Status: passed
 Command:
 
 ```bash
+scripts/agent_next_step.sh status
+```
+
+Result:
+
+- status 명령이 exit 0으로 완료됐다.
+- 현재 Branch, Verification, Review execution과 `Latest review action:
+  antigravity-review`가 출력됐다.
+- 현재 Review markdown 검증은 기존 상태처럼 `missing_sections`였고 Suggested next
+  action은 `antigravity-review-write`로 출력됐다.
+
+Status: passed
+
+Command:
+
+```bash
+python - <<'PY'
+from scripts.agent_workflow.approved_fixes import normalize_approved_fixes
+
+result = normalize_approved_fixes(
+    "docs/fixes/fix-antigravity-review-automation-approved-fixes.md"
+)
+
+print(f"created={result.created}")
+print(f"pending={[fix.identifier for fix in result.fixes if not fix.checked]}")
+PY
+```
+
+Result:
+
+```text
+created=False
+pending=[]
+```
+
+Status: passed
+
+Command:
+
+```bash
 python -m compileall scripts tests
 bash -n scripts/agent_run.sh scripts/agent_next_step.sh
 git diff --check
@@ -1481,5 +1521,82 @@ Result:
 created=False
 pending=['FIX-19', 'FIX-20', 'FIX-21', 'FIX-22', 'FIX-23']
 ```
+
+Status: passed
+
+## FIX-24 Verification
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_workflow_state.py -v
+```
+
+Result:
+
+- 20개 테스트와 3개 subtest가 통과했다.
+- 최신 실패 로그의 `action`이 `antigravity-review-unit`이면
+  `suggested_action=antigravity-review-unit`과 동일 action 복구 안내가 출력됨을
+  확인했다.
+- 최신 실패 로그의 `action`이 `antigravity-review`이면
+  `suggested_action=antigravity-review`와 동일 action 복구 안내가 출력됨을
+  확인했다.
+- 실패 로그에서 action을 판별할 수 없으면 `resolve-review-failure`로 차단하고
+  PR 또는 완료 Action을 제안하지 않음을 확인했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_workflow_state.py tests/test_agent_review_docs.py -v
+```
+
+Result:
+
+- 23개 테스트와 13개 subtest가 통과했다.
+- Workflow state 변경과 Review 관련 문서 회귀가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_*.py -v
+```
+
+Result:
+
+- 141개 Agent workflow 테스트와 51개 subtest가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m unittest tests.test_agent_workflow_state
+```
+
+Result:
+
+- 20개 unittest가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m compileall scripts tests
+bash -n scripts/agent_run.sh scripts/agent_next_step.sh
+git diff --check
+git diff -- app db k8s requirements.txt
+```
+
+Result:
+
+- `scripts`와 `tests` 전체 compileall이 통과했다.
+- Shell script 문법 검사가 통과했다.
+- `git diff --check` 출력이 없었다.
+- Application, DB, K3s manifest와 dependency 변경 diff가 없었다.
 
 Status: passed
