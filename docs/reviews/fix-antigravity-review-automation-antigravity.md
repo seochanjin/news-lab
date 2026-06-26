@@ -493,3 +493,45 @@ scripts/agent_next_step.sh status
 
 ### Verdict
 - PASS
+
+## Re-review 2
+### Existing Problems Status
+- 이전 Review에서 제기된 문제사항들은 Approved Fixes(FIX-01 ~ FIX-23)를 통해 모두 보완 및 조치 완료되었습니다.
+
+### Approved Fixes Verification
+- FIX-01: applied (implementation-fix) - Review Agent의 도구 및 명령어 실행 제한 조치를 `runner.py`에 적용하여 계약을 강화하였습니다.
+- FIX-02: applied (implementation-fix) - `review_context.py`에서 불필요한 Task·Verification 전체 내용 주입을 배제하여 Context 전송량을 최소화하였습니다.
+- FIX-03: applied (implementation-fix) - Antigravity Review 과정 중 무한 루프나 재귀 실행을 차단하기 위한 상호 배제 가드(Guard) 로직을 정상 반영하였습니다.
+- FIX-04: applied (implementation-fix) - 모델의 비정상 실행 시도 반응을 감지하고 분류하기 위해 `review_response_invalid` 오류 유형을 세분화하여 추가하였습니다.
+- FIX-05: applied (implementation-fix) - 실패 응답 회귀 테스트를 위해 `test_agent_workflow_runner.py`에 관련 테스트 Fixture를 생성하고 동작을 검증하였습니다.
+- FIX-06: applied (implementation-fix) - 기대되는 응답 Heading 포맷의 이탈을 막고자 프롬프트 상·하단에 예상 Heading을 명시하도록 수정하였습니다.
+- FIX-07: applied (implementation-fix) - 외부 연동 전 실제 크기와 축약된 요약 정보를 미리 출력하도록 인터페이스를 보강하였습니다.
+- FIX-08: applied (implementation-fix) - `agy` 도구의 쉘 기능 우회 비활성화 옵션을 확인하고 안전하게 시스템에 통합하였습니다.
+- FIX-09: applied (human-verification) - 현재 적용(applied) 상태이나 `human-verification` 분류에 속하므로, Re-review 2가 통과(PASS)하고 최종 PR 머지 전에 사람이 직접 작동성을 점검하여 수동으로 검증 완료 처리할 예정입니다.
+- FIX-10: applied (implementation-fix) - 세부 구현 사항과 연계된 체크리스트가 동적으로 자동 생성되도록 유닛 상태 갱신 엔진을 개선하였습니다.
+- FIX-11: applied (implementation-fix) - `agy --print` CLI 표준 계약서 규격에 맞게 프롬프트 생성 파라미터 전달 순서를 동기화하였습니다.
+- FIX-12: applied (implementation-fix) - Review 본문 파싱 시 Markdown의 단일 bullet 기호를 고르게 정규화 처리하였습니다.
+- FIX-13: applied (implementation-fix) - 정상 본문 텍스트 내에서 실행 경로가 단순 설명 목적으로 인용되는 경우에 대한 차단 오탐을 수정하였습니다.
+- FIX-14: applied (implementation-fix) - Verdict 등 스칼라 판단부의 종결 문자가 포맷 정규화 조건에 맞도록 보정하였습니다.
+- FIX-15: applied (implementation-fix) - 통합 Review 완료 후 최상위 수준의 요약이 Review Status에 자동 반영되도록 마이그레이션 로직을 검증하였습니다.
+- FIX-16: applied (implementation-fix) - 개별 UNIT Review를 수행하는 `antigravity-review-unit`과 전체 통합 Review용인 `antigravity-review` 액션을 개별 프로세스로 정밀 분리하였습니다.
+- FIX-17: applied (implementation-fix) - Re-review 실행 프롬프트가 개별 Approved Fixes의 ID 및 처리 현황을 누락 없이 검사하도록 입력을 보강하였습니다.
+- FIX-18: applied (implementation-fix) - 전반적인 안내 문서들과 코드 내부의 Verdict 판단 기준(PASS/CHANGES REQUIRED/BLOCKED) 계약 정합성을 완벽하게 동기화하였습니다.
+- FIX-19: applied (implementation-fix) - human-verification 항목만 보류(pending) 중인 상황에서도 정상적으로 Re-review 세션으로 이행할 수 있도록 수동 진입 규칙을 완화하였습니다.
+- FIX-20: applied (implementation-fix) - `review_context.py`에서 `SENSITIVE_PATH_MARKER` 조치를 통해 변경 파일 목록과 diff 내에 민감 정보가 포함된 파일의 경로 및 내용을 난독화 필터 처리하였습니다.
+- FIX-21: applied (implementation-fix) - 파일 쓰기 에러 등으로 인해 Review 파일이 깨지는 것을 방지하기 위해 임시 파일을 생성하여 쓰기를 마친 뒤 덮어씌우는 원자적 파일 쓰기(`_atomic_write_text`)로 마이그레이션하였습니다.
+- FIX-22: applied (implementation-fix) - 실행 의도 탐색 시 본문 분석 중의 오동작을 줄이기 위해 Expected heading이 나오기 이전의 preamble 영역으로 검사 대상을 좁혔습니다.
+- FIX-23: applied (implementation-fix) - 최근 발생한 Review 실행의 실패 이력 기록이 유효할 경우, Workflow Gate가 작동하여 다음 액션 제안으로 `antigravity-review` 복구를 권장하게 유도하였습니다.
+
+### Verification Evidence
+- Verification 스냅샷 상에서 pytest 339 passed, unittest 339 passed 결과가 통과하였음을 직접 검증하였습니다.
+- `tests/test_agent_review_docs.py` 계약 검증을 포함하여 신규 작성/변경된 전체 테스트 스위트가 통과하였습니다.
+
+### New Problems Found
+- 없음
+
+### Required Fixes Before PR
+- 없음
+
+### Verdict
+- PASS

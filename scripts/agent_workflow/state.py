@@ -70,6 +70,7 @@ class WorkflowState:
     automatic_review_status: str
     review_execution_status: str
     review_failure_category: str | None
+    review_failure_started_at: str | None
     manual_review_required: bool
     approved_fixes_status: str
 
@@ -82,6 +83,8 @@ class WorkflowState:
         안내한다.
         """
 
+        if self.review_execution_status == "failed":
+            return "antigravity-review"
         if self.review_status == "completed" and self.approved_fixes_status == "approved":
             return "codex-fix"
         if (
@@ -231,6 +234,7 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
     automatic_review_status = "unavailable"
     review_execution_status = "not started"
     review_failure_category = None
+    review_failure_started_at = None
     if latest_review_run:
         automatic_review_status = (
             "available"
@@ -240,6 +244,9 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
         review_failure_category_value = latest_review_run.get("failure_category")
         if isinstance(review_failure_category_value, str):
             review_failure_category = review_failure_category_value
+        started_at_value = latest_review_run.get("started_at")
+        if isinstance(started_at_value, str):
+            review_failure_started_at = started_at_value
         if review_failure_category or latest_review_run.get("exit_code") not in {0, None}:
             review_execution_status = "failed"
         elif latest_review_run.get("review_completed") is True:
@@ -261,11 +268,17 @@ def load_state(repo: str | Path = ".") -> WorkflowState:
         automatic_review_status=automatic_review_status,
         review_execution_status=review_execution_status,
         review_failure_category=review_failure_category,
+        review_failure_started_at=(
+            review_failure_started_at if review_execution_status == "failed" else None
+        ),
         manual_review_required=(
-            review_status != "completed"
-            and (
-                automatic_review_status == "unavailable"
-                or review_execution_status == "failed"
+            review_execution_status == "failed"
+            or (
+                review_status != "completed"
+                and (
+                    automatic_review_status == "unavailable"
+                    or review_execution_status == "failed"
+                )
             )
         ),
         approved_fixes_status=_document_status(paths.approved_fixes, "Approved Fixes"),
@@ -385,6 +398,17 @@ def format_status(state: WorkflowState) -> str:
                 "",
                 "Review failure category:",
                 f"- {state.review_failure_category}",
+            ]
+        )
+    if state.review_failure_started_at:
+        lines.extend(
+            [
+                "",
+                "Latest review failure started at:",
+                f"- {state.review_failure_started_at}",
+                "",
+                "Review recovery action:",
+                "- scripts/agent_run.sh antigravity-review",
             ]
         )
     return "\n".join(lines)

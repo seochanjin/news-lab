@@ -111,10 +111,12 @@ PR과 devlog는 이 기록을 근거로 작성한다.
 ## Antigravity review gate
 
 Antigravity UNIT Review는 Task 구현 상태와 `Unit Review Status`를 대조해
-구현 완료·Review 미통과인 가장 앞선 UNIT만 선택한다. 마지막 UNIT은 전체 통합
-Review이며, 모든 UNIT Review와 승인 Fix 적용이 끝난 뒤에만 Re-review를
-선택한다. UNIT Task는 전체 Verification이 `pending`이어도 완료 UNIT의 Review를
-허용하지만, 명시적 `failed`와 일반 Task의 `pending`은 차단한다.
+구현 완료·Review 미통과인 가장 앞선 UNIT만 선택한다. 마지막 UNIT도
+`antigravity-review-unit`에서는 UNIT Review로만 처리하며, 모든 UNIT Review가
+끝난 뒤 별도의 `antigravity-review` 실행에서 Integration Review를 선택한다.
+Integration Review와 승인 Fix 적용이 끝난 뒤에만 Re-review를 선택한다. UNIT
+Task는 전체 Verification이 `pending`이어도 완료 UNIT의 Review를 허용하지만,
+명시적 `failed`와 일반 Task의 `pending`은 차단한다.
 
 `--dry-run`은 mode, UNIT, FIX, 최신 전체 테스트 snapshot과 prompt를 파일 쓰기
 없이 확인하는 gate다. 예상 heading, prompt line·byte 수와 제한 diff 파일 수도

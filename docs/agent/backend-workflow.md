@@ -123,4 +123,5 @@ scripts/agent_next_step.sh antigravity-review-write
 
 첫 명령은 review 요청 prompt를, 둘째 명령은 결과를 branch별 review 파일에
 작성하는 prompt를 출력한다. 수동 review도 [Antigravity review 지침의 구조와
-Verdict](antigravity-review.md)를 충족해야 완료로 판정한다.
+Verdict](antigravity-review.md)를 충족해야 완료로 판정하며, 자동 Review와 같은
+`PASS`, `CHANGES REQUIRED`, `BLOCKED` Verdict만 사용한다.

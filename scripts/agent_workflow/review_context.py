@@ -62,7 +62,8 @@ SENSITIVE_FILE_NAMES = {
     "credentials.json",
     "kubeconfig",
 }
-SENSITIVE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
+SENSITIVE_SUFFIXES = {".key", ".pem", ".p12", ".pfx", ".crt", ".cer"}
+SENSITIVE_PATH_MARKER = "<sensitive-path-redacted>"
 MAX_UNTRACKED_TEXT_BYTES = 256_000
 MAX_DIFF_FILE_CHARS = 12_000
 MAX_DIFF_TOTAL_CHARS = 48_000
@@ -236,8 +237,20 @@ def _is_sensitive_path(path: Path) -> bool:
         name in SENSITIVE_FILE_NAMES
         or name.startswith(".env.")
         or path.suffix.lower() in SENSITIVE_SUFFIXES
-        or any(part in {"secrets", ".ssh"} for part in lower_parts)
+        or any(
+            part in {"secret", "secrets", "credential", "credentials", ".ssh"}
+            for part in lower_parts
+        )
     )
+
+
+def _redact_changed_file_entry(entry: str) -> str:
+    """Git porcelain 변경 항목에서 민감 old/new 경로를 고정 marker로 대체한다."""
+
+    parts = [part.strip() for part in entry.split(" -> ")]
+    if any(_is_sensitive_path(Path(part)) for part in parts):
+        return SENSITIVE_PATH_MARKER
+    return entry
 
 
 def _render_untracked_file(repo: Path, relative_name: str) -> str:
@@ -256,7 +269,7 @@ def _render_untracked_file(repo: Path, relative_name: str) -> str:
     if candidate.is_symlink():
         return f"### Untracked file omitted: {relative_name} (symlink)"
     if _is_sensitive_path(candidate):
-        return f"### Untracked file omitted: {relative_name} (sensitive path)"
+        return f"### Untracked file omitted: {SENSITIVE_PATH_MARKER} (sensitive path)"
     try:
         if candidate.stat().st_size > MAX_UNTRACKED_TEXT_BYTES:
             return f"### Untracked file omitted: {relative_name} (file too large)"
@@ -282,6 +295,23 @@ def _diff_path(block: str) -> str:
     return match.group(2) if match else ""
 
 
+def _diff_paths(block: str) -> tuple[str, ...]:
+    """Git diff block의 old/new 경로를 반환하고 형식이 다르면 빈 tuple을 반환한다."""
+
+    first_line = block.splitlines()[0] if block.splitlines() else ""
+    match = re.match(r"^diff --(?:git|untracked) a/(.+?) b/(.+)$", first_line)
+    return (match.group(1), match.group(2)) if match else ()
+
+
+def _sensitive_diff_marker() -> str:
+    """민감 파일 diff를 대체할 고정 marker block을 반환한다."""
+
+    return (
+        f"diff --git a/{SENSITIVE_PATH_MARKER} b/{SENSITIVE_PATH_MARKER}\n"
+        "... sensitive path omitted from review context ..."
+    )
+
+
 def _limit_diff_blocks(diff_text: str) -> str:
     """문서 diff를 제외하고 파일별·전체 크기 상한을 적용한 Review diff를 반환한다."""
 
@@ -293,6 +323,8 @@ def _limit_diff_blocks(diff_text: str) -> str:
         if not block:
             continue
         path = _diff_path(block)
+        if any(_is_sensitive_path(Path(diff_path)) for diff_path in _diff_paths(block)):
+            block = _sensitive_diff_marker()
         if path.startswith("docs/"):
             continue
         if len(block) > MAX_DIFF_FILE_CHARS:
@@ -364,7 +396,9 @@ def build_review_context(
         raise ReviewContextError(f"지원하지 않는 Review action입니다: {action}")
     status_output = run_git(root, "status", "--porcelain")
     changed_files = tuple(
-        line[3:] for line in status_output.splitlines() if len(line) >= 4
+        _redact_changed_file_entry(line[3:])
+        for line in status_output.splitlines()
+        if len(line) >= 4
     )
     git_diff = _collect_git_diff(root)
     task_units = task.implementation_units or ()

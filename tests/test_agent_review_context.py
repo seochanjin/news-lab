@@ -373,10 +373,10 @@ class ReviewContextBuilderTests(unittest.TestCase):
         )
 
     @patch("scripts.agent_workflow.review_context.run_git")
-    def test_includes_safe_untracked_text_and_omits_sensitive_content(
+    def test_includes_safe_untracked_text_and_redacts_sensitive_content(
         self, run_git_mock
     ) -> None:
-        """신규 text 구현은 diff에 넣고 민감 경로의 값은 노출하지 않는지 검증한다."""
+        """신규 구현은 diff에 넣고 민감 경로와 값은 marker로 대체하는지 검증한다."""
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -403,8 +403,73 @@ class ReviewContextBuilderTests(unittest.TestCase):
 
         self.assertIn("+++ b/new_module.py", context.git_diff)
         self.assertIn('+\u0022\u0022\u0022새 모듈.\u0022\u0022\u0022', context.git_diff)
-        self.assertIn(".env.local (sensitive path)", context.git_diff)
+        self.assertIn("<sensitive-path-redacted> (sensitive path)", context.git_diff)
+        self.assertIn("<sensitive-path-redacted>", context.changed_files)
+        self.assertNotIn(".env.local", context.git_diff)
+        self.assertNotIn(".env.local", context.changed_files)
         self.assertNotIn("TOKEN=노출금지", context.git_diff)
+
+    @patch("scripts.agent_workflow.review_context.run_git")
+    def test_redacts_tracked_sensitive_diff_path_and_body(self, run_git_mock) -> None:
+        """tracked 민감 파일 변경도 경로와 본문을 Review Context에서 제거한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task = parse_task(write_task(root, "- [x] UNIT-01: Context 생성"))
+            run_git_mock.side_effect = [
+                " M secrets/prod.pem",
+                "diff --git a/secrets/prod.pem b/secrets/prod.pem\n"
+                "--- a/secrets/prod.pem\n"
+                "+++ b/secrets/prod.pem\n"
+                "+PRIVATE_KEY=노출금지\n",
+                "",
+            ]
+
+            context = build_review_context(
+                repo=root,
+                branch="fix/context",
+                task=task,
+                review_status=status(("UNIT-01", "Context 생성", False)),
+                review_path=root / "review.md",
+                verification_path=root / "verification.md",
+            )
+
+        self.assertIn("<sensitive-path-redacted>", context.git_diff)
+        self.assertIn("<sensitive-path-redacted>", context.changed_files)
+        self.assertNotIn("secrets/prod.pem", context.git_diff)
+        self.assertNotIn("secrets/prod.pem", context.changed_files)
+        self.assertNotIn("PRIVATE_KEY=노출금지", context.git_diff)
+
+    @patch("scripts.agent_workflow.review_context.run_git")
+    def test_redacts_sensitive_old_path_in_rename_diff(self, run_git_mock) -> None:
+        """민감 파일 rename diff의 old path도 Review Context에 노출하지 않는다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task = parse_task(write_task(root, "- [x] UNIT-01: Context 생성"))
+            run_git_mock.side_effect = [
+                "R  secrets/prod.pem -> config/public.txt",
+                "diff --git a/secrets/prod.pem b/config/public.txt\n"
+                "similarity index 100%\n"
+                "rename from secrets/prod.pem\n"
+                "rename to config/public.txt\n",
+                "",
+            ]
+
+            context = build_review_context(
+                repo=root,
+                branch="fix/context",
+                task=task,
+                review_status=status(("UNIT-01", "Context 생성", False)),
+                review_path=root / "review.md",
+                verification_path=root / "verification.md",
+            )
+
+        self.assertIn("<sensitive-path-redacted>", context.git_diff)
+        self.assertEqual(context.changed_files, ("<sensitive-path-redacted>",))
+        self.assertNotIn("secrets/prod.pem", context.git_diff)
+        self.assertNotIn("config/public.txt", context.git_diff)
+        self.assertNotIn("secrets/prod.pem", context.changed_files)
 
     @patch("scripts.agent_workflow.review_context.run_git")
     def test_excludes_document_diff_and_truncates_large_source_diff(

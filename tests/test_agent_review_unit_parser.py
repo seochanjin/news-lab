@@ -8,6 +8,7 @@
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from scripts.agent_workflow.review_unit_status import (
     ReviewUnitStatusError,
@@ -93,6 +94,29 @@ class ReviewUnitParserTests(unittest.TestCase):
         self.assertTrue(result.created)
         self.assertIn("## Unit Review Status\n\n- [ ] UNIT-01: 첫 구현", updated)
         self.assertIn("## Review Summary\n\n기존 검토 이력", updated)
+
+    def test_status_creation_preserves_existing_review_when_replace_fails(self) -> None:
+        """원자적 replace 실패 시 기존 Review History bytes를 보존하는지 검증한다."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            task = parse_task(write_task(root, "- [x] UNIT-01: 첫 구현"))
+            review = root / "review.md"
+            original = (
+                "# Antigravity Review: 기존 제목\n\n"
+                "## Review Summary\n\n기존 검토 이력\n"
+            )
+            review.write_text(original, encoding="utf-8")
+            before = review.read_bytes()
+
+            with patch(
+                "scripts.agent_workflow.review_unit_status.os.replace",
+                side_effect=OSError("replace failed"),
+            ):
+                with self.assertRaises(OSError):
+                    ensure_review_unit_status(task, review)
+
+            self.assertEqual(review.read_bytes(), before)
 
     def test_preserves_existing_review_checks_and_history(self) -> None:
         """이미 생성된 status의 체크 상태와 Review 이력을 변경하지 않는지 검증한다."""

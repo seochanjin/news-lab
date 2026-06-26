@@ -1,8 +1,8 @@
 """Antigravity review Markdown의 구조와 완료 조건을 검증한다.
 
 Review 파일 경로를 입력받아 파일 존재, 템플릿 잔존, 필수 section, 실제
-review 본문과 허용 Verdict를 판정한다. 최초 review와 최신 Re-review 구조를
-구분해 검사하며 파일을 수정하거나 Agent subprocess를 실행하지 않는다.
+review 본문과 허용 Verdict를 판정한다. 자동 실행과 수동 fallback 모두 같은
+Verdict 계약을 사용하며 파일을 수정하거나 Agent subprocess를 실행하지 않는다.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ from pathlib import Path
 import re
 
 
-ALLOWED_VERDICTS = ("APPROVED", "APPROVED WITH NOTES", "CHANGES REQUIRED")
+ALLOWED_VERDICTS = ("PASS", "CHANGES REQUIRED", "BLOCKED")
 INITIAL_REQUIRED_SECTIONS = (
     "Review Summary",
     "Requirement Coverage",
@@ -74,7 +74,7 @@ def _sections(text: str) -> list[tuple[int, str, str]]:
 
 
 def _normalized_verdict(body: str) -> str | None:
-    """Verdict 본문에서 Markdown 강조를 제거한 허용 Verdict 하나를 반환한다."""
+    """Verdict 본문에서 Markdown 강조를 제거한 현행 허용 Verdict 하나를 반환한다."""
 
     for line in body.splitlines():
         candidate = line.strip().lstrip("- ").strip()

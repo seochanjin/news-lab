@@ -42,4 +42,12 @@ Output format:
 
 ## Risk Notes
 
+## Verdict
+
+Verdict에는 다음 중 하나만 사용한다.
+
+- `PASS`
+- `CHANGES REQUIRED`
+- `BLOCKED`
+
 Do not push. Do not merge. Do not run production commands.

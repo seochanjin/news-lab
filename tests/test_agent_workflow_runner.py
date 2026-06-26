@@ -458,6 +458,48 @@ pytest 324 passed, unittest 324 passed
                 review_context=review_context(repo),
             )
             self.assertEqual(result.exit_code, 0)
+
+    def test_review_body_can_quote_previous_execution_attempt_response(self) -> None:
+        """Expected heading 뒤 Review 본문에 과거 실행 시도 문구가 있어도 허용한다."""
+
+        response = """## UNIT Review: UNIT-01
+### Review Scope
+과거 실패 응답 인용: I am running `scripts/agent_run.sh antigravity-review`.
+### Requirement Coverage
+자동 실행 경로 구현 완료
+### Previous UNIT Contract Regression
+- 없음
+### Code Quality / Maintainability
+양호
+### Scope Control
+범위 내
+### Verification Evidence
+pytest 324 passed, unittest 324 passed
+### Problems Found
+- 없음
+### Required Fixes Before Next UNIT
+- 없음
+### Verdict
+- PASS
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            repo = make_repo(root)
+            review = repo / "docs" / "reviews" / "feature-example-antigravity.md"
+            executable = fake_executable(
+                root / "quoted-attempt-in-review",
+                f"print({response!r})\n",
+            )
+            result = run_agent(
+                load_state(repo),
+                "antigravity-review",
+                AgentCommand("Antigravity", str(executable), "test"),
+                "prompt",
+                5,
+                log_directory=repo / ".agent-runs" / "quoted-attempt-in-review",
+                review_context=review_context(repo),
+            )
+            self.assertEqual(result.exit_code, 0)
             self.assertIsNone(result.failure_category)
             self.assertEqual(result.review_file_validation, "completed")
             self.assertTrue(result.review_completed)

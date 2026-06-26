@@ -218,14 +218,15 @@ review 응답 검증, 완료 판정과 다음 action을 포함한다. `prompt.md
 append하지 않는다.
 
 `PASS`만 Unit Review Status를 `[x]`로 바꾼다. 마지막 UNIT의 PASS는 전체 통합
-Review 통과를 뜻한다. 승인 Fix 적용 후 Re-review에서는 하네스가 계산한 다음
-번호와 현재 FIX ID, Verification의 종류별 최신 전체 테스트 수가 응답과
-일치해야 한다. 과거 Review 수치를 현재 결과로 작성하면 파일을 변경하지 않고
-실패한다.
+Review 통과를 뜻하지 않는다. 모든 UNIT Review가 끝난 뒤 별도의
+`antigravity-review` 실행에서 Integration Review를 통과해야 전체 통합 Review가
+완료된다. 승인 Fix 적용 후 Re-review에서는 하네스가 계산한 다음 번호와 현재
+FIX ID, Verification의 종류별 최신 전체 테스트 수가 응답과 일치해야 한다. 과거
+Review 수치를 현재 결과로 작성하면 파일을 변경하지 않고 실패한다.
 
-기존 prompt-only 수동 Review 파일 판정은 기존 `APPROVED`,
-`APPROVED WITH NOTES`, `CHANGES REQUIRED` 계약을 유지한다. 어느 경로든 Review
-finding은 사람이 Approved Fixes에 승인하기 전까지 구현 변경 근거가 아니다.
+prompt-only 수동 Review 파일 판정도 `PASS`, `CHANGES REQUIRED`, `BLOCKED` 계약을
+사용한다. 어느 경로든 Review finding은 사람이 Approved Fixes에 승인하기 전까지
+구현 변경 근거가 아니다.
 
 ## 다른 저장소에 동일 기준 적용
 

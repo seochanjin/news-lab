@@ -4,16 +4,19 @@
 
 현재 Antigravity review workflow는 사용자가 긴 review prompt를 직접 작성해 입력해야 하며, Re-review 과정에서 기존 Review의 과거 상태를 최신 상태로 잘못 해석할 수 있다.
 
-이번 작업의 목표는 다음 명령 하나로 현재 작업 상태를 분석하고, 적절한 Review를 자동 실행하도록 개선하는 것이다.
+이번 작업의 목표는 Review action별 명령으로 현재 작업 상태를 분석하고, 적절한
+Review를 자동 실행하도록 개선하는 것이다. UNIT Review와 최종 Review는
+FIX-16에서 분리된 현재 계약을 따른다.
 
 ```bash
+scripts/agent_run.sh antigravity-review-unit
 scripts/agent_run.sh antigravity-review
 ```
 
 하네스는 Task의 Implementation Units, 기존 Antigravity Review, Approved Fixes, Verification과 현재 Git diff를 분석해 다음 Review 모드를 자동 결정해야 한다.
 
-- UNIT Review
-- 마지막 UNIT의 전체 통합 Review
+- UNIT Review (`antigravity-review-unit`)
+- 모든 UNIT Review 완료 후 별도 전체 통합 Review (`antigravity-review`)
 - Approved Fixes 적용 후 Re-review
 
 Task에 정의된 UNIT 목록을 기준으로 Antigravity Review 파일에 Review Status 체크리스트를 자동 생성한다. 구현이 완료됐지만 아직 Review를 통과하지 않은 다음 UNIT을 선택하고, Antigravity 실행 결과를 같은 Review 파일에 누적한다.
@@ -25,7 +28,7 @@ Re-review에서는 Approved Fixes와 최신 Verification 상태를 하네스가 
 ```text
 현재 Branch와 Task 탐색
 → Review 모드 결정
-→ 다음 Review 대상 UNIT 선택
+→ action별 다음 Review 대상 선택
 → Review Context와 Prompt 생성
 → Antigravity 실행
 → 응답 구조와 상태 검증
@@ -35,7 +38,8 @@ Re-review에서는 Approved Fixes와 최신 Verification 상태를 하네스가 
 
 ## Scope
 
-- `scripts/agent_run.sh antigravity-review` 실행 경로 추가 또는 기존 경로 개선
+- `scripts/agent_run.sh antigravity-review-unit`와
+  `scripts/agent_run.sh antigravity-review` 실행 경로 추가 또는 기존 경로 개선
 - 사용자의 수동 Prompt 입력 없이 Antigravity 실행
 - 현재 Git Branch 기준 Task, Review, Verification, Approved Fixes 파일 탐색
 - Task의 `Implementation Units` 파싱
@@ -46,7 +50,7 @@ Re-review에서는 Approved Fixes와 최신 Verification 상태를 하네스가 
 - UNIT Review 결과를 기존 Antigravity Review 파일에 누적
 - UNIT Review 결과가 `PASS`일 때만 Review Status를 `[x]`로 변경
 - `CHANGES REQUIRED` 또는 `BLOCKED`이면 `[ ]` 유지
-- 마지막 UNIT을 전체 통합 Review로 처리
+- 모든 UNIT Review가 완료된 뒤 별도 최종 Review action에서 전체 통합 Review 처리
 - Approved Fixes의 FIX ID, 완료 여부, 보류·거절 상태 파싱
 - Verification에서 최신 테스트와 정적 검사 결과 파싱
 - 기존 Review History에서 다음 Re-review 번호 계산
@@ -71,7 +75,9 @@ UNIT Review는 해당 UNIT의 변경 범위만 검토하는 짧은 Review로 구
 - 이전 UNIT 계약 회귀 여부
 - 코드와 테스트의 문서화 정책
 
-마지막 UNIT Review는 전체 통합 Review 역할을 수행한다.
+현재 계약에서 마지막 UNIT Review는 해당 UNIT의 Review 통과만 의미한다. 전체
+통합 Review는 모든 UNIT Review가 완료된 뒤 `antigravity-review`에서 별도로
+수행한다.
 
 검토 범위는 다음과 같다.
 
@@ -187,6 +193,7 @@ FastAPI Route, Request·Response Schema와 기존 Public API 계약은 변경하
 목표 명령:
 
 ```bash
+scripts/agent_run.sh antigravity-review-unit
 scripts/agent_run.sh antigravity-review
 ```
 
@@ -251,7 +258,8 @@ bash -n scripts/agent_run.sh
 
 변경된 다른 Shell Script도 동일하게 검사한다.
 
-Repository 전체 회귀 테스트는 마지막 UNIT에서 실행한다.
+Repository 전체 회귀 테스트는 마지막 UNIT 구현과 별도 Integration Review 전후에
+실행한다.
 
 ```bash
 python -m pytest
@@ -278,7 +286,8 @@ scripts/agent_run.sh antigravity-review --dry-run
 ## Acceptance criteria
 
 - 사용자가 긴 Antigravity Review Prompt를 직접 작성하지 않아도 된다.
-- `scripts/agent_run.sh antigravity-review`가 현재 Branch를 자동으로 확인한다.
+- `scripts/agent_run.sh antigravity-review-unit`와
+  `scripts/agent_run.sh antigravity-review`가 현재 Branch를 자동으로 확인한다.
 - 현재 Branch에 해당하는 Task, Review, Verification과 Approved Fixes 파일을 자동으로 탐색한다.
 - Task의 `Implementation Units`에서 UNIT ID, 상태와 제목을 정확히 파싱한다.
 - Task에 작성된 UNIT 제목을 축약하거나 바꾸지 않는다.
@@ -295,7 +304,8 @@ scripts/agent_run.sh antigravity-review --dry-run
 - `CHANGES REQUIRED` 또는 `BLOCKED`인 경우 Review Status를 `[ ]`로 유지한다.
 - Review에서 발견한 문제는 `- [ ] REVIEW-<UNIT>-<번호>` 형식으로 추적할 수 있다.
 - 동일 UNIT의 동일 Review Section이 중복으로 추가되지 않는다.
-- 마지막 UNIT은 전체 Task 통합 Review로 실행된다.
+- 마지막 UNIT Review는 UNIT Review로 완료되고, 모든 UNIT Review 완료 후 별도
+  Integration Review가 실행된다.
 - Approved Fixes의 FIX 개수와 상태를 하네스가 직접 파싱한다.
 - Verification의 최신 결과를 과거 중간 결과와 구분한다.
 - 기존 Re-review 번호를 읽고 다음 번호를 자동으로 계산한다.
@@ -356,7 +366,8 @@ scripts/agent_run.sh antigravity-review --dry-run
 - Task의 `[x]`는 해당 UNIT 구현 완료를 의미한다.
 - 두 체크박스는 서로 다른 상태다.
 - UNIT Review는 국소 결함을 조기에 발견하기 위한 짧은 검토다.
-- 마지막 UNIT은 전체 통합 Review를 수행한다.
+- 마지막 UNIT은 UNIT Review로만 완료되며 전체 통합 Review는 별도
+  `antigravity-review` action이 수행한다.
 - Approved Fixes는 계속 별도 문서에서 사람이 승인한다.
 - Review finding을 발견했다고 자동으로 Codex Fix를 실행하지 않는다.
 - Review 결과가 `CHANGES REQUIRED`이면 Workflow를 중단하고 사람의 판단을 기다린다.

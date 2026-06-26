@@ -25,13 +25,9 @@ Antigravity Review workflow의 다음 기능을 구현하고 검증했다.
 - `human-verification` FIX가 pending이어도 Re-review 진입을 차단하지 않는 분류
 
 실제 외부 Antigravity Review를 통해 UNIT-01부터 UNIT-08까지 모두 `PASS`가
-반영되는 것을 확인했다.
-
-추가 검토 결과, 현재 하나의 `antigravity-review` action이 UNIT Review,
-Integration Review, Re-review와 일반 Review를 모두 자동 선택하도록 되어 있어
-사용자 관점의 명령 의미와 Re-review 진입 조건이 불명확하다는 문제가 확인됐다.
-
-후속 수정에서는 다음 두 action을 명시적으로 분리한다.
+반영되는 것을 확인했다. 초기 구현 단계에서는 하나의 `antigravity-review`
+action이 UNIT Review, Integration Review, Re-review와 일반 Review를 모두 자동
+선택했으나, FIX-16 이후 현재 계약은 다음 두 action을 명시적으로 분리한다.
 
 ```text
 antigravity-review-unit
@@ -586,6 +582,179 @@ pending=['FIX-09']
 
 Status: passed
 
+## FIX-19 ~ FIX-23 Verification
+
+Command:
+
+```bash
+python -m pytest \
+  tests/test_agent_review_context.py \
+  tests/test_agent_review_unit_parser.py \
+  tests/test_agent_workflow_runner.py \
+  tests/test_agent_workflow_state.py \
+  -v
+```
+
+Result:
+
+- 첫 실행은 56개 테스트 통과, 1개 테스트 실패였다.
+- 실패 원인은 새로 추가한
+  `test_review_body_can_quote_previous_execution_attempt_response` 테스트 fixture의
+  지역 변수 `review` 누락이었다.
+- 기능 코드 실패가 아니라 테스트 코드 오류였으며, fixture를 수정한 뒤 같은
+  명령을 재실행했다.
+
+Status: failed
+
+Command:
+
+```bash
+python -m pytest \
+  tests/test_agent_review_context.py \
+  tests/test_agent_review_unit_parser.py \
+  tests/test_agent_workflow_runner.py \
+  tests/test_agent_workflow_state.py \
+  -v
+```
+
+Result:
+
+- 58개 테스트와 12개 subtest가 통과했다.
+- pending `human-verification`만 남은 상태의 Re-review 선택과 pending
+  implementation FIX 차단을 확인했다.
+- tracked·untracked 민감 경로와 changed files가 `<sensitive-path-redacted>`로
+  대체되고 원본 경로와 민감 본문이 Context에 포함되지 않음을 확인했다.
+- 민감 파일 rename diff의 old/new 경로가 원본 경로 대신
+  `<sensitive-path-redacted>`로 대체됨을 확인했다.
+- Unit Review Status 초기 생성의 원자적 replace 실패 시 기존 Review bytes가
+  보존됨을 확인했다.
+- Expected heading 뒤 Review 본문에서 과거 실행 시도 문구를 인용해도
+  `review_agent_attempted_execution`으로 오탐하지 않음을 확인했다.
+- 최신 Review 실패 로그가 과거 completed Review보다 우선해 다음 action을
+  차단하고, 후속 성공 로그가 실패 gate를 해제함을 확인했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_review_docs.py tests/test_agent_fix_parser.py -v
+```
+
+Result:
+
+- Approved Fixes checklist 완료 처리 후 9개 문서·FIX parser 테스트와 15개
+  subtest가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m compileall \
+  scripts/agent_workflow \
+  tests/test_agent_review_context.py \
+  tests/test_agent_review_unit_parser.py \
+  tests/test_agent_workflow_runner.py \
+  tests/test_agent_workflow_state.py
+```
+
+Result:
+
+- 변경한 Agent workflow 모듈과 관련 테스트 파일 compileall이 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_*.py -v
+```
+
+Result:
+
+- 139개 Agent workflow 테스트와 51개 subtest가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+bash -n scripts/agent_run.sh scripts/agent_next_step.sh
+git diff --check
+```
+
+Result:
+
+- Shell script 문법 검사가 통과했다.
+- `git diff --check` 출력이 없었다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m compileall scripts tests
+git diff -- app db k8s requirements.txt
+```
+
+Result:
+
+- `scripts`와 `tests` 전체 compileall이 통과했다.
+- Application, DB, K3s manifest와 dependency 변경 diff가 없었다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest
+```
+
+Result:
+
+- 전체 Repository pytest 348개가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Result:
+
+- 전체 unittest 348개가 통과했다.
+- argparse 오류 메시지와 provider 실패 log는 해당 테스트가 의도적으로 검증하는
+  출력이며 최종 결과는 `OK`였다.
+
+Status: passed
+
+Command:
+
+```bash
+python - <<'PY'
+from scripts.agent_workflow.approved_fixes import normalize_approved_fixes
+
+result = normalize_approved_fixes(
+    "docs/fixes/fix-antigravity-review-automation-approved-fixes.md"
+)
+
+print(f"created={result.created}")
+print(f"pending={[fix.identifier for fix in result.fixes if not fix.checked]}")
+PY
+```
+
+Result:
+
+```text
+created=False
+pending=[]
+```
+
+Status: passed
+
 Command:
 
 ```bash
@@ -668,7 +837,10 @@ scripts/agent_run.sh antigravity-review
 
 ---
 
-## Pending Verification
+## Pending Verification After FIX-17
+
+다음 내용은 FIX-17 적용 직후 실제 외부 Re-review를 실행하기 전의 과거 pending
+기록이다. 현재 최종 상태는 아래 `Final Re-review Result`를 따른다.
 
 구현, 자동 테스트, 정적 검사, 변경 범위 검증과 FIX-17 dry-run 검증은 완료됐다.
 
@@ -1092,9 +1264,9 @@ Result:
 
 Status: passed
 
-## Final Verification Result
+## FIX-16 Verification Result
 
-- FIX-16 구현과 로컬 검증을 완료했다.
+- FIX-16 구현과 당시 로컬 검증을 완료했다.
 - `antigravity-review-unit`과 `antigravity-review` action을 분리했다.
 - UNIT Review action은 다음 미검토 UNIT 하나만 선택한다.
 - 최종 Review action은 Integration, Summary recovery, Re-review 또는
@@ -1103,7 +1275,8 @@ Status: passed
 - 전체 pytest와 unittest 336개가 통과했다.
 - Agent workflow 회귀, compile, Shell 문법, whitespace와 변경 금지 영역
   검사가 통과했다.
-- 남은 항목은 실제 외부 Antigravity Re-review 실행뿐이다.
+- 당시 남은 항목은 실제 외부 Antigravity Re-review 실행이었다. 현재 해당
+  Re-review는 아래 `Final Re-review Result` 기준으로 완료됐다.
 
 ---
 
@@ -1197,9 +1370,10 @@ Status: passed
 - Re-review Prompt는 모든 현재 FIX ID를 개별 출력 골격으로 제공한다.
 - Validator는 범위 표현만 있는 응답과 pending `human-verification` 상태 왜곡을
   거부한다.
-- Approved Fixes checklist에서 FIX-17은 완료됐고 FIX-09만 pending으로 남았다.
-- 남은 항목은 실제 외부 Antigravity Re-review 실행 및 성공 후 FIX-09 완료
-  처리다.
+- FIX-17 직후에는 Approved Fixes checklist에서 FIX-17은 완료됐고 FIX-09만
+  pending으로 남았다.
+- 이후 실제 외부 Antigravity Re-review 실행과 FIX-09 완료 처리는 아래
+  `Final Re-review Result` 기준으로 완료됐다.
 
 ## Final Re-review Result
 
@@ -1209,3 +1383,103 @@ Status: passed
 - 최신 pytest와 unittest는 각각 339개가 통과했다.
 - Re-review Verdict는 `PASS`였다.
 - Review 응답 검증과 Review History append가 완료됐다.
+- Re-review PASS 후 FIX-09와 VERIFY-03, VERIFY-04 완료 상태가
+  Approved Fixes 문서에 반영됐다.
+
+## FIX-18 Verification
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_review_validation.py tests/test_agent_review_docs.py -v
+```
+
+Result:
+
+- 9개 테스트와 15개 subtest가 통과했다.
+- 수동 Review validator의 허용 Verdict가 `PASS`, `CHANGES REQUIRED`,
+  `BLOCKED`로 정렬됨을 확인했다.
+- Review 관련 문서의 action 분리, Verdict 계약과 CodeRabbit artifact 채움
+  상태를 확인했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest tests/test_agent_*.py -v
+```
+
+Result:
+
+- 133개 Agent workflow 테스트와 51개 subtest가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m pytest
+```
+
+Result:
+
+- 전체 Repository pytest 342개가 통과했다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Result:
+
+- 전체 unittest 342개가 통과했다.
+- argparse 오류 메시지와 provider 실패 log는 해당 테스트가 의도적으로 검증하는
+  출력이며 최종 결과는 `OK`였다.
+
+Status: passed
+
+Command:
+
+```bash
+python -m compileall scripts tests
+bash -n scripts/agent_run.sh scripts/agent_next_step.sh
+git diff --check
+git diff -- app db k8s requirements.txt
+```
+
+Result:
+
+- `scripts`와 `tests` 전체 compileall이 통과했다.
+- Shell script 문법 검사가 통과했다.
+- `git diff --check` 출력이 없었다.
+- Application, DB, K3s manifest와 dependency 변경 diff가 없었다.
+
+Status: passed
+
+Command:
+
+```bash
+python - <<'PY'
+from scripts.agent_workflow.approved_fixes import normalize_approved_fixes
+
+result = normalize_approved_fixes(
+    "docs/fixes/fix-antigravity-review-automation-approved-fixes.md"
+)
+
+print(f"created={result.created}")
+print(f"pending={[fix.identifier for fix in result.fixes if not fix.checked]}")
+PY
+```
+
+Result:
+
+```text
+created=False
+pending=['FIX-19', 'FIX-20', 'FIX-21', 'FIX-22', 'FIX-23']
+```
+
+Status: passed

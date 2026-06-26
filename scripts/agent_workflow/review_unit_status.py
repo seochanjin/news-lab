@@ -11,8 +11,10 @@ Review 응답 검증은 담당하지 않으며, 검증된 PASS Verdict를 받은
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import re
+import tempfile
 
 from .task_parser import TaskDocument
 
@@ -226,10 +228,41 @@ def ensure_review_unit_status(
         return parse_review_unit_status(task, path)
     updated = render_review_with_unit_status(task, original)
     path.parent.mkdir(parents=True, exist_ok=True)
-
-    path.write_text(updated, encoding="utf-8")
+    _atomic_write_text(path, updated)
     parsed = parse_review_unit_status(task, path)
     return ReviewUnitStatus(units=parsed.units, created=True)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """대상 파일과 같은 디렉터리의 임시 파일을 원자적으로 교체한다.
+
+    UTF-8 text를 임시 파일에 쓰고 flush와 fsync까지 끝낸 뒤 `os.replace`로
+    대상 경로를 교체한다. 중간 실패 시 기존 대상 파일을 직접 덮어쓰지 않으며,
+    남은 임시 파일은 가능한 범위에서 정리한다.
+    """
+
+    temp_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temp_name = handle.name
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_name, path)
+        temp_name = None
+    finally:
+        if temp_name is not None:
+            try:
+                Path(temp_name).unlink()
+            except FileNotFoundError:
+                pass
 
 
 def render_review_with_unit_status(task: TaskDocument, original: str) -> str:

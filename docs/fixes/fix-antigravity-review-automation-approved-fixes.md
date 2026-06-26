@@ -19,6 +19,12 @@
 - [x] FIX-15: Integration Review 완료 후 최상위 Review 요약 자동 반영
 - [x] FIX-16: UNIT Review Action과 최종 Review Action 분리
 - [x] FIX-17: Re-review에서 모든 Approved Fix ID와 현재 상태를 개별 검증하도록 Prompt 강화
+- [x] FIX-18: Review 관련 문서와 현재 Action·Verdict·FIX 상태 계약 정합성 개선
+- [x] FIX-19: human-verification만 pending인 상태의 Re-review 진입 조건 수정
+- [x] FIX-20: tracked diff와 changed files에 민감 경로 필터 적용
+- [x] FIX-21: Unit Review Status 초기 생성의 원자적 파일 쓰기 적용
+- [x] FIX-22: Review 실행 의도 탐지를 Expected heading 이전 preamble로 제한
+- [x] FIX-23: 최신 Review 실행 실패를 Workflow Gate와 다음 Action 판단에 반영
 
 ---
 
@@ -738,6 +744,157 @@ scripts/agent_run.sh antigravity-review --dry-run
 scripts/agent_run.sh antigravity-review
 ```
 
+### FIX-18: Review 관련 문서와 현재 Action·Verdict·FIX 상태 계약 정합성 개선
+
+현재 구현은 UNIT Review와 최종 Review Action을 다음과 같이 분리한다.
+
+```text
+antigravity-review-unit
+antigravity-review
+```
+
+그러나 Task, Usage Guide, Antigravity Review Guide, Verification과 Review
+artifact 일부에 분리 이전 계약과 오래된 FIX 상태가 남아 있다.
+
+다음을 수정한다.
+
+1. 자동·수동 Review 모두 다음 Verdict만 사용한다.
+
+```text
+PASS
+CHANGES REQUIRED
+BLOCKED
+```
+
+2. 수동 fallback도 자동 Review와 동일한 Heading, 필수 Section과 Verdict
+   계약을 사용하도록 문서화한다.
+3. Usage Guide의 failure category 표에
+   `review_agent_attempted_execution`과 복구 절차를 추가한다.
+4. 마지막 UNIT Review의 `PASS`는 해당 UNIT Review 완료만 의미하며
+   Integration Review 완료를 뜻하지 않는다고 명시한다.
+5. 모든 UNIT Review 완료 후 `antigravity-review`를 실행해 별도 Integration
+   Review를 수행하도록 문서를 수정한다.
+6. Task 문서에서 `antigravity-review`가 UNIT Review를 자동 선택한다는 옛
+   계약을 제거한다.
+7. Verification의 기존 `antigravity-review` UNIT 실행 기록은 FIX-16 적용 전
+   과거 실행이라는 점을 명시하고 현재 실행 계약과 구분한다.
+8. FIX-09는 최종 Re-review PASS로 완료된 상태를 단일 진실 공급원으로
+   정리한다.
+9. FIX-09 상세 설명, Applied Changes, Verification Required와 pending 예상값의
+   오래된 문구를 완료 상태로 수정한다.
+10. Antigravity Review 상단의 FIX-09와 FIX-14 확인 필요 문구를 제거한다.
+11. 빈 CodeRabbit Review artifact에 실제 Review Summary, Problems Found,
+    Required Fixes, Optional Improvements, Test Commands와 Risk Notes를 기록한다.
+12. 문서 간 Action, Verdict, FIX 상태와 실행 순서가 일치하는 회귀 검사를
+    가능한 범위에서 추가한다.
+
+### FIX-19: human-verification만 pending인 상태의 Re-review 진입 조건 수정
+
+현재 Re-review Resolver는 미적용 implementation FIX가 없는 것을 확인한 뒤에도
+`approved_fixes.applied`가 비어 있으면 최신 Review 완료 상태로 잘못 판단할 수
+있다.
+
+다음을 수정한다.
+
+1. pending implementation FIX가 있으면 Re-review를 차단한다.
+2. pending human-verification만 존재하면 Re-review를 허용한다.
+3. 적용된 implementation FIX가 없더라도 human-verification 완료를 위한
+   Re-review가 필요하면 `re-review` mode를 선택한다.
+4. 모든 FIX와 human verification이 완료됐고 최신 유효 Review가 존재할
+   때만 이미 최신 상태로 판단한다.
+5. human-verification만 pending인 Fixture에서 Re-review를 선택하는 테스트를
+   추가한다.
+6. implementation FIX가 pending인 Fixture에서는 계속 차단한다.
+
+### FIX-20: tracked diff와 changed files에 민감 경로 필터 적용
+
+현재 민감 경로 필터가 미추적 파일 본문에만 적용돼 tracked 민감 파일의 내용과
+경로가 외부 Review Prompt에 포함될 수 있다.
+
+다음을 수정한다.
+
+1. 동일한 민감 경로 판정기를 tracked diff, untracked diff와 changed files에
+   적용한다.
+2. `.env`, credential, key, certificate, kubeconfig, secret 경로의 내용은
+   Prompt에 포함하지 않는다.
+3. 민감 파일의 실제 경로도 `changed_files`에 그대로 노출하지 않는다.
+4. 필요한 경우 `<sensitive-path-redacted>`와 같은 고정 marker만 제공한다.
+5. 일반 파일의 diff 수집 동작과 크기 제한은 유지한다.
+6. tracked 민감 파일 수정 Fixture와 untracked 민감 파일 Fixture를 모두
+   추가한다.
+7. Prompt, Context와 실행 log에 민감 내용 및 원본 경로가 없는지 검증한다.
+
+### FIX-21: Unit Review Status 초기 생성의 원자적 파일 쓰기 적용
+
+`ensure_review_unit_status()`가 기존 Review 파일을 `write_text()`로 직접
+덮어써 중간 실패 시 기존 Review History가 손상될 수 있다.
+
+다음을 수정한다.
+
+1. 기존 append-only writer와 동일한 임시 파일 및 원자적 replace 방식을
+   사용한다.
+2. 임시 파일은 대상 Review 파일과 같은 디렉터리에 생성한다.
+3. write, flush와 replace가 성공한 뒤에만 완료 상태를 반환한다.
+4. 실패하면 기존 Review 파일 bytes를 유지한다.
+5. Status section이 없는 기존 Review History에 대한 실패 주입 회귀 테스트를
+   추가한다.
+6. 신규 Review 파일 생성과 기존 파일 갱신을 모두 검증한다.
+
+### FIX-22: Review 실행 의도 탐지를 Expected heading 이전 preamble로 제한
+
+현재 Runner는 전체 stdout에서 실행·대기 의도 표현을 검색하므로 정상 Review
+본문이 과거 실패 응답을 인용할 때 오탐할 수 있다.
+
+다음을 수정한다.
+
+1. Expected heading 이전의 preamble만 실행 의도 탐지 대상으로 사용한다.
+2. 첫 번째 비어 있지 않은 줄이 Expected heading과 정확히 일치하면 이후 Review
+   본문의 실행 관련 문구는 실행 시도로 분류하지 않는다.
+3. Expected heading 이전에 `I am running`, `I will run`, `I will wait`,
+   `in the background`가 있으면 기존처럼 실패한다.
+4. 정상 Review Section 안에서 해당 문구를 인용하는 Fixture는 통과해야 한다.
+5. 기존 실제 실행 시도 Fixture는 계속 실패해야 한다.
+6. 검증 실패 시 Review 파일 bytes 보존 계약을 유지한다.
+
+### FIX-23: 최신 Review 실행 실패를 Workflow Gate와 다음 Action 판단에 반영
+
+현재 Review markdown은 실패 시 안전하게 과거 bytes를 유지하지만, 그 결과 최신
+실패 실행이 과거 완료 Review에 가려져 다음 Fix 또는 PR 단계가 열릴 수 있다.
+
+다음을 수정한다.
+
+1. 최신 `antigravity-review` 또는 `antigravity-review-unit` 실행 결과를
+   Review markdown 상태와 함께 Workflow state에 반영한다.
+2. 최신 Review 실행이 다음 상태이면 Review Gate를 실패로 처리한다.
+
+```text
+review_response_invalid
+review_agent_attempted_execution
+review_file_modified_by_agent
+timeout
+nonzero_exit
+기타 Review 미완료 실패
+```
+
+3. 과거 Review 문서가 completed여도 최신 실행이 실패했다면 Fix, PR 또는 완료
+   Action을 제안하지 않는다.
+4. 후속 유효 Review 실행이 성공하고 Review 결과가 반영되면 실패 상태를
+   해제한다.
+5. UNIT Review 실패는 해당 UNIT의 후속 진행을 차단한다.
+6. Integration 또는 Re-review 실패는 PR 및 최종 완료 진행을 차단한다.
+7. 다음 순서를 검증하는 회귀 테스트를 추가한다.
+
+```text
+과거 PASS
+→ 최신 Review 실패
+→ Gate 차단
+→ 후속 Review PASS
+→ Gate 재개
+```
+
+8. `scripts/agent_next_step.sh status`가 최신 실패 category, 실행 시각과
+   복구에 필요한 다음 Action을 명확히 출력하도록 한다.
+
 ---
 
 ## Manual Verification Required
@@ -875,8 +1032,10 @@ PROBLEM_COUNT: 0
   Validator에서 거부됐다.
 - 실패 응답은 Review History에 반영되지 않았으며 기존 Review 파일 bytes가
   보존됐다.
-- FIX-17 적용 후 실제 Re-review를 다시 실행해야 하므로 FIX-09는 미완료로
-  유지한다.
+- FIX-17 적용 후 실제 Re-review를 다시 실행했고, FIX-09가
+  `human-verification pending` 상태로 정확히 검토된 뒤 Re-review `PASS`가
+  Review History에 반영됐다.
+- 최종 Re-review 성공 후 FIX-09는 완료 처리했다.
 
 ### FIX-17
 
@@ -891,14 +1050,60 @@ PROBLEM_COUNT: 0
   응답을 거부한다.
 - Prompt, evidence, validator, writer, runner와 CLI 회귀 테스트를 통과했다.
 
-아직 남은 항목:
+최종 Re-review 완료:
 
-- 실제 외부 `antigravity-review` Re-review 재실행은 FIX-09 완료 조건으로
-  남겨둔다.
+- 실제 외부 `antigravity-review` Re-review 재실행이 완료됐고, Re-review `PASS`
+  후 FIX-09도 완료 처리됐다.
+
+### FIX-18
+
+적용 완료:
+
+- Task, Usage Guide, Antigravity Review Guide, Verification Gate와 보조 Prompt의
+  Review action 설명을 `antigravity-review-unit`과 최종 `antigravity-review`
+  분리 계약에 맞게 정렬했다.
+- 자동 Review와 수동 fallback의 허용 Verdict를 `PASS`, `CHANGES REQUIRED`,
+  `BLOCKED`로 통일했다.
+- 수동 Review 파일 validator의 허용 Verdict와 회귀 테스트를 현행 Verdict
+  계약으로 변경했다.
+- 마지막 UNIT Review의 `PASS`가 전체 Integration Review 완료를 의미하지 않고,
+  별도 `antigravity-review` Integration Review가 필요함을 문서화했다.
+- Verification의 FIX-16 적용 전 action 통합 기록과 FIX-17 직후 pending 기록을
+  과거 기록으로 구분하고, 최종 Re-review 완료 상태와 충돌하지 않게 정리했다.
+- 빈 CodeRabbit review artifact에 보조 Review Summary, Problems Found,
+  Required Fixes, Optional Improvements, Suggested Test Commands와 Risk Notes를
+  기록했다.
+- 문서 간 Action, Verdict와 실행 순서 정합성을 확인하는
+  `tests/test_agent_review_docs.py` 회귀 테스트를 추가했다.
+
+### FIX-19 ~ FIX-23
+
+적용 완료:
+
+- pending implementation FIX가 있으면 Re-review를 차단하고, pending
+  `human-verification`만 남은 상태에서는 Re-review를 선택하는 기존 분류를
+  회귀 테스트로 고정했다.
+- tracked diff, untracked diff와 changed files 모두에 민감 경로 판정기를
+  적용하고 원본 경로와 본문 대신 `<sensitive-path-redacted>` marker만
+  노출하도록 했다.
+- `ensure_review_unit_status()`의 초기 Review Status 생성과 기존 Review 파일
+  갱신을 임시 파일, flush, fsync와 `os.replace` 기반 원자적 교체로 변경했다.
+- Review 실행·대기 의도 탐지를 Expected heading 이전 preamble으로 제한해 정상
+  Review 본문 안의 과거 실패 응답 인용을 허용했다.
+- 최신 Antigravity Review 실행 실패 로그가 과거 완료 Review에 가려지지 않도록
+  Workflow state와 status 출력에 실패 category, 실행 시각과 복구 action을
+  반영했다.
+- 후속 Review 성공 로그가 최신 실행이면 이전 실패 gate가 해제되는 회귀 테스트를
+  추가했다.
 
 ---
 
 ## Verification Required
+
+현재 FIX-23까지 적용과 검증이 완료됐다. 아래 FIX-17 항목은 해당 수정 당시의
+검증 기준 기록이며, FIX-18 이후 검증 결과는
+`docs/verification/fix-antigravity-review-automation.md`의 `FIX-18 Verification`
+및 `FIX-19 ~ FIX-23 Verification` section에 기록한다.
 
 ### FIX-17 집중 테스트
 
@@ -977,11 +1182,25 @@ created=False
 pending=['FIX-09', 'FIX-17']
 ```
 
-FIX-17 적용 후 기대 결과:
+FIX-17 적용 직후 기대 결과:
 
 ```text
 created=False
 pending=['FIX-09']
+```
+
+FIX-18 적용 후 현재 결과:
+
+```text
+created=False
+pending=['FIX-19', 'FIX-20', 'FIX-21', 'FIX-22', 'FIX-23']
+```
+
+FIX-19 ~ FIX-23 적용 후 현재 결과:
+
+```text
+created=False
+pending=[]
 ```
 
 ### Re-review Dry-run

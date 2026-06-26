@@ -179,15 +179,30 @@ def _restore_review_file(path: Path, original: bytes | None) -> None:
     path.write_bytes(original)
 
 
-def _detect_review_execution_attempt(response: str) -> str | None:
-    """모델 응답에서 명령 실행 또는 대기 의도를 나타내는 첫 문구를 반환한다.
+def _detect_review_execution_attempt(
+    response: str, expected_heading: str | None = None
+) -> str | None:
+    """Expected heading 이전 preamble의 실행 또는 대기 의도 문구를 반환한다.
 
-    Review 본문은 검토 범위 설명에 CLI 경로나 명령 예시를 포함할 수 있으므로
-    경로 문자열만으로는 실행 시도로 보지 않는다. 실제 실행 또는 대기 의도를
-    직접 표현하는 문구만 차단한다.
+    첫 번째 비어 있지 않은 줄이 예상 heading이면 Review 본문은 탐지 대상에서
+    제외한다. heading 앞 설명이나 heading 없이 반환된 응답의 실행·대기 의도는
+    계속 차단한다.
     """
 
-    lowered = response.lower()
+    inspected = response
+    if expected_heading:
+        lines = response.splitlines()
+        first_nonempty = _first_nonempty_line(response)
+        if first_nonempty == expected_heading:
+            inspected = ""
+        else:
+            preamble: list[str] = []
+            for line in lines:
+                if line.strip() == expected_heading:
+                    break
+                preamble.append(line)
+            inspected = "\n".join(preamble)
+    lowered = inspected.lower()
     return next(
         (pattern for pattern in REVIEW_EXECUTION_ATTEMPT_PATTERNS if pattern in lowered),
         None,
@@ -283,13 +298,13 @@ def run_agent(
         review_file_validation = "Agent가 Review 파일을 직접 변경했습니다."
         exit_code = 1
     if is_review and failure_category is None:
-        attempted_phrase = _detect_review_execution_attempt(stdout or "")
+        expected = (
+            expected_review_heading(review_context)
+            if review_context is not None
+            else "unknown"
+        )
+        attempted_phrase = _detect_review_execution_attempt(stdout or "", expected)
         if attempted_phrase is not None:
-            expected = (
-                expected_review_heading(review_context)
-                if review_context is not None
-                else "unknown"
-            )
             review_unchanged = (
                 state.paths.review.read_bytes()
                 if state.paths.review.exists()
