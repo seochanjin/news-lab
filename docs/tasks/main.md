@@ -1,3 +1,3 @@
 # Current Task
 
-[fix-antigravity-review-automation.md](fix-antigravity-review-automation.md)
+[feature-seven-day-topic-pipeline.md](feature-seven-day-topic-pipeline.md)

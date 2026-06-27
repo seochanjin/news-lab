@@ -30,10 +30,17 @@ NewsLab은 개인적으로 장기 운영하며 개선하기 위해 시작한 뉴
 - `GET /three-day-topics`
 - `GET /three-day-topics/home`
 - `GET /three-day-topics/{topic_id}`
+- `GET /weekly-topics`
+- `GET /weekly-topics/home`
+- `GET /weekly-topics/{topic_id}`
 
 3일 Topic은 최근 72시간 기사와 기존 `article_embeddings`를 직접
 재클러스터링한 결과다. Daily Topic 결과를 다시 집계하지 않으며, 전용
 `three_day_topics` 계열 테이블과 API를 사용한다.
+
+7일 Topic은 직전 완료 주간인 월요일부터 일요일까지의 기사와 기존
+`article_embeddings`를 직접 재클러스터링한 결과다. Daily Topic이나 3일 Topic
+결과를 다시 집계하지 않으며, 전용 `weekly_topics` 계열 테이블과 API를 사용한다.
 
 ## 로컬 실행
 
@@ -54,8 +61,20 @@ python scripts/run_three_day_topic_pipeline.py --window-end \
 `--execute`는 DB write, 지연 원문 추출과 Summary provider 호출을 포함하므로
 환경과 영향을 확인한 사람이 실행한다.
 
+7일 Topic pipeline도 기본 dry-run으로 실행된다. `--week-start`는 `YYYY-MM-DD`
+형식의 월요일만 허용하며, 생략하면 실행 시점보다 앞선 가장 최근 완료 주간을
+선택한다.
+
+```bash
+python scripts/run_weekly_topic_pipeline.py --week-start 2026-06-15
+```
+
+실제 저장 실행은 DB write, 지연 원문 추출과 Summary provider 호출을 포함하므로
+환경과 영향을 확인한 사람이 `--execute --use-summary-provider`를 지정해 실행한다.
+
 ## 문서
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Runbook](docs/RUNBOOK.md)
 - [3일 Topic 설계와 선택 근거](docs/design/three-day-topic-pipeline.md)
+- [7일 Topic 설계와 선택 근거](docs/design/weekly-topic-pipeline.md)

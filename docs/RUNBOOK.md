@@ -18,6 +18,7 @@ curl https://api.dev-scj.site/collector/status
 curl https://api.dev-scj.site/extractor/status
 curl https://api.dev-scj.site/topics/home
 curl https://api.dev-scj.site/three-day-topics/home
+curl https://api.dev-scj.site/weekly-topics/home
 ```
 
 Production API `curl`도 task 또는 human operator가 허용한 경우에만 agent
@@ -48,6 +49,7 @@ verification과 구분해 실행한다.
 - Supabase SQL과 migration 실행
 - Kubernetes manifest apply
 - K3s rollout, restart, object 변경·삭제
+- Weekly Topic production migration, 수동 Job과 API 최종 확인
 - Secret 생성 또는 변경
 - Production verification
 - OCI security rule, DNS, domain, TLS 변경
