@@ -12,10 +12,12 @@ from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
 from app.database import get_connection
+from app.services.weekly_topic_pipeline import PUBLISHABLE_TOPIC_STATUSES
 
 
 router = APIRouter(prefix="/weekly-topics", tags=["weekly_topics"])
 HOME_TOPICS_LIMIT = 10
+PUBLISHABLE_TOPIC_STATUS = next(iter(PUBLISHABLE_TOPIC_STATUSES))
 
 
 @router.get("")
@@ -103,6 +105,7 @@ def get_weekly_home_topics(
                 from weekly_topics t
                 join weekly_topic_runs r on r.id = t.run_id
                 where r.status in ('success', 'partial_success')
+                  and t.status = :publishable_status
                 order by t.window_end desc, t.window_start desc, t.id desc
                 limit 1
             )
@@ -121,13 +124,17 @@ def get_weekly_home_topics(
             join latest_window w
               on w.window_start = t.window_start
              and w.window_end = t.window_end
+            where t.status = :publishable_status
             order by
                 t.article_count desc,
                 t.source_count desc,
                 t.id desc
             limit :limit
         """),
-        {"limit": HOME_TOPICS_LIMIT},
+        {
+            "limit": HOME_TOPICS_LIMIT,
+            "publishable_status": PUBLISHABLE_TOPIC_STATUS,
+        },
     ).mappings().all()
     items = [dict(row) for row in rows]
     latest = items[0] if items else None

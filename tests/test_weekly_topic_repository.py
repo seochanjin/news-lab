@@ -113,16 +113,40 @@ class WeeklyTopicMigrationTests(unittest.TestCase):
         self.assertIn("references weekly_topics(id) on delete cascade", sql)
         self.assertIn("references articles(id) on delete cascade", sql)
         self.assertIn("check (rank >= 1)", sql)
-        self.assertIn("check (week_start <= week_end)", sql)
+        self.assertIn("check (extract(isodow from week_start) = 1)", sql)
+        self.assertIn("check (week_end = week_start + 6)", sql)
         self.assertIn("check (window_start < window_end)", sql)
+        self.assertIn("check (window_end = window_start + interval '7 days')", sql)
         self.assertIn(
             "check (candidate_count = embedding_count + missing_embedding_count)",
             sql,
         )
         self.assertIn("check (saved_topic_count <= selected_topic_count)", sql)
+        self.assertIn("check (finished_at is null or finished_at >= started_at)", sql)
         self.assertIn("'partial_success'", sql)
         self.assertIn("idx_weekly_topics_archive", sql)
         self.assertIn("idx_weekly_topic_articles_topic_rank", sql)
+
+    def test_migration_hardens_weekly_topic_payload_and_article_contracts(self):
+        """JSON 배열, 최소 count, status, rank와 역할 관계 CHECK를 확인한다."""
+
+        sql = MIGRATION.read_text(encoding="utf-8").lower()
+
+        self.assertIn("check (jsonb_typeof(key_points) = 'array')", sql)
+        self.assertIn("check (jsonb_typeof(keywords) = 'array')", sql)
+        self.assertIn(
+            "article_count integer not null default 0 check (article_count >= 5)",
+            sql,
+        )
+        self.assertIn(
+            "source_count integer not null default 0 check (source_count >= 2)",
+            sql,
+        )
+        self.assertIn("check (source_count <= article_count)", sql)
+        self.assertIn("check (status in ('draft', 'ready', 'failed'))", sql)
+        self.assertIn("unique (weekly_topic_id, rank)", sql)
+        self.assertIn("check (not is_representative or is_summary_evidence)", sql)
+        self.assertIn("similarity >= -1 and similarity <= 1", sql)
 
     def test_run_history_does_not_make_window_unique(self):
         """동일 window 재실행 이력을 막는 unique가 run table에 없음을 확인한다."""
@@ -222,6 +246,7 @@ class WeeklyTopicRepositoryTests(unittest.TestCase):
         topic_parameters = self.engine.events[3][2]
         self.assertEqual(topic_parameters["article_count"], 5)
         self.assertEqual(topic_parameters["source_count"], 3)
+        self.assertEqual(topic_parameters["status"], "ready")
         self.assertEqual(topic_parameters["prompt_version"], "weekly-flow-v1")
 
     def test_empty_result_still_locks_and_deletes_existing_window(self):
@@ -298,6 +323,21 @@ class WeeklyTopicRepositoryTests(unittest.TestCase):
 
         self.assertEqual(self.engine.events, [])
 
+    def test_topic_rejects_unsupported_status_or_similarity_outside_range(self):
+        """Topic status와 기사 similarity의 허용 범위를 저장 전에 검증한다."""
+
+        with self.assertRaisesRegex(ValueError, "unsupported weekly topic status"):
+            self._topic(status="archived")
+
+        with self.assertRaisesRegex(ValueError, "similarity must be between -1 and 1"):
+            WeeklyTopicArticleRecord(
+                article_id=501,
+                rank=1,
+                similarity=1.5,
+                is_representative=True,
+                is_summary_evidence=True,
+            )
+
     def test_run_rejects_non_monday_week_start(self):
         """주간 시작일이 월요일이 아니면 run을 생성하지 않는다."""
 
@@ -338,6 +378,7 @@ class WeeklyTopicRepositoryTests(unittest.TestCase):
         article_count=5,
         source_count=3,
         summary_evidence_count=5,
+        status="ready",
     ):
         """고정 주간 window와 대표·지원 기사 관계를 가진 저장 Topic을 만든다."""
 
@@ -353,7 +394,7 @@ class WeeklyTopicRepositoryTests(unittest.TestCase):
             keywords=["정책", "시장"],
             confidence=0.8,
             source_count=source_count,
-            status="ready",
+            status=status,
             provider="deterministic",
             model="deterministic-v1",
             prompt_version="weekly-flow-v1",

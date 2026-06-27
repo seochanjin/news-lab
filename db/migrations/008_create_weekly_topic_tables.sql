@@ -19,10 +19,13 @@ create table if not exists weekly_topic_runs (
     started_at timestamptz not null,
     finished_at timestamptz,
     created_at timestamptz not null default now(),
-    check (week_start <= week_end),
+    check (extract(isodow from week_start) = 1),
+    check (week_end = week_start + 6),
     check (window_start < window_end),
+    check (window_end = window_start + interval '7 days'),
     check (candidate_count = embedding_count + missing_embedding_count),
-    check (saved_topic_count <= selected_topic_count)
+    check (saved_topic_count <= selected_topic_count),
+    check (finished_at is null or finished_at >= started_at)
 );
 
 create table if not exists weekly_topics (
@@ -35,20 +38,27 @@ create table if not exists weekly_topics (
     topic_candidate_id text not null,
     title_ko text not null,
     summary_ko text not null,
-    key_points jsonb not null default '[]'::jsonb,
-    keywords jsonb not null default '[]'::jsonb,
+    key_points jsonb not null default '[]'::jsonb
+        check (jsonb_typeof(key_points) = 'array'),
+    keywords jsonb not null default '[]'::jsonb
+        check (jsonb_typeof(keywords) = 'array'),
     confidence double precision not null
         check (confidence >= 0 and confidence <= 1),
-    article_count integer not null default 0 check (article_count >= 0),
-    source_count integer not null default 0 check (source_count >= 0),
-    status text not null default 'draft',
+    article_count integer not null default 0 check (article_count >= 5),
+    source_count integer not null default 0 check (source_count >= 2),
+    status text not null default 'draft'
+        check (status in ('draft', 'ready', 'failed')),
     provider text not null,
     model text not null,
     prompt_version text not null,
     summary_input_hash text not null,
     created_at timestamptz not null default now(),
     updated_at timestamptz not null default now(),
+    check (extract(isodow from week_start) = 1),
+    check (week_end = week_start + 6),
     check (window_start < window_end),
+    check (window_end = window_start + interval '7 days'),
+    check (source_count <= article_count),
     unique (window_start, window_end, topic_candidate_id)
 );
 
@@ -58,11 +68,15 @@ create table if not exists weekly_topic_articles (
         references weekly_topics(id) on delete cascade,
     article_id bigint not null references articles(id) on delete cascade,
     rank integer not null check (rank >= 1),
-    similarity double precision,
+    similarity double precision check (
+        similarity is null or (similarity >= -1 and similarity <= 1)
+    ),
     is_representative boolean not null default false,
     is_summary_evidence boolean not null default false,
     created_at timestamptz not null default now(),
-    unique (weekly_topic_id, article_id)
+    unique (weekly_topic_id, article_id),
+    unique (weekly_topic_id, rank),
+    check (not is_representative or is_summary_evidence)
 );
 
 create index if not exists idx_weekly_topic_runs_window

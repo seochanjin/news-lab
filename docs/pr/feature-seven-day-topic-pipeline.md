@@ -34,8 +34,8 @@
   - `week_start`, `week_end`, `window_start`, `window_end`, `article_count`,
     `source_count`, `keywords`, `status`를 포함한다.
 - `GET /weekly-topics/home`
-  - 성공 또는 부분 성공 run이 만든 최신 완료 주간의 home card payload를
-    반환한다.
+  - 성공 또는 부분 성공 run이 만들었고 개별 Topic status가 `ready`인 최신 완료
+    주간의 home card payload를 반환한다.
 - `GET /weekly-topics/{topic_id}`
   - Weekly Topic 상세와 `weekly_topic_articles.rank` 순서의 관련 기사,
     `is_representative`, `is_summary_evidence` flag를 반환한다.
@@ -56,6 +56,10 @@
 - repository는 window advisory lock 안에서 기존 window 결과 삭제와 신규 결과
   삽입을 원자적으로 수행한다. 전체 Topic 실패 시 결과 교체를 호출하지 않아 기존
   성공 결과를 보존하고, 정상 빈 결과는 빈 결과로 window를 교체한다.
+- Weekly Topic schema는 `key_points`/`keywords` JSON array, 최소 기사 5개,
+  최소 source 2개, `source_count <= article_count`, Topic status
+  `draft|ready|failed`, Topic 내 rank unique, 대표 기사와 Summary evidence 관계를
+  CHECK/UNIQUE 제약으로 보호한다.
 - 실제 Supabase 또는 production DB migration 적용과 적용 후 table/constraint/index
   확인은 사람이 수행해야 하며, 이 PR 작성 과정에서는 실행하지 않았다.
 
@@ -99,7 +103,8 @@
 - Weekly runner는 신규 embedding provider flag를 제공하지 않고 기존
   `article_embeddings` 재사용 계약을 유지한다.
 - Weekly CronJob은 기존 image, `DATABASE_URL`, `OPENAI_SUMMARY_API_KEY`, 보안
-  설정 패턴을 재사용하며 `OPENAI_EMBEDDING_API_KEY`를 주입하지 않는다.
+  설정 패턴을 재사용하며 `OPENAI_EMBEDDING_API_KEY`를 주입하지 않는다. Kubernetes
+  API를 직접 호출하지 않으므로 service account token 자동 mount는 비활성화했다.
 - `kubectl apply --dry-run=client -f k8s/news-weekly-topic-pipeline-cronjob.yaml`는
   현재 지침상 Agent가 실행하지 않았고, manifest 구조는 pytest로 검증했다.
 

@@ -54,3 +54,35 @@
 
 ## Verdict
 PASS
+
+## Re-review 1
+### Existing Problems Status
+- **최초 리뷰 지적 사항**: 최초 리뷰 시 발견된 문제점(`Problems Found`)이 없었으므로 검토할 기존 문제가 없었습니다.
+
+### Approved Fixes Verification
+`docs/fixes/feature-seven-day-topic-pipeline-approved-fixes.md`에 승인된 12개 수정사항(`FIX-01` ~ `FIX-12`)이 실제 구현 및 데이터베이스 명세, 그리고 테스트 코드에 완벽히 적용되었습니다.
+- **FIX-01**: `/weekly-topics/home` 조회 시 publishable Topic 상태인 `ready` 필터를 CTE와 본 쿼리에 모두 정상 적용했습니다.
+- **FIX-02**: `models.py`에서 서울 기준 월요일 자정 윈도우 시작/종료 여부(시, 분, 초, 마이크로초 = 0) 검증을 추가해 shifted 윈도우 유입을 강력하게 차단했습니다.
+- **FIX-03**: `WeeklyRawAcquisitionResult` 포스트 이닛에서 reused, extracted, failed, missing 버킷 간의 상호 배타성과 원문 존재 상태 간의 정합성을 논리적으로 강제했습니다.
+- **FIX-04**: `WeeklyTopicProcessingResult`에서 최종 run 상태(`success`, `partial_success`, `failed`)와 내부 저장/실패 토픽 카운트 간의 모순을 거부하는 비즈니스 규칙 검증을 추가했습니다.
+- **FIX-05**: `raw_acquisition_stage.py`에 `_merge_selected_raw_texts`를 추가하여 기존 원문과 loader 조회 원문이 병합되도록 하고, loader 조회 값을 우선해 유실을 차단했습니다.
+- **FIX-06**: `008_create_weekly_topic_tables.sql` 마이그레이션에 `key_points` 및 `keywords` 컬럼이 JSON array인지 확인하는 `jsonb_typeof() = 'array'` CHECK 제약을 추가했습니다.
+- **FIX-07**: `weekly_topics` 테이블의 `article_count >= 5`, `source_count >= 2`, `source_count <= article_count` CHECK 제약을 추가하여 DB 레벨 계약을 강화했습니다.
+- **FIX-08**: `weekly_topic_articles` 테이블에 `(weekly_topic_id, rank)` UNIQUE 제약 및 대표 기사의 Summary 근거 포함 의무화 CHECK 제약을 강화했습니다.
+- **FIX-09**: `weekly_topics.status`에 `status in ('draft', 'ready', 'failed')` CHECK를 적용하고, 서비스 저장 상태(`ready`)와 홈 API 간의 공개 계약을 일치시켰습니다.
+- **FIX-10**: task 문서의 오타(`시용` -> `표시용`) 정리와 타 문서들의 날짜 범위 표현을 정비했습니다.
+- **FIX-11**: CronJob YAML에 `automountServiceAccountToken: false`를 적용하고 관련 manifest 유효성 테스트를 보강했습니다.
+- **FIX-12**: `similarity` 범위 CHECK(`-1 <= similarity <= 1`) 및 `finished_at >= started_at` 시간 관계 CHECK 등을 마이그레이션과 모델에 각각 추가 반영했습니다.
+
+### Verification Evidence
+- **추가 검증 내역**: [docs/verification/feature-seven-day-topic-pipeline.md](file:///Users/seochanjin/workspace/NewsLab/news-lab/docs/verification/feature-seven-day-topic-pipeline.md)에 12개 Approved Fixes를 추가 적용한 후 실행한 모든 테스트 로그가 온전히 업데이트되었습니다.
+- **테스트 통과**: 407개 테스트 전체 패스, compileall 성공 및 whitespace 검증(`git diff --check`) 통과가 입증되었습니다.
+
+### New Problems Found
+- 없음 (None)
+
+### Required Fixes Before PR
+- 없음 (None)
+
+### Verdict
+PASS

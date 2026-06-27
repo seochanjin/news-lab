@@ -184,10 +184,26 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         sql = connection.calls[0][0].lower()
         self.assertIn("latest_window", sql)
         self.assertIn("'success', 'partial_success'", sql)
+        self.assertEqual(connection.calls[0][1]["publishable_status"], "ready")
+        self.assertEqual(sql.count("t.status = :publishable_status"), 2)
         self.assertNotIn("count(*)", sql)
         self.assertNotIn("weekly_topic_articles", sql)
         self.assertNotIn("provider", sql)
         self.assertNotIn("model", sql)
+
+    def test_home_skips_latest_window_without_publishable_topic_status(self):
+        """Home SQL이 CTE와 card query 모두에서 ready Topic만 공개 대상으로 삼는다."""
+
+        connection = FakeConnection([FakeResult(rows=[])])
+
+        result = get_weekly_home_topics(connection=connection)
+
+        sql = connection.calls[0][0].lower()
+        self.assertIn("where r.status in ('success', 'partial_success')", sql)
+        self.assertIn("and t.status = :publishable_status", sql)
+        self.assertIn("where t.status = :publishable_status", sql)
+        self.assertEqual(connection.calls[0][1]["publishable_status"], "ready")
+        self.assertEqual(result["items"], [])
 
     def test_home_empty_response_uses_null_window_metadata(self):
         """Publishable 7일 Topic이 없을 때 정상 빈 payload를 반환하는지 확인한다."""

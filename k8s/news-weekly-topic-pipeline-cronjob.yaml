@@ -17,6 +17,7 @@ spec:
           labels:
             app: news-weekly-topic-pipeline
         spec:
+          automountServiceAccountToken: false
           restartPolicy: Never
           nodeSelector:
             workload: app

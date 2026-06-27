@@ -181,16 +181,18 @@ README 업데이트는 필요했고 실제로 반영했다.
 
 ## 확인 결과
 
-- `docs/verification/feature-seven-day-topic-pipeline.md` 기준 verification status는
-  `passed`다.
-- `docs/fixes/feature-seven-day-topic-pipeline-approved-fixes.md`에는 적용할 승인
-  fix 항목이 없다.
+- `docs/fixes/feature-seven-day-topic-pipeline-approved-fixes.md`의 승인 Fix를
+  적용해 Weekly Home API가 `ready` Topic만 공개하고, Weekly window 자정 검증,
+  raw acquisition 상태 상호 배타성, run status/count 정합성과 Weekly DB 제약을
+  보강했다.
 - Daily Topic service, runner, CronJob manifest에는 tracked diff가 없다.
 - 3일 Topic runner와 CronJob manifest에는 tracked diff가 없고, 후보 stage만 공통
   helper 사용으로 변경됐다.
 - Weekly runner는 신규 embedding provider flag를 제공하지 않는다.
 - Weekly CronJob은 기존 image, `DATABASE_URL`, `OPENAI_SUMMARY_API_KEY`, 보안
   설정 패턴을 재사용하고 `OPENAI_EMBEDDING_API_KEY`를 주입하지 않는다.
+  Kubernetes API를 호출하지 않으므로 service account token 자동 mount는
+  비활성화했다.
 - `kubectl apply --dry-run=client -f k8s/news-weekly-topic-pipeline-cronjob.yaml`는
   현재 지침상 Agent가 실행하지 않았고, manifest 구조는 pytest로 검증했다.
 - PR merge, production deployment, K3s rollout 완료는 주장하지 않는다.

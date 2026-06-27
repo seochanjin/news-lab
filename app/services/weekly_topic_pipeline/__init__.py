@@ -19,6 +19,8 @@ from .models import (
     WeeklyTopicRunCompletion,
     WeeklyTopicRunStart,
     WeeklyTopicSelectionResult,
+    PUBLISHABLE_TOPIC_STATUSES,
+    TOPIC_STATUSES,
 )
 from .raw_acquisition_stage import acquire_weekly_topic_raw_texts
 from .repository import WeeklyTopicRepository
@@ -34,6 +36,8 @@ from .topic_selection_stage import cluster_and_select_weekly_topics
 
 __all__ = [
     "PROMPT_VERSION",
+    "PUBLISHABLE_TOPIC_STATUSES",
+    "TOPIC_STATUSES",
     "WeeklyCandidateStageResult",
     "WeeklyOpenAISummaryProvider",
     "WeeklyPipelineContext",

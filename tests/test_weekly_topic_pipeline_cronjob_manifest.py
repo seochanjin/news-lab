@@ -52,6 +52,7 @@ class WeeklyTopicPipelineCronJobManifestTests(unittest.TestCase):
         self.assertEqual(self.spec["failedJobsHistoryLimit"], 3)
         self.assertEqual(self.job_spec["activeDeadlineSeconds"], 1800)
         self.assertEqual(self.job_spec["backoffLimit"], 1)
+        self.assertFalse(self.pod_spec["automountServiceAccountToken"])
         self.assertEqual(self.pod_spec["restartPolicy"], "Never")
         self.assertEqual(self.pod_spec["nodeSelector"], {"workload": "app"})
 

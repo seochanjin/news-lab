@@ -15,6 +15,8 @@ from app.services.weekly_topic_pipeline import (
     PROMPT_VERSION,
     WeeklyCandidateStageResult,
     WeeklyOpenAISummaryProvider,
+    WeeklyPipelineContext,
+    WeeklyTopicProcessingResult,
     WeeklyRawAcquisitionResult,
     cluster_and_select_weekly_topics,
     acquire_weekly_topic_raw_texts,
@@ -133,6 +135,44 @@ class WeeklyPipelineContextTests(unittest.TestCase):
         ):
             resolve_weekly_pipeline_context(
                 started_at_utc=datetime(2026, 7, 10, 2),
+            )
+
+    def test_shifted_noon_to_noon_week_window_is_rejected(self):
+        """날짜만 맞는 월요일 정오~다음 월요일 정오 window를 거부한다."""
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "weekly topic window must start at Monday 00:00",
+        ):
+            WeeklyPipelineContext(
+                week_start=date(2026, 6, 15),
+                week_end=date(2026, 6, 21),
+                business_timezone="Asia/Seoul",
+                started_at_utc=datetime(2026, 6, 21, 15, 30, tzinfo=timezone.utc),
+                started_at_local=datetime(
+                    2026,
+                    6,
+                    22,
+                    0,
+                    30,
+                    tzinfo=timezone(timedelta(hours=9)),
+                ),
+                window_start=datetime(
+                    2026,
+                    6,
+                    15,
+                    12,
+                    tzinfo=timezone(timedelta(hours=9)),
+                ),
+                window_end=datetime(
+                    2026,
+                    6,
+                    22,
+                    12,
+                    tzinfo=timezone(timedelta(hours=9)),
+                ),
+                window_days=7,
+                window_source="test",
             )
 
 
@@ -683,8 +723,75 @@ class WeeklyRawAndSummaryStageTests(unittest.TestCase):
         )
         self.assertEqual(result.extracted_article_ids, [2])
         self.assertEqual(result.failed_article_ids, [5])
-        self.assertEqual(result.missing_article_ids, [3, 4, 5])
+        self.assertEqual(result.missing_article_ids, [3, 4])
         self.assertIn(6, result.article_raw_texts)
+
+    def test_raw_acquisition_merges_preloaded_and_loader_raw_texts(self):
+        """Partial loader 결과가 기존 원문을 지우지 않고 같은 ID는 loader 값을 우선한다."""
+
+        raw_text_loader = Mock(return_value={2: "loader two", 6: "loader six"})
+
+        result = acquire_weekly_topic_raw_texts(
+            self.topic_result,
+            {},
+            {1: "existing one", 2: "existing two"},
+            pipeline_context=self.context,
+            execute=False,
+            extraction_limit=5,
+            raw_text_loader=raw_text_loader,
+        )
+
+        self.assertEqual(result.article_raw_texts[1], "existing one")
+        self.assertEqual(result.article_raw_texts[2], "loader two")
+        self.assertEqual(result.article_raw_texts[6], "loader six")
+        self.assertIn(1, result.reused_article_ids)
+        self.assertIn(6, result.reused_article_ids)
+
+    def test_raw_acquisition_result_rejects_overlapping_status_buckets(self):
+        """하나의 기사가 reused와 failed 같은 서로 다른 상태에 동시에 들어가지 못한다."""
+
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            WeeklyRawAcquisitionResult(
+                article_raw_texts={1: "raw"},
+                reused_article_ids=[1],
+                extracted_article_ids=[],
+                failed_article_ids=[1],
+                missing_article_ids=[],
+                extraction_results=[],
+            )
+
+        with self.assertRaisesRegex(ValueError, "mutually exclusive"):
+            WeeklyRawAcquisitionResult(
+                article_raw_texts={},
+                reused_article_ids=[],
+                extracted_article_ids=[2],
+                failed_article_ids=[],
+                missing_article_ids=[2],
+                extraction_results=[],
+            )
+
+    def test_raw_acquisition_result_rejects_raw_text_state_contradictions(self):
+        """원문 map과 missing/available 상태가 서로 모순되는 결과를 차단한다."""
+
+        with self.assertRaisesRegex(ValueError, "cannot be failed or missing"):
+            WeeklyRawAcquisitionResult(
+                article_raw_texts={3: "raw"},
+                reused_article_ids=[],
+                extracted_article_ids=[],
+                failed_article_ids=[],
+                missing_article_ids=[3],
+                extraction_results=[],
+            )
+
+        with self.assertRaisesRegex(ValueError, "must have raw text"):
+            WeeklyRawAcquisitionResult(
+                article_raw_texts={},
+                reused_article_ids=[4],
+                extracted_article_ids=[],
+                failed_article_ids=[],
+                missing_article_ids=[],
+                extraction_results=[],
+            )
 
     def test_summary_input_uses_weekly_prompt_hash_and_fallback_article(self):
         """원문 없는 Summary 후보 대신 다음 관련 기사 원문을 주간 입력에 포함한다."""
@@ -851,6 +958,101 @@ class WeeklyRawAndSummaryStageTests(unittest.TestCase):
         self.assertEqual(result.saved_topic_count, 0)
         self.assertEqual(len(repository.calls), 1)
         self.assertEqual(repository.calls[0]["topics"], [])
+
+    def test_processing_result_rejects_status_count_contradictions(self):
+        """run_status와 저장·실패 Topic count가 모순되는 최종 결과를 거부한다."""
+
+        invalid_cases = [
+            (
+                {
+                    "topics": [],
+                    "generated_topic_count": 0,
+                    "saved_topic_count": 0,
+                    "failed_topic_count": 1,
+                    "saved_topic_ids": [],
+                    "failures": [{"topic_candidate_id": "one"}],
+                    "run_status": "success",
+                },
+                "success run cannot include failed topics",
+            ),
+            (
+                {
+                    "topics": [],
+                    "generated_topic_count": 0,
+                    "saved_topic_count": 0,
+                    "failed_topic_count": 1,
+                    "saved_topic_ids": [],
+                    "failures": [{"topic_candidate_id": "one"}],
+                    "run_status": "partial_success",
+                },
+                "partial_success run requires saved and failed topics",
+            ),
+            (
+                {
+                    "topics": [],
+                    "generated_topic_count": 0,
+                    "saved_topic_count": 1,
+                    "failed_topic_count": 0,
+                    "saved_topic_ids": [1901],
+                    "failures": [],
+                    "run_status": "failed",
+                },
+                "saved_topic_count cannot exceed generated topics",
+            ),
+        ]
+        for kwargs, message in invalid_cases:
+            with self.subTest(run_status=kwargs["run_status"]):
+                with self.assertRaisesRegex(ValueError, message):
+                    WeeklyTopicProcessingResult(**kwargs)
+
+    def test_processing_result_accepts_success_partial_failed_and_empty_success(self):
+        """정상 성공, 정상 부분 성공, 전체 실패와 빈 성공 결과 계약을 유지한다."""
+
+        valid_cases = [
+            {
+                "topics": [],
+                "generated_topic_count": 0,
+                "saved_topic_count": 0,
+                "failed_topic_count": 0,
+                "saved_topic_ids": [],
+                "failures": [],
+                "run_status": "success",
+            },
+            {
+                "topics": ["topic"],
+                "generated_topic_count": 1,
+                "saved_topic_count": 1,
+                "failed_topic_count": 0,
+                "saved_topic_ids": [1901],
+                "failures": [],
+                "run_status": "success",
+            },
+            {
+                "topics": ["topic"],
+                "generated_topic_count": 1,
+                "saved_topic_count": 1,
+                "failed_topic_count": 1,
+                "saved_topic_ids": [1901],
+                "failures": [{"topic_candidate_id": "failed"}],
+                "run_status": "partial_success",
+            },
+            {
+                "topics": [],
+                "generated_topic_count": 0,
+                "saved_topic_count": 0,
+                "failed_topic_count": 1,
+                "saved_topic_ids": [],
+                "failures": [{"topic_candidate_id": "failed"}],
+                "run_status": "failed",
+            },
+        ]
+
+        for kwargs in valid_cases:
+            with self.subTest(run_status=kwargs["run_status"]):
+                self.assertEqual(
+                    WeeklyTopicProcessingResult(**kwargs).run_status,
+                    kwargs["run_status"],
+                )
 
     def _topic_result(self):
         """두 개의 주간 Topic fixture를 포함한 선정 결과를 만든다."""

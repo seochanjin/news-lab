@@ -13,6 +13,8 @@ from zoneinfo import ZoneInfo
 
 
 RUN_FINAL_STATUSES = frozenset({"success", "partial_success", "failed"})
+TOPIC_STATUSES = frozenset({"draft", "ready", "failed"})
+PUBLISHABLE_TOPIC_STATUSES = frozenset({"ready"})
 WEEKLY_WINDOW = timedelta(days=7)
 BUSINESS_TIMEZONE = ZoneInfo("Asia/Seoul")
 BUSINESS_TIMEZONE_NAME = "Asia/Seoul"
@@ -52,6 +54,22 @@ def _validate_week_window(
         raise ValueError("week_start must match the Asia/Seoul window_start date")
     if local_end.date() != week_start + timedelta(days=7):
         raise ValueError("window_end must be the next Monday in Asia/Seoul")
+    if (
+        local_start.weekday() != 0
+        or local_start.hour != 0
+        or local_start.minute != 0
+        or local_start.second != 0
+        or local_start.microsecond != 0
+    ):
+        raise ValueError("weekly topic window must start at Monday 00:00")
+    if (
+        local_end.weekday() != 0
+        or local_end.hour != 0
+        or local_end.minute != 0
+        or local_end.second != 0
+        or local_end.microsecond != 0
+    ):
+        raise ValueError("weekly topic window must end at Monday 00:00")
 
 
 @dataclass(frozen=True)
@@ -207,21 +225,42 @@ class WeeklyRawAcquisitionResult:
     extraction_results: list[dict]
 
     def __post_init__(self) -> None:
-        """기사 ID 집합과 원문 mapping이 양수 ID만 사용하고 중복이 없는지 검증한다."""
+        """기사 상태 bucket과 원문 mapping이 서로 모순되지 않는지 검증한다."""
 
-        id_lists = (
-            self.reused_article_ids,
-            self.extracted_article_ids,
-            self.failed_article_ids,
-            self.missing_article_ids,
-        )
-        for article_ids in id_lists:
+        buckets = {
+            "reused_article_ids": self.reused_article_ids,
+            "extracted_article_ids": self.extracted_article_ids,
+            "failed_article_ids": self.failed_article_ids,
+            "missing_article_ids": self.missing_article_ids,
+        }
+        for article_ids in buckets.values():
             if len(article_ids) != len(set(article_ids)):
                 raise ValueError("raw acquisition article IDs must be unique")
             if any(article_id < 1 for article_id in article_ids):
                 raise ValueError("raw acquisition article IDs must be positive")
         if any(article_id < 1 for article_id in self.article_raw_texts):
             raise ValueError("raw text article IDs must be positive")
+        seen: dict[int, str] = {}
+        for bucket_name, article_ids in buckets.items():
+            for article_id in article_ids:
+                previous = seen.get(article_id)
+                if previous is not None:
+                    raise ValueError(
+                        "raw acquisition article IDs must be mutually exclusive "
+                        f"between {previous} and {bucket_name}"
+                    )
+                seen[article_id] = bucket_name
+        raw_text_ids = {
+            article_id
+            for article_id, raw_text in self.article_raw_texts.items()
+            if raw_text.strip()
+        }
+        unavailable_ids = set(self.failed_article_ids) | set(self.missing_article_ids)
+        if raw_text_ids & unavailable_ids:
+            raise ValueError("raw text articles cannot be failed or missing")
+        available_ids = set(self.reused_article_ids) | set(self.extracted_article_ids)
+        if not available_ids.issubset(raw_text_ids):
+            raise ValueError("reused and extracted articles must have raw text")
 
 
 @dataclass(frozen=True)
@@ -249,6 +288,21 @@ class WeeklyTopicProcessingResult:
             raise ValueError("saved_topic_count must match saved_topic_ids")
         if self.saved_topic_count > self.generated_topic_count:
             raise ValueError("saved_topic_count cannot exceed generated topics")
+        if self.run_status == "success":
+            if self.failed_topic_count:
+                raise ValueError("success run cannot include failed topics")
+            if self.saved_topic_count != self.generated_topic_count:
+                raise ValueError("success run must save every generated topic")
+        elif self.run_status == "partial_success":
+            if self.saved_topic_count < 1 or self.failed_topic_count < 1:
+                raise ValueError(
+                    "partial_success run requires saved and failed topics"
+                )
+        elif self.run_status == "failed":
+            if self.saved_topic_count:
+                raise ValueError("failed run cannot include saved topics")
+            if self.generated_topic_count:
+                raise ValueError("failed run cannot include generated topics")
 
 
 @dataclass(frozen=True)
@@ -336,6 +390,8 @@ class WeeklyTopicArticleRecord:
             raise ValueError("article_id must be positive")
         if self.rank < 1:
             raise ValueError("rank must be at least 1")
+        if self.similarity is not None and not -1 <= self.similarity <= 1:
+            raise ValueError("similarity must be between -1 and 1")
         if self.is_representative and not self.is_summary_evidence:
             raise ValueError("representative article must be summary evidence")
 
@@ -386,6 +442,8 @@ class WeeklyTopicRecord:
                 raise ValueError(f"{field_name} must not be blank")
         if not 0 <= self.confidence <= 1:
             raise ValueError("confidence must be between 0 and 1")
+        if self.status not in TOPIC_STATUSES:
+            raise ValueError(f"unsupported weekly topic status: {self.status}")
         if len(self.articles) < MIN_TOPIC_ARTICLE_COUNT:
             raise ValueError("weekly topic must have at least 5 articles")
         if self.source_count < MIN_TOPIC_SOURCE_COUNT:

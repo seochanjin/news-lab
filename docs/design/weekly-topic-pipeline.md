@@ -179,16 +179,19 @@ failed
 권장 check:
 
 ```text
-week_start <= week_end
+extract(isodow from week_start) = 1
+week_end = week_start + 6 days
 window_start < window_end
+window_end = window_start + 7 days
 candidate_count = embedding_count + missing_embedding_count
 saved_topic_count <= selected_topic_count
+finished_at is null or finished_at >= started_at
 모든 count >= 0
 ```
 
-`week_start`가 월요일이고 `week_end = week_start + 6 days`이며
-`window_end = window_start + 7 days`인 계약은 application model과 테스트에서
-검증한다. DB check만으로 timezone local date 계산을 과도하게 표현하지 않는다.
+`window_start`와 `window_end`가 `Asia/Seoul` 기준 월요일 00:00인지 여부는
+application model과 테스트에서 검증한다. DB check만으로 timezone local date
+계산을 과도하게 표현하지 않는다.
 
 ### `weekly_topics`
 
@@ -205,10 +208,14 @@ topic_candidate_id text not null
 title_ko text not null
 summary_ko text not null
 key_points jsonb not null default '[]'::jsonb
+  check (jsonb_typeof(key_points) = 'array')
 keywords jsonb not null default '[]'::jsonb
+  check (jsonb_typeof(keywords) = 'array')
 confidence double precision not null
 article_count integer not null default 0
+  check (article_count >= 5)
 source_count integer not null default 0
+  check (source_count >= 2)
 status text not null default 'draft'
 provider text not null
 model text not null
@@ -223,15 +230,19 @@ updated_at timestamptz not null default now()
 ```text
 unique (window_start, window_end, topic_candidate_id)
 window_start < window_end
+window_end = window_start + 7 days
 confidence >= 0 and confidence <= 1
-article_count >= 0
-source_count >= 0
+source_count <= article_count
+status in ('draft', 'ready', 'failed')
 ```
 
 Weekly Topic 후보는 최소 5개 기사와 최소 2개 source 조건을 통과해야 하므로
-application model은 저장 전 `article_count >= 5`, `source_count >= 2`를
-검증한다. 빈 결과 교체를 허용해야 하므로 Topic table 자체에 window당 최소 row
-수 제약은 두지 않는다.
+application model과 DB schema가 모두 `article_count >= 5`, `source_count >= 2`,
+`source_count <= article_count`를 검증한다. Repository는 Summary까지 완료된
+publishable Topic만 `ready` status로 저장한다. `draft`와 `failed`는 schema의
+허용 상태로 남기지만 `/weekly-topics/home`의 공개 대상은 `ready`뿐이다. 빈 결과
+교체를 허용해야 하므로 Topic table 자체에 window당 최소 row 수 제약은 두지
+않는다.
 
 ### `weekly_topic_articles`
 
@@ -320,14 +331,22 @@ GET /weekly-topics/home
 GET /weekly-topics/{topic_id}
 ```
 
-`/weekly-topics/home`은 성공 또는 부분 성공 run이 만든 최신 완료 주간 window의
-card payload를 반환한다. 정적 `/home` route는 동적 `/{topic_id}` route보다 먼저
-등록한다.
+`/weekly-topics/home`은 성공 또는 부분 성공 run이 만들었고 개별 Topic status가
+`ready`인 최신 완료 주간 window의 card payload를 반환한다. 성공 run 안에
+`draft`, `failed` 또는 기타 비공개 Topic이 섞여 있어도 home 응답에는 포함하지
+않으며, `ready` Topic이 없는 window는 최신 공개 window 선택 대상에서 제외한다.
+정적 `/home` route는 동적 `/{topic_id}` route보다 먼저 등록한다.
 
 목록과 상세 payload에는 `week_start`, `week_end`, `window_start`, `window_end`,
 `article_count`, `source_count`, `keywords`, `status`를 포함한다. 상세 API는
 `weekly_topic_articles.rank` 순서대로 전체 관련 기사를 반환하고,
 `is_representative`, `is_summary_evidence`를 함께 노출한다.
+
+기사 관계 row는 `(weekly_topic_id, article_id)`와 `(weekly_topic_id, rank)`가
+각각 unique이며, 대표 기사 row는 반드시 Summary evidence여야 한다. 대표 기사
+정확히 1개와 Summary evidence 최대 5개는 여러 row를 함께 봐야 하므로
+repository/model 검증과 테스트로 보호한다. `similarity`는 cosine similarity의
+일반 범위인 `-1` 이상 `1` 이하 또는 `null`만 허용한다.
 
 ## 실행 진입점과 CronJob 계약
 

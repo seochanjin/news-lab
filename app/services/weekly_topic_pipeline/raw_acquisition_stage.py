@@ -53,7 +53,8 @@ def acquire_weekly_topic_raw_texts(
     )
     article_raw_texts = _selected_raw_texts(raw_texts, related_ids)
     if raw_text_loader is not None and related_ids:
-        article_raw_texts = _selected_raw_texts(
+        article_raw_texts = _merge_selected_raw_texts(
+            article_raw_texts,
             raw_text_loader(related_ids),
             related_ids,
         )
@@ -94,7 +95,8 @@ def acquire_weekly_topic_raw_texts(
                         for article_id in batch
                     )
         if related_ids:
-            article_raw_texts = _selected_raw_texts(
+            article_raw_texts = _merge_selected_raw_texts(
+                article_raw_texts,
                 raw_text_loader(related_ids),
                 related_ids,
             )
@@ -103,23 +105,27 @@ def acquire_weekly_topic_raw_texts(
         extraction_results,
         article_raw_texts,
     )
-    failed_ids = list(
-        dict.fromkeys(
-            int(result["article_id"])
-            for result in extraction_results
-            if result.get("status") == "failed"
-        )
-    )
     reused_ids = [
         article_id
         for article_id in related_ids
         if article_id not in extracted_ids
         and (article_raw_texts.get(article_id) or "").strip()
     ]
+    failed_ids = [
+        article_id
+        for article_id in dict.fromkeys(
+            int(result["article_id"])
+            for result in extraction_results
+            if result.get("status") == "failed"
+        )
+        if not (article_raw_texts.get(article_id) or "").strip()
+    ]
+    failed_id_set = set(failed_ids)
     missing_ids = [
         article_id
         for article_id in topic_result.summary_article_ids
         if not (article_raw_texts.get(article_id) or "").strip()
+        and article_id not in failed_id_set
     ]
     return WeeklyRawAcquisitionResult(
         article_raw_texts=article_raw_texts,
@@ -129,6 +135,14 @@ def acquire_weekly_topic_raw_texts(
         missing_article_ids=missing_ids,
         extraction_results=extraction_results,
     )
+
+
+def _merge_selected_raw_texts(existing_raw_texts, loaded_raw_texts, selected_ids):
+    """기존 원문과 loader 조회 결과를 병합하되 loader의 최신 값을 우선한다."""
+
+    merged = dict(existing_raw_texts)
+    merged.update(_selected_raw_texts(loaded_raw_texts, selected_ids))
+    return merged
 
 
 def _selected_raw_texts(raw_texts, selected_ids) -> dict[int, str]:

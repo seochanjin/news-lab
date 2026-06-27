@@ -340,7 +340,7 @@ def _build_topic_record(
                 if article.get("source")
             }
         ),
-        status="draft",
+        status="ready",
         provider=provider,
         model=model,
         prompt_version=PROMPT_VERSION,
