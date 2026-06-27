@@ -17,6 +17,7 @@ from app.routers import (
     three_day_topics,
     topics,
     version,
+    weekly_topics,
 )
 
 app = FastAPI(
@@ -34,6 +35,7 @@ app.include_router(extractor.router)
 app.include_router(raw_articles.router)
 app.include_router(topics.router)
 app.include_router(three_day_topics.router)
+app.include_router(weekly_topics.router)
 
 
 @app.get("/")
@@ -50,5 +52,6 @@ def root():
         "articles": "/articles",
         "raw_articles": "/raw-articles",
         "topics": "/topics",
+        "weekly_topics": "/weekly-topics",
         "extractor": "/extractor/status",
     }

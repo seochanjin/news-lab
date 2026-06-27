@@ -25,6 +25,7 @@ RSS source
   - `news-rss-collector`
   - `news-daily-topic-pipeline`
   - `news-three-day-topic-pipeline`
+  - `news-weekly-topic-pipeline`
 - Runtime: Oracle Cloud A1 기반 K3s
 - Ingress: Traefik
 - TLS: cert-manager와 `letsencrypt-prod`
@@ -41,6 +42,7 @@ RSS source
 - [K3s runtime](architecture/k3s-runtime.md)
 - [Domain과 TLS](architecture/domains.md)
 - [3일 Topic 저장·실행 설계](design/three-day-topic-pipeline.md)
+- [7일 Topic 저장·실행 설계](design/weekly-topic-pipeline.md)
 
 운영 command는 [Runbook index](RUNBOOK.md), agent 작업 절차는
 [Backend agent workflow](agent/backend-workflow.md)를 참고한다.

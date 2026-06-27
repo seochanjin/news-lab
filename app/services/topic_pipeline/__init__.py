@@ -1,8 +1,9 @@
-"""기간별 Topic pipeline이 공유하는 순수 기사 선정 helper를 공개한다.
+"""기간별 Topic pipeline에서 공유하는 기사 선정과 read-only 처리 helper를 제공한다.
 
-Daily와 3일 pipeline의 clustering 이후 Topic 정렬, 관련 기사 ID 수집과 Summary
-근거 기사 중복 제거 정책을 한 구현으로 유지한다. 이 package는 provider 호출,
-원문 조회, 파일 또는 DB 쓰기를 수행하지 않는다.
+이 package는 Daily, 3일, 7일처럼 저장 테이블과 실행 정책이 다른 pipeline 사이에
+공통으로 사용할 수 있는 작은 처리 단위를 둔다. Topic 정렬과 관련·Summary 근거
+기사 ID 선정, 기사 window 조회와 저장된 article embedding 검증을 담당하며,
+provider 호출, clustering, DB 쓰기, migration 적용은 수행하지 않는다.
 """
 
 from .selection import (
