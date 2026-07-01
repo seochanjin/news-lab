@@ -144,7 +144,7 @@ def get_three_day_topic(
     topic_id: int,
     connection: Connection = Depends(get_connection),
 ):
-    """단일 3일 Topic과 순위가 지정된 관련 기사 전체를 반환한다."""
+    """단일 3일 Topic, 핵심 포인트와 순위가 지정된 관련 기사 전체를 반환한다."""
 
     row = connection.execute(
         text("""
@@ -155,6 +155,7 @@ def get_three_day_topic(
                 window_end,
                 title_ko,
                 summary_ko,
+                key_points,
                 keywords,
                 article_count,
                 source_count,
@@ -171,6 +172,8 @@ def get_three_day_topic(
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Three-day topic not found")
+    topic = dict(row)
+    topic["key_points"] = topic.get("key_points") or []
 
     article_rows = connection.execute(
         text("""
@@ -193,4 +196,4 @@ def get_three_day_topic(
         {"topic_id": topic_id},
     ).mappings().all()
 
-    return {**dict(row), "articles": [dict(article) for article in article_rows]}
+    return {**topic, "articles": [dict(article) for article in article_rows]}

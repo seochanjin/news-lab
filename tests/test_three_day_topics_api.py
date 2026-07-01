@@ -114,6 +114,14 @@ def home_topic_row():
     }
 
 
+def detail_topic_row(key_points=None):
+    """상세 API 응답에 필요한 key_points field를 포함한 가짜 row를 만든다."""
+
+    row = three_day_topic_row()
+    row["key_points"] = key_points
+    return row
+
+
 class ThreeDayTopicsApiTests(unittest.TestCase):
     """3일 Topic route 순서, filter, 빈 응답, 상세 기사 역할을 검증한다."""
 
@@ -225,7 +233,11 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         ]
         connection = FakeConnection(
             [
-                FakeResult(first=three_day_topic_row()),
+                FakeResult(
+                    first=detail_topic_row(
+                        ["첫 번째 핵심 포인트", "두 번째 핵심 포인트"]
+                    )
+                ),
                 FakeResult(rows=articles),
             ]
         )
@@ -234,6 +246,11 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
 
         self.assertEqual(result["article_count"], 5)
         self.assertEqual(result["source_count"], 4)
+        self.assertEqual(
+            result["key_points"],
+            ["첫 번째 핵심 포인트", "두 번째 핵심 포인트"],
+        )
+        self.assertIn("key_points", connection.calls[0][0].lower())
         self.assertEqual(
             [article["article_id"] for article in result["articles"]],
             [101, 102],
@@ -246,6 +263,36 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
             connection.calls[1][0].lower(),
         )
         self.assertNotIn("raw_articles", connection.calls[1][0].lower())
+
+    def test_detail_returns_empty_key_points_when_database_value_is_null(self):
+        """상세 row의 key_points가 NULL이면 항상 빈 배열로 응답하는지 확인한다."""
+
+        connection = FakeConnection(
+            [
+                FakeResult(first=detail_topic_row(key_points=None)),
+                FakeResult(rows=[]),
+            ]
+        )
+
+        result = get_three_day_topic(31, connection=connection)
+
+        self.assertEqual(result["key_points"], [])
+        self.assertEqual(result["articles"], [])
+
+    def test_detail_preserves_empty_key_points_array(self):
+        """상세 row의 key_points가 빈 배열이면 빈 배열 계약을 유지하는지 확인한다."""
+
+        connection = FakeConnection(
+            [
+                FakeResult(first=detail_topic_row(key_points=[])),
+                FakeResult(rows=[]),
+            ]
+        )
+
+        result = get_three_day_topic(31, connection=connection)
+
+        self.assertEqual(result["key_points"], [])
+        self.assertIsInstance(result["key_points"], list)
 
     def test_missing_topic_returns_404(self):
         """존재하지 않는 3일 Topic 요청이 404를 반환하는지 확인한다."""

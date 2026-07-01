@@ -1,3 +1,3 @@
 # Current Task
 
-[feature-seven-day-topic-pipeline.md](feature-seven-day-topic-pipeline.md)
+[fix-three-day-topic-detail-contract.md](fix-three-day-topic-detail-contract.md)
