@@ -31,7 +31,7 @@ pwd && git branch --show-current && rg --files -g 'AGENTS.md' -g 'docs/tasks/doc
 
 Result:
 
-- Current directory: `/Users/seochanjin/workspace/NewsLab/news-lab`
+- Current directory: `../news-lab`
 - Current branch: `docs/readme-portfolio-refresh`
 - Required files were present:
   `AGENTS.md`, task, verification, backend workflow, Codex instructions,
@@ -1097,7 +1097,7 @@ pwd && git branch --show-current && rg --files -g 'AGENTS.md' -g 'docs/tasks/doc
 
 Result:
 
-- Current directory was `/Users/seochanjin/workspace/NewsLab/news-lab`.
+- Current directory was `../news-lab`.
 - Current branch was `docs/readme-portfolio-refresh`.
 - Required task, verification, workflow, Codex, verification gate, forbidden
   command, task authoring guide, and `AGENTS.md` files were present.
