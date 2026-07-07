@@ -1,3 +1,3 @@
 # Current Task
 
-[fix-three-day-topic-detail-contract.md](fix-three-day-topic-detail-contract.md)
+[docs-readme-portfolio-refresh.md](docs-readme-portfolio-refresh.md)
