@@ -1,3 +1,3 @@
 # Current Task
 
-[docs-readme-portfolio-refresh.md](docs-readme-portfolio-refresh.md)
+[fix-readme-korean-localization.md](fix-readme-korean-localization.md)
