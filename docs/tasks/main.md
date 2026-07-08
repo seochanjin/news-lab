@@ -1,3 +1,3 @@
 # Current Task
 
-[fix-readme-korean-localization.md](fix-readme-korean-localization.md)
+[feature-argocd-manual-sync-baseline.md](feature-argocd-manual-sync-baseline.md)

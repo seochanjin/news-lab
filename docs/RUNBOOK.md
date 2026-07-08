@@ -40,6 +40,7 @@ verification과 구분해 실행한다.
 - [CronJob 운영](runbooks/cronjobs.md)
 - [Database와 local read check](runbooks/database-check.md)
 - [장애 초기 대응](runbooks/troubleshooting.md)
+- [Argo CD Manual Sync 계획](runbooks/argocd-manual-sync-plan.md)
 
 ## Human-controlled operation
 
