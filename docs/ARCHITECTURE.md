@@ -41,6 +41,7 @@ RSS source
 - [수집·추출·주제 pipeline](architecture/pipeline.md)
 - [K3s runtime](architecture/k3s-runtime.md)
 - [Domain과 TLS](architecture/domains.md)
+- [Argo CD Manual Sync 설계](architecture/argocd-manual-sync-design.md)
 - [3일 Topic 저장·실행 설계](design/three-day-topic-pipeline.md)
 - [7일 Topic 저장·실행 설계](design/weekly-topic-pipeline.md)
 
