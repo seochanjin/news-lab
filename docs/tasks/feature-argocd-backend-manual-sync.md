@@ -26,7 +26,7 @@ Git repository의 k8s manifest
 ```
 docs/architecture/argocd-manual-sync-design.md
 docs/runbooks/argocd-manual-sync-plan.md
-docs/verification/feature-argocd-manual-sync-baseline.md
+docs/verification/feature-argocd-backend-manual-sync.md
 ```
 
 확인 항목:

@@ -46,8 +46,12 @@ Git의 Backend manifest
   반영했다.
 - Runbook에 설치 전 gate, bootstrap, 최초 diff, Manual Sync와 운영 상태 확인
   절차를 기록했다.
-- 승인된 FIX-01과 FIX-02를 적용해 Task의 UNIT-04, Verification의 `passed` 및
-  Pending Verification `없음` 상태를 일치시키고 재검증 기록을 남겼다.
+- 승인된 FIX-01~07을 적용했다.
+  - Task의 UNIT-04와 Verification 완료 상태를 일치시켰다.
+  - production API 완료 주장을 실제 증거가 있는 `/health`로 한정했다.
+  - review artifact의 잘못된 상대 링크와 빈 CodeRabbit 템플릿을 정리했다.
+  - Task의 Verification 참조를 Backend 전용 문서로 교체했다.
+  - Ruby manifest assertion placeholder를 실행 가능한 전체 명령으로 교체했다.
 
 ## 구현 상세
 
@@ -81,6 +85,18 @@ credential 값은 문서에 남기지 않았다.
 확인했다. Deployment spec, Service, Ingress/TLS, CronJob, Secret,
 `ClusterIssuer`와 삭제 대상에는 변경이 없었다. 이후 사람 통제 Manual Sync는
 `--prune`, `--force`, `--replace` 없이 수행됐다.
+
+후속 승인 fix에서는 검증 artifact의 정확성과 재현성을 보완했다. Antigravity
+review의 `/version` 완료 주장을 제거하고 `docs/reviews/` 기준으로 깨진
+`../docs/...` 링크를 올바른 상대 경로로 수정했다. CodeRabbit artifact에는 실제
+findings, required fixes, optional improvements, suggested commands와 현재
+Verdict를 기록했다. 외부 CodeRabbit 재검토는 실행하지 않았으므로 Verdict는
+`CHANGES REQUIRED`로 유지했다.
+
+Verification에 축약되어 있던 Ruby command는 YAML을 읽어 kind, repository,
+revision, path, recursion, exclude, destination과 `syncPolicy` 부재를 검사하는
+전체 명령으로 교체했다. 같은 명령을 다시 실행해
+`Application manifest assertions passed`와 exit code 0을 확인했다.
 
 ## 대안 검토
 
@@ -182,6 +198,14 @@ credential 값은 문서에 남기지 않았다.
     출력 없음
   - UNIT-01~04, Verification `passed`, Pending Verification `없음`의 상태 일치
     확인
+  - Antigravity review의 production API 완료 주장이 `/health`로 한정됨을 확인
+  - Antigravity review에 잘못된 `../docs/` 링크가 없음을 확인
+  - Task의 이전 baseline Verification 참조와 Verification의 Ruby placeholder가
+    제거됐음을 확인
+  - Ruby Application manifest assertion 재실행:
+    `Application manifest assertions passed`, exit code 0
+  - FIX-03~07 변경 범위가 review artifact 두 개, Task, Verification과
+    Approved Fixes 문서로 제한됨을 확인
 
 Verification 문서에는 `/version`, 주요 read-only API와 Prometheus/Grafana의
 개별 command 결과가 기록되어 있지 않다. 이 devlog에서는 해당 항목을 별도로
@@ -232,7 +256,10 @@ README에 반영하는 것이 적절하다.
 - 접근 경계: Service `ClusterIP`, Argo CD Ingress 없음
 - production `/health`: 정상 응답
 - 최종 desired/live diff: 없음, exit code 0
-- Approved Fixes: FIX-01과 FIX-02 적용 및 재검증 완료
+- Approved Fixes: FIX-01~07 적용 및 허용된 재검증 완료
+- Manifest assertion: 실행 가능한 전체 Ruby command로 재실행 통과
+- 외부 review 상태: CodeRabbit 재검토 미실행, artifact Verdict
+  `CHANGES REQUIRED`
 
 ## 이번 단계의 의미
 
@@ -266,3 +293,4 @@ Runbook과 Verification 근거를 함께 문서화했다.
 6. port-forward를 대체할 Tailscale 내부 접근 방식 검토
 7. 운영 안정성 확인 후 Automated Sync 도입 여부 검토
 8. Backend·Frontend와 rollback 검증 완료 후 README 운영 구조 갱신
+9. 사람이 CodeRabbit comment를 resolve하고 Antigravity/CodeRabbit 재검토 수행

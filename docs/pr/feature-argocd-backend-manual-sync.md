@@ -10,7 +10,8 @@
   Backend Application 관리 대상에서 제외했다.
 - 사람이 최초 diff를 확인하고 Manual Sync를 승인하는 운영 경계와 실패 시
   중단 조건을 architecture 및 runbook 문서에 반영했다.
-- Task, Verification과 Approved Fixes의 UNIT-04 완료 상태를 일치시켰다.
+- 승인된 FIX-01~07을 적용해 Task, Verification과 workflow artifact의 완료
+  상태, 링크, 검증 주장과 재현 가능한 command를 정리했다.
 
 ## 주요 변경 사항
 
@@ -28,6 +29,12 @@
 - Runbook에 설치 전 승인 gate, Application bootstrap, 최초 diff 검토,
   Manual Sync와 최종 read-only 점검 절차를 추가했다.
 - Task, Verification, Approved Fixes, PR 및 devlog workflow 문서를 갱신했다.
+- 승인된 review fix를 반영했다.
+  - production API 완료 주장을 실제 증거가 있는 `/health`로 한정
+  - review artifact의 잘못된 상대 링크 수정
+  - 빈 CodeRabbit artifact에 실제 findings와 현재 Verdict 기록
+  - Task의 Verification 참조를 Backend 전용 문서로 교체
+  - Ruby manifest assertion placeholder를 실행 가능한 전체 명령으로 교체
 
 ## 추가/변경된 API
 
@@ -80,6 +87,14 @@ README의 현재 운영 구조를 Argo CD 기반으로 확정해서 설명하기
     출력 없음
   - UNIT-01~04, Verification `passed`, Pending Verification `없음`의 상태 일치
     확인
+  - Antigravity artifact의 production API 완료 주장이 `/health`로 한정되고
+    잘못된 `../docs/` 링크가 제거됐음을 확인
+  - Task의 이전 baseline Verification 참조 및 Verification의 Ruby placeholder
+    제거 확인
+  - 전체 Ruby Application manifest assertion 재실행:
+    `Application manifest assertions passed`, exit code 0
+  - FIX-03~07 변경 범위가 review artifact 두 개, Task, Verification과
+    Approved Fixes 문서로 제한됨을 확인
 
 ## 확인 결과
 
@@ -95,8 +110,10 @@ README의 현재 운영 구조를 Argo CD 기반으로 확정해서 설명하기
   `Completed`였다.
 - Argo CD 핵심 Pod 7개는 `1/1 Running`/restart count 0이었고 public
   Ingress는 없었다.
-- Approved Fixes의 FIX-01과 FIX-02를 적용해 Task, Verification과 fix 문서의
-  완료 상태 및 재검증 기록을 일치시켰다.
+- Approved Fixes의 FIX-01~07을 적용하고 허용된 재검증 결과를 Verification에
+  기록했다.
+- `/version`, 주요 read-only API와 Prometheus/Grafana의 개별 실행 결과는
+  Verification에 없으므로 이 PR에서 검증 완료로 주장하지 않는다.
 
 ## 비고
 
@@ -105,6 +122,9 @@ README의 현재 운영 구조를 Argo CD 기반으로 확정해서 설명하기
 - PR 작성 과정에서는 Kubernetes 변경, rollout, Sync 또는 production API
   검증을 새로 실행하지 않았다. 위 운영 결과는 Verification에 기록된 사람이
   수행한 명령과 당시 결과를 요약한 것이다.
+- CodeRabbit 외부 재검토는 자동 실행하지 않았다. 관련 artifact의 현재
+  Verdict는 `CHANGES REQUIRED`이며 comment resolve와 재검토는 사람 작업으로
+  남아 있다.
 - Argo CD는 non-HA이며 Backend image는 계속 `latest`를 사용한다. 완전한
   배포 재현성이나 고가용성을 제공한다는 의미가 아니다.
 - Frontend Application, immutable SHA image tag 전환, controlled rollback,

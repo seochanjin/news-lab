@@ -362,7 +362,21 @@ Directory recursion을 끄고 `cluster-issuer.yaml`을 제외해야 Backend 7개
 
 Command:
 
-`ruby -e '<k8s/argocd/news-api-application.yaml field assertions>'`
+```bash
+ruby -ryaml -e '
+manifest = YAML.load_file("k8s/argocd/news-api-application.yaml")
+raise "kind mismatch" unless manifest["kind"] == "Application"
+raise "repoURL mismatch" unless manifest.dig("spec", "source", "repoURL") == "https://github.com/seochanjin/news-lab.git"
+raise "targetRevision mismatch" unless manifest.dig("spec", "source", "targetRevision") == "main"
+raise "path mismatch" unless manifest.dig("spec", "source", "path") == "k8s"
+raise "recurse mismatch" unless manifest.dig("spec", "source", "directory", "recurse") == false
+raise "exclude mismatch" unless manifest.dig("spec", "source", "directory", "exclude") == "cluster-issuer.yaml"
+raise "destination server mismatch" unless manifest.dig("spec", "destination", "server") == "https://kubernetes.default.svc"
+raise "destination namespace mismatch" unless manifest.dig("spec", "destination", "namespace") == "default"
+raise "syncPolicy must be absent" if manifest.dig("spec", "syncPolicy")
+puts "Application manifest assertions passed"
+'
+```
 
 Result:
 
@@ -776,6 +790,93 @@ Result:
 `git diff --stat`과 대상 문서 `git diff`에는 이번 문서 변경이 출력되지 않았다.
 기존 architecture, runbook, task main 변경과 그 밖의 untracked 작업 파일은
 보존했다.
+
+Status: passed
+
+### Approved Fixes FIX-03~07 재검증
+
+Command:
+
+```bash
+rg -n \
+  "/version|/health|\.\./docs/|feature-argocd-manual-sync-baseline|<k8s/argocd/news-api-application.yaml field assertions>|Verdict|Problems Found|Required Fixes Before PR" \
+  docs/reviews/feature-argocd-backend-manual-sync-antigravity.md \
+  docs/reviews/feature-argocd-backend-manual-sync-coderabbit.md \
+  docs/tasks/feature-argocd-backend-manual-sync.md \
+  docs/verification/feature-argocd-backend-manual-sync.md
+```
+
+Result:
+
+Antigravity review의 production API 완료 주장은 `/health`로 한정되었다.
+Antigravity review에서 잘못된 `../docs/` 링크가 검색되지 않았고, Task에서 이전
+baseline Verification 참조가 검색되지 않았으며, Verification에서 Ruby
+placeholder가 검색되지 않았다. CodeRabbit artifact에는 Problems Found,
+Required Fixes Before PR와 현재 Verdict가 기록되어 있다.
+
+Task의 acceptance criteria와 제안 command에는 `/version`이 계속 존재하고,
+CodeRabbit artifact에는 `/version` 실행 증거가 없다는 지적이 남아 있다. 이는
+검증 완료 주장이 아니라 요구사항과 finding이다.
+
+Status: passed
+
+Command:
+
+```bash
+ruby -ryaml -e '
+manifest = YAML.load_file("k8s/argocd/news-api-application.yaml")
+raise "kind mismatch" unless manifest["kind"] == "Application"
+raise "repoURL mismatch" unless manifest.dig("spec", "source", "repoURL") == "https://github.com/seochanjin/news-lab.git"
+raise "targetRevision mismatch" unless manifest.dig("spec", "source", "targetRevision") == "main"
+raise "path mismatch" unless manifest.dig("spec", "source", "path") == "k8s"
+raise "recurse mismatch" unless manifest.dig("spec", "source", "directory", "recurse") == false
+raise "exclude mismatch" unless manifest.dig("spec", "source", "directory", "exclude") == "cluster-issuer.yaml"
+raise "destination server mismatch" unless manifest.dig("spec", "destination", "server") == "https://kubernetes.default.svc"
+raise "destination namespace mismatch" unless manifest.dig("spec", "destination", "namespace") == "default"
+raise "syncPolicy must be absent" if manifest.dig("spec", "syncPolicy")
+puts "Application manifest assertions passed"
+'
+```
+
+Result:
+
+`Application manifest assertions passed`가 출력되었고 exit code 0으로 통과했다.
+
+Status: passed
+
+Command:
+
+`git diff --check`
+
+Result:
+
+출력 없이 exit code 0으로 통과했다.
+
+Status: passed
+
+Command:
+
+`git diff --name-only -- app scripts db .github Dockerfile requirements.txt docker-compose.yml`
+
+Result:
+
+출력 없음.
+
+Status: passed
+
+Notes:
+
+FIX-03~07 적용으로 금지 영역을 변경하지 않았다.
+
+Command:
+
+`git status --short`, `git diff --stat`,
+`git diff -- docs/reviews/feature-argocd-backend-manual-sync-antigravity.md docs/reviews/feature-argocd-backend-manual-sync-coderabbit.md docs/tasks/feature-argocd-backend-manual-sync.md docs/verification/feature-argocd-backend-manual-sync.md docs/fixes/feature-argocd-backend-manual-sync-approved-fixes.md`
+
+Result:
+
+승인된 FIX-03~07 범위인 review artifact 두 개, Task, Verification과 Approved
+Fixes 문서만 변경된 것을 확인했다.
 
 Status: passed
 
