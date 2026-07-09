@@ -1,3 +1,3 @@
 # Current Task
 
-[feature-argocd-manual-sync-baseline.md](feature-argocd-manual-sync-baseline.md)
+[feature-argocd-backend-manual-sync.md](feature-argocd-backend-manual-sync.md)

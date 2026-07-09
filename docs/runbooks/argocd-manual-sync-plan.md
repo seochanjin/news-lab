@@ -3,9 +3,265 @@
 [Runbook index로 돌아가기](../RUNBOOK.md)
 
 이 문서는 Argo CD 승인형 배포 구조를 도입하기 전 사람이 실행할 절차와 확인
-경계를 정리하기 위한 계획 문서다. 현재 단계에서는 Argo CD 설치, namespace
-생성, Helm 실행, `kubectl apply`, `kubectl rollout`을 수행하지 않고, 초기
-Application 등록 기준과 Manual Sync 운영 원칙만 정리한다.
+경계를 정리하기 위한 계획 문서다. Namespace 생성, Argo CD 설치,
+`kubectl apply`, credential 변경과 Application Sync는 사람이 수행한다.
+Agent는 read-only 결과와 사람이 제공한 실행 결과만 검증 기록으로 사용한다.
+
+## 현재 Backend 운영 기준
+
+2026-07-09 기준 Argo CD `v3.4.2` non-HA 구성과 `news-api` Application의 최초
+Manual Sync가 사람 통제 작업으로 완료되었다. 당시 실제 결과는
+`docs/verification/feature-argocd-backend-manual-sync.md`에 기록되어 있다.
+Application은 automated sync, automatic prune, automatic self-heal을 사용하지
+않으며, `ClusterIssuer/letsencrypt-prod`를 관리하지 않는다.
+
+운영 상태를 다시 확인할 때는 다음 read-only 조회를 사용한다. 이 명령은 Sync나
+rollout을 발생시키지 않는다.
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get application news-api -n argocd
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment,statefulset,pods,service,ingress -n argocd -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl rollout status deployment/news-api -n default --timeout=300s
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment,pods,service,ingress,cronjob -n default -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get certificate -n default
+curl -fsS https://api.newslab.ai.kr/health
+curl -fsS https://api.newslab.ai.kr/version
+```
+
+추가 read-only API는 [일상 운영 점검](routine-check.md)의 현재 endpoint를
+사용한다. Application의 `Synced`/`Healthy`, Deployment rollout, Pod Ready와
+restart count, Service·Ingress·Certificate, 네 CronJob의 존재와 schedule,
+`/health`·`/version`을 함께 확인해야 한다. 한 항목이라도 실패하면 재Sync,
+restart, patch 또는 삭제를 자동 수행하지 않고 event와 현재 revision을 기록해
+사람이 복구 방향을 결정한다.
+
+Argo CD CLI/UI가 필요할 때만 local port-forward를 열고 작업 후 종료한다.
+Service type 변경이나 public Ingress 생성은 이 운영 기준에 포함되지 않는다.
+
+## Backend 설치 전 승인 gate
+
+Backend 첫 설치 후보는 공식 Argo CD `v3.4.2` non-HA
+`manifests/install.yaml`, namespace는 `argocd`다. 설치는 human-controlled
+operation이다. UNIT-01에서 아래 read-only 조회 결과를 확인했으며, 설치 직전
+동일 기준에 변화가 없는지 사람이 다시 확인한다.
+
+```bash
+kubectl version
+kubectl get nodes \
+  -o custom-columns=NAME:.metadata.name,VERSION:.status.nodeInfo.kubeletVersion,ARCH:.status.nodeInfo.architecture,CPU:.status.allocatable.cpu,MEMORY:.status.allocatable.memory
+kubectl describe nodes
+kubectl get clusterissuer letsencrypt-prod -o yaml
+```
+
+승인 조건은 다음과 같다.
+
+- Kubernetes server/K3s version이 Argo CD 3.4 공식 테스트 범위
+  `v1.32`~`v1.35`에 포함된다.
+- 설치 대상 node가 `arm64`다. 실제 image pull과 scheduling은 설치 후
+  UNIT-02에서 확인하며 실패하면 진행하지 않는다.
+- allocatable 자원과 현재 requests를 비교했을 때 component scheduling
+  여유가 있다.
+- live `ClusterIssuer/letsencrypt-prod`의 존재와 현재 관리 주체를 확인했다.
+- 설치 직전 URL이 `stable`이 아니라 `v3.4.2`로 고정되어 있다.
+
+`news-api` Application은 `k8s/`를 읽되 directory exclude에
+`cluster-issuer.yaml`을 지정한다. Application 생성 전에 generated manifest
+목록에 `ClusterIssuer`가 없고 다음 일곱 resource만 포함되는지 확인한다.
+
+- `Deployment/news-api`
+- `Service/news-api`
+- `Ingress/news-api-ingress`
+- `CronJob/news-rss-collector`
+- `CronJob/news-daily-topic-pipeline`
+- `CronJob/news-three-day-topic-pipeline`
+- `CronJob/news-weekly-topic-pipeline`
+
+설치 manifest, namespace, Application 생성·Sync, password 변경과 Secret
+삭제는 사람이 수행한다. 초기 admin credential 값은 어떤 실행 기록에도 남기지
+않는다. 제거가 필요하면 먼저 Application finalizer와 cascade 영향, workload
+보존 여부를 확인하고 Application ownership을 분리한다. 그 확인 없이
+Application 또는 `argocd` namespace를 삭제하지 않는다.
+
+## Backend 도입 UNIT-03 Application 등록과 Manual Sync
+
+아래 변경 명령은 모두 human-controlled operation이다. 먼저
+`k8s/argocd/news-api-application.yaml`의 local diff와 source 설정을 확인한다.
+Application 정의는 현재 feature branch의 local 파일로 bootstrap하되, Application
+source는 운영 workload manifest가 있는 `main`을 계속 추적한다. PR merge 전에는
+bootstrap 정의가 아직 `main`에 없다는 상태를 Verification에 명시한다.
+
+### 1. Bootstrap 전 정적 확인
+
+Application manifest에서 다음 값과 자동화 옵션 부재를 확인한다.
+
+```bash
+kubectl create --dry-run=client \
+  -f k8s/argocd/news-api-application.yaml -o yaml
+rg -n "repoURL:|targetRevision:|path:|recurse:|exclude:|server:|namespace:|automated:|prune:|selfHeal:" \
+  k8s/argocd/news-api-application.yaml
+```
+
+기대값은 repository `https://github.com/seochanjin/news-lab.git`, revision
+`main`, path `k8s`, in-cluster server, namespace `default`, directory
+`recurse: false`, exclude `cluster-issuer.yaml`이다. `automated`, `prune`,
+`selfHeal`은 없어야 한다.
+
+### 2. Application 생성과 generated resource 확인
+
+다음 변경 명령은 사람이 실행한다.
+
+```bash
+kubectl apply -f k8s/argocd/news-api-application.yaml
+```
+
+적용 직후 Sync하지 않고 read-only 조회만 수행한다.
+
+```bash
+kubectl get applications.argoproj.io news-api -n argocd
+kubectl describe application news-api -n argocd
+argocd app manifests news-api
+argocd app get news-api --show-operation
+argocd app diff news-api
+```
+
+generated manifest가 정확히 다음 7개인지 확인한다.
+
+- `Deployment/news-api`
+- `Service/news-api`
+- `Ingress/news-api-ingress`
+- `CronJob/news-rss-collector`
+- `CronJob/news-daily-topic-pipeline`
+- `CronJob/news-three-day-topic-pipeline`
+- `CronJob/news-weekly-topic-pipeline`
+
+`ClusterIssuer`, `Application`, monitoring values, Secret, ConfigMap, PVC 또는
+그 밖의 resource가 보이면 Sync하지 않는다. Repository 읽기나 manifest 생성이
+실패해도 exclude를 추측으로 넓히지 않고 오류와 generated 목록을 기록한다.
+
+### 3. 최초 diff 승인 gate
+
+Sync 전에 다음 live baseline과 diff를 함께 보존한다.
+
+```bash
+kubectl get deployment news-api -n default -o wide
+kubectl get pods -n default -l app=news-api -o wide
+kubectl get service,ingress -n default
+kubectl get cronjob -n default
+argocd app get news-api
+argocd app diff news-api
+```
+
+Deployment selector/label, Service ClusterIP와 selector, Ingress annotation,
+host와 TLS, 네 CronJob의 schedule/command/suspend, image, Secret reference를
+확인한다. 생성·삭제·recreate, Deployment selector 변경, Service ClusterIP
+교체 또는 예상하지 않은 defaulted-field 차이가 있으면 중단한다.
+
+### 4. Manual Sync와 결과 확인
+
+diff에 예상하지 않은 변경과 삭제가 없다는 사람의 명시적 승인 후에만 사람이
+다음 변경 명령을 실행한다.
+
+```bash
+argocd app sync news-api
+```
+
+Sync 직후 UNIT-03에서는 Application operation과 resource health를 확인한다.
+Deployment rollout, endpoint와 scheduled workload의 최종 production 검증은
+UNIT-04에서 별도 수행한다.
+
+```bash
+argocd app get news-api --show-operation
+kubectl get applications.argoproj.io news-api -n argocd
+kubectl describe application news-api -n argocd
+```
+
+Sync 실패, `Degraded`, 예상하지 않은 resource 변경 또는 operation history
+누락 시 재Sync하거나 resource를 삭제하지 않는다. 현재 Git revision, operation
+message, resource 상태와 event를 기록하고 UNIT-04로 진행하지 않는다.
+
+## Backend 도입 UNIT-02 설치와 접근 절차
+
+아래 절차는 human-controlled operation이다. 사람은 NewsLab K3s context와
+UNIT-01 승인 조건을 다시 확인한 뒤 명령을 한 단계씩 실행하고, credential 값을
+제외한 stdout/stderr를 Verification 근거로 제공한다. Agent는 설치 또는
+credential 관련 명령을 대신 실행하지 않는다.
+
+### 1. 고정 version 설치
+
+변경 명령과 read-only 검증 명령을 분리한다. `stable` URL이나 local copy가 아닌
+공식 `v3.4.2` URL을 사용한다.
+
+```bash
+# 변경 명령: 사람이 실행
+kubectl create namespace argocd
+kubectl apply -n argocd \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.2/manifests/install.yaml
+```
+
+Namespace가 이미 존재하면 생성 실패를 무시하고 바로 apply하지 않는다. 기존
+Argo CD resource, version과 ownership을 먼저 조회해 신규 설치인지 재적용인지
+판단한다. URL fetch, manifest parsing 또는 apply가 실패하면 일부 생성된
+resource를 임의로 삭제하지 않고 현재 상태와 event를 기록한 뒤 중단한다.
+
+### 2. Core component와 ARM64 scheduling 확인
+
+다음은 read-only 조회이며, readiness 대기 명령은 resource를 변경하지 않는다.
+
+```bash
+kubectl get all -n argocd
+kubectl get pods -n argocd -o wide
+kubectl get deployment,statefulset,service -n argocd
+kubectl get events -n argocd --sort-by=.lastTimestamp
+kubectl wait --for=condition=Available deployment --all \
+  -n argocd --timeout=300s
+kubectl wait --for=condition=Ready pod --all \
+  -n argocd --timeout=300s
+kubectl get pods -n argocd \
+  -o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,PHASE:.status.phase,READY:.status.containerStatuses[*].ready,IMAGES:.spec.containers[*].image
+kubectl get nodes \
+  -o custom-columns=NAME:.metadata.name,ARCH:.status.nodeInfo.architecture
+```
+
+설치 성공 조건은 application controller StatefulSet과 server, repo server,
+applicationset controller, Dex, notifications controller Deployment가 준비되고,
+Redis Pod를 포함한 모든 Pod가 ARM64 node에서 `Running`/Ready인 것이다. 실제
+resource 이름과 개수는 고정 manifest 결과를 기준으로 기록한다.
+
+`ImagePullBackOff`, `ErrImagePull`, `CrashLoopBackOff`, `Pending`, readiness
+timeout, ARM64가 아닌 node 배치 또는 반복 warning event가 있으면 접근 검증과
+Application 등록으로 진행하지 않는다. 실패 Pod의 `describe`와 container별
+log를 읽어 원인을 기록하되 resource를 patch, restart 또는 delete하지 않는다.
+
+```bash
+kubectl describe pod <pod-name> -n argocd
+kubectl logs <pod-name> -n argocd --all-containers
+```
+
+### 3. Port-forward와 로그인
+
+Core component가 모두 Ready인 뒤 사람의 로컬 terminal에서 실행한다.
+
+```bash
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+```
+
+별도 terminal에서 `https://127.0.0.1:8080`으로 UI/API 연결을 확인한다. 초기
+admin password 조회와 UI 또는 CLI 로그인, password 변경은 사람이 수행한다.
+조회 command, password, token과 shell history 출력은 Verification이나 채팅에
+남기지 않는다. 기록에는 연결 성공, 로그인 성공 여부와 확인 시각만 남긴다.
+
+로그인 검증 후 port-forward process를 종료하고 `8080` listener가 사라졌는지
+확인한다. Service type을 변경하거나 Ingress, LoadBalancer, NodePort를 만들지
+않는다. 따라서 public DNS와 외부 network에서 접근 가능하다는 결과가 나오면
+UNIT-02 성공이 아니라 노출 조사와 중단 사유다.
+
+### 4. 실패 시 보존과 다음 단계 gate
+
+이 UNIT에서는 자동 제거 또는 rollback을 하지 않는다. 설치 실패 시 namespace나
+cluster-scoped RBAC를 삭제하기 전에 생성된 resource, event, 적용 version과
+실패 원인을 사람이 검토한다. Application은 core component Ready, port-forward
+연결과 로그인 성공, public 노출 없음이 모두 실제 결과로 확인된 뒤에만
+UNIT-03에서 등록한다.
 
 ## UNIT-01 현재 수동 배포 흐름
 
@@ -129,9 +385,9 @@ availability와 scheduled workload에 직접 영향을 줄 수 있으므로 Sync
 - CronJob `news-weekly-topic-pipeline`
 
 현재 backend `k8s/` 경로에는 `ClusterIssuer/letsencrypt-prod` manifest도 있다.
-이 resource는 cluster-wide TLS 인프라라서 `news-api` Application에 포함할지
-별도 인프라 소유로 남길지 Application 등록 전에 사람이 결정해야 한다. 이
-결정이 끝나기 전에는 backend Application을 운영 Sync 대상으로 등록하지 않는다.
+이 resource는 cluster-wide TLS 인프라이므로 shared infrastructure 소유로
+남기고 `news-api`의 directory exclude에서 `cluster-issuer.yaml`을 제외한다.
+Application 등록 전에 generated manifest 목록에서 실제 제외 여부를 확인한다.
 
 ### Frontend 등록 전 확인
 
