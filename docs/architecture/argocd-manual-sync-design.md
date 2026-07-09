@@ -2,10 +2,133 @@
 
 [Architecture index로 돌아가기](../ARCHITECTURE.md)
 
-이 문서는 NewsLab의 Argo CD 승인형 GitOps 배포 구조를 설계하기 위한 작업
-문서다. 현재 단계에서는 Argo CD를 설치하거나 Kubernetes resource를 변경하지
-않고, 기존 CI, image tag, manifest, 수동 배포 흐름, Application 경계, Manual
-Sync 정책을 repository 근거로 정리한다.
+이 문서는 NewsLab의 Argo CD 승인형 GitOps 배포 구조와 Backend 최초 도입 결과를
+정리한다. 기존 CI, image tag, manifest, 수동 배포 흐름, Application 경계,
+Manual Sync 정책을 repository 근거로 설명하고, 실제 설치·Sync 결과는
+`docs/verification/feature-argocd-backend-manual-sync.md`를 source of truth로
+사용한다.
+
+## Backend 도입 UNIT-01 설치 전 결정
+
+2026-07-09 공식 자료를 다시 확인한 결과, Backend 첫 검증에는 Argo CD
+`v3.4.2`의 공식 non-HA `manifests/install.yaml`을 고정해서 사용한다.
+`stable` branch URL은 이후 내용이 바뀔 수 있으므로 운영 설치 입력으로 사용하지
+않는다.
+
+### 설치 방식과 구성
+
+| 항목 | 결정 | 근거 |
+| --- | --- | --- |
+| Version | `v3.4.2` | 확인 시점의 공식 최신 stable release이며 production 설치는 version 고정을 권장한다. |
+| 배포 자료 | 공식 non-HA `install.yaml` | Helm chart는 community maintained이고, 최초 검증에는 공식 release와 직접 대응하는 단일 manifest가 더 단순하다. |
+| Namespace | `argocd` | 공식 manifest의 ClusterRoleBinding이 이 namespace의 ServiceAccount를 참조한다. |
+| 설치 유형 | 표준 multi-tenant non-HA | UI/API와 in-cluster 배포 권한이 필요하므로 API/UI가 없는 core 설치는 목적에 맞지 않는다. |
+| 제외 구성 | HA, SSO 설정, external Redis, public Ingress | 이번 검증 범위 밖이며 public 노출 없이 port-forward만 사용한다. |
+
+공식 문서는 non-HA 설치를 평가·검증 용도로 설명하고 production에는 HA를
+권장한다. NewsLab은 이번 단계에서 최소 설치와 Manual Sync 흐름만 검증하므로
+non-HA를 선택한다. 이는 고가용성 보장을 의미하지 않으며, 장기 운영 전 HA 전환
+여부는 별도 판단이 필요하다.
+
+표준 manifest에는 application controller, applicationset controller,
+repo server, server, Redis와 Dex가 포함된다. Dex는 이번 단계에서 SSO에
+사용하지 않지만, 공식 manifest를 임의로 변형하지 않기 위해 설치 구성은
+유지한다. 실제 생성 resource와 Ready 상태는 설치 후 UNIT-02에서 확인한다.
+
+### Kubernetes와 ARM64 전제
+
+Argo CD 3.4의 공식 테스트 Kubernetes 범위는 `v1.32`부터 `v1.35`까지다.
+K3s 자체는 `arm64/aarch64`를 지원하고, Argo CD v3.4.2 release는 Linux ARM64
+CLI artifact를 제공한다. 현재 cluster 조회 결과 세 node는 모두
+`v1.35.5+k3s1`/`arm64`이며, Argo CD 3.4의 공식 Kubernetes 테스트 범위에
+포함된다. 설치 전제는 충족하지만 실제 container image pull과 scheduling은
+설치 후 UNIT-02에서 확인한다.
+
+- K3s server version이 Argo CD 3.4 테스트 범위인 `v1.32`~`v1.35`인지
+- 모든 설치 대상 node의 `kubernetes.io/arch`가 `arm64`인지
+- allocatable CPU/memory와 현재 requests 기준으로 모든 component를 배치할
+  여유가 있는지
+
+확인 시점의 allocatable 자원은 node별 CPU `2`, `2`, `4`와 memory 약
+`12Gi`, `12Gi`, `8Gi`다. 현재 requests는 master `200m/140Mi`, worker
+`550m/1280Mi`, Pi worker `0/0`으로 확인되어 최소 설치를 검토할 여유가 있다.
+이는 component Ready를 보장하지 않으며, image pull 또는 scheduling 실패 시
+UNIT-02에서 설치를 중단한다. 공식 install manifest는 NewsLab 전용 sizing
+자료가 아니므로 K3s 자체 최소 사양만으로 capacity를 판정하지 않는다.
+
+### Credential, 제거와 복구 전제
+
+초기 접근은 `argocd-server` Service에 대한 `kubectl port-forward`만 사용한다.
+초기 admin password는 `argocd-initial-admin-secret`에서 사람이 조회하되 값을
+문서나 Git에 기록하지 않는다. 첫 로그인 후 password를 변경하고 초기 Secret을
+삭제하는 절차도 사람 통제 작업으로 둔다.
+
+제거 전에는 Application finalizer와 cascade 삭제가 기존 workload를 함께
+삭제할 수 있으므로, Application ownership을 해제하고 workload 보존 여부를
+확정하기 전에는 Argo CD resource나 namespace를 삭제하지 않는다. 복구는 같은
+고정 version manifest 재설치, 설정/credential 복원, Application diff 재검토
+순서로 계획하며 실제 제거·복구 시험은 이번 UNIT에서 수행하지 않는다.
+
+### `ClusterIssuer/letsencrypt-prod` ownership
+
+`ClusterIssuer/letsencrypt-prod`는 Backend Application이 아니라 shared
+infrastructure 소유로 확정한다. `k8s/cluster-issuer.yaml`을 이번 작업에서
+이동하지 않고, `news-api` Application의 directory source에서
+`cluster-issuer.yaml`을 명시적으로 제외한다.
+
+따라서 `news-api`의 관리 대상은 `Deployment/news-api`, `Service/news-api`,
+`Ingress/news-api-ingress`와 네 Backend CronJob뿐이다. Application 생성 전
+rendered resource 목록에 `ClusterIssuer`가 없음을 확인해야 하며, live
+`ClusterIssuer`의 존재와 현재 관리 주체도 사람이 확인한다. 제외 설정이
+동작하지 않거나 ownership이 불명확하면 Application 생성과 Sync를 중단한다.
+
+## Backend 도입 UNIT-03 Application 정의
+
+`news-api`의 선언형 Application은
+`k8s/argocd/news-api-application.yaml`에 둔다. Bootstrap은 사람이 이 파일을
+명시해 최초 한 번 수행하며, Application source는 `main` revision의 `k8s`
+directory다. Source directory의 `recurse`는 `false`로 고정한다.
+
+이 설정은 root의 Backend manifest만 읽고 `k8s/monitoring/`의 Helm values와
+`k8s/argocd/`의 Application 정의는 workload source에서 제외한다.
+`cluster-issuer.yaml`은 directory exclude로 별도 제외한다. 따라서 기대하는
+generated resource는 기존에 확정한 Backend resource 7개뿐이다.
+
+Application에는 `spec.syncPolicy.automated`를 두지 않는다. 따라서 automated
+sync, automatic prune, automatic self-heal은 모두 비활성 상태다. Application
+삭제가 Backend workload의 cascade 삭제로 이어지지 않도록 resources finalizer도
+추가하지 않는다.
+
+Application manifest 자체는 workload Application의 관리 대상이 아니다. 최초
+생성과 이후 Application spec 변경은 사람이 manifest diff를 검토한 뒤
+명시적으로 적용한다. 별도 App of Apps 또는 bootstrap Application 도입은 이번
+범위에 포함하지 않는다.
+
+## Backend 최초 도입 운영 상태
+
+2026-07-09 사람 통제 작업으로 Argo CD `v3.4.2` non-HA 구성을 `argocd`
+namespace에 설치하고 `news-api` Application의 최초 Manual Sync를 수행했다.
+확인된 상태는 다음과 같다.
+
+- Argo CD 핵심 Pod 7개가 ARM64 node에서 Ready 상태다.
+- `argocd-server`는 `ClusterIP`이고 Argo CD Ingress는 없다.
+- 접근은 local `kubectl port-forward`로 제한한다.
+- `news-api`는 `main`의 `k8s` path를 추적하며 Sync Policy는 Manual이다.
+- 관리 대상은 Backend Deployment, Service, Ingress와 네 CronJob 등 7개다.
+- `ClusterIssuer/letsencrypt-prod`는 shared infrastructure 소유로 제외했다.
+- 최초 diff는 7개 resource의 Argo CD tracking annotation 추가만 포함했다.
+- 최초 Sync operation은 성공했고 당시 Application은 `Synced`, `Healthy`였다.
+- 당시 Backend Deployment `2/2 Ready`, 네 CronJob `SUSPEND=False`,
+  production `/health` 정상 응답을 확인했다.
+
+위 내용은 해당 시점의 검증 결과다. 이후 운영 상태를 보장하지 않으며 현재
+상태는 runbook의 read-only 점검을 다시 수행해 판단한다. `latest` image tag,
+non-HA 구성, admin 기반 port-forward 접근은 그대로 남아 있으므로 완전한 배포
+재현성, Argo CD 고가용성 또는 장기 접근 정책이 확립됐다는 뜻은 아니다.
+
+Frontend Application 등록, Backend·Frontend 고정 image tag 전환, controlled
+rollback 시험, Tailscale 내부 접근 검토와 README 운영 구조 갱신은 별도 후속
+task로 분리한다.
 
 ## UNIT-01 현재 배포 baseline
 
@@ -197,9 +320,9 @@ Backend repository의 `k8s/`에는 `k8s/cluster-issuer.yaml`도 있다.
 - `CronJob/news-three-day-topic-pipeline`
 - `CronJob/news-weekly-topic-pipeline`
 
-후속 Application 등록 전에는 `cluster-issuer.yaml`을 별도 인프라 소유로 남길지,
-Argo CD directory include/exclude 또는 manifest 구조 분리로 제외할지 사람이
-확정해야 한다. 이 task에서는 manifest를 이동하거나 수정하지 않는다.
+Backend 도입 UNIT-01에서 `cluster-issuer.yaml`은 shared infrastructure 소유로
+남기고 Argo CD directory exclude로 제외하기로 확정했다. 이 task에서는
+manifest를 이동하거나 수정하지 않는다.
 
 ### GitOps source repository 선택
 
@@ -413,17 +536,15 @@ Secret 변경도 동일하게 이전 값과 현재 값의 호환성을 별도로
 
 ### 후속 실행 계획
 
-이 설계가 완료된 뒤 실제 운영 변경은 별도 task로 분리한다.
+최초 Backend 설치와 Manual Sync는 완료되었다. 남은 운영 변경은 별도 task로
+분리한다.
 
-1. Argo CD 최소 설치
-2. Backend Application 등록
-3. Backend Manual Sync 검증
-4. Frontend Application 등록
-5. Frontend Manual Sync 검증
-6. 고정 image tag 적용
-7. 이전 revision rollback 검증
-8. Architecture와 Runbook 갱신
-9. README GitOps 배포 구조 반영
+1. Frontend Application 등록 및 Manual Sync 검증
+2. Backend·Frontend 고정 image tag 적용
+3. 이전 revision controlled rollback 검증
+4. Argo CD 접근 방식의 Tailscale 내부화 검토
+5. Backend와 Frontend 검증 완료 후 README GitOps 배포 구조 반영
 
 각 단계는 사람 승인과 실제 검증 기록을 별도로 요구한다. 이 문서는 Argo CD가
-이미 설치되었거나 운영 중이라고 주장하지 않는다.
+완전 자동 배포, 고가용성 또는 재현 가능한 고정 image 배포를 제공한다고
+주장하지 않는다.
