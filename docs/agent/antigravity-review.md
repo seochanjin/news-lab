@@ -53,6 +53,11 @@ Review output만으로 구현 수정이 승인되지는 않는다.
 `docs/reviews/<safe-branch>-antigravity.md`에 기록한다. Applied fix나 verification
 결과를 review 문서에 기록하지 않는다.
 
+Review artifact에는 `file://` URI, 사용자 홈 디렉터리, 로컬 사용자명, absolute
+filesystem path를 기록하지 않는다. Repository 내부 파일은 review artifact 위치를
+기준으로 한 repository-relative Markdown link로 기록한다. 경로를 확정할 수 없으면
+clickable link를 만들지 않고 repository-relative plain path로 기록한다.
+
 자동 실행과 수동 fallback 모두 `Verdict`에는 다음 세 값만 사용한다.
 
 - `PASS`
