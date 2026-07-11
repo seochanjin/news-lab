@@ -14,13 +14,13 @@ image tag 갱신 branch와 PR을 생성하는 workflow job을 구현했다. UNIT
 Deployment와 네 CronJob manifest를 동일한 full Git SHA image로 전환하고 로컬
 정적 검증을 수행했다.
 
-UNIT-05에서는 현재 manifest SHA의 Docker Hub image 조회를 시도했지만, 현재 로컬
-환경에서 Docker Hub registry DNS 조회가 실패해 image 존재와 ARM64 platform을
-확인하지 못했다. manifest PR merge, Argo CD diff/Sync는 사람이 수행해야 하는
-운영 단계라 실제 log 없이는 완료로 기록하지 않았다.
+UNIT-05에서는 사람이 제공한 운영 검증 결과로 Docker Hub SHA image 존재,
+`linux/arm64` platform, Argo CD `OutOfSync`와 image-only diff, Manual Sync 성공을
+확인했다. UNIT-06에서는 사람이 제공한 운영 검증 결과로 Backend rollout, Pod와
+CronJob image 일치, Argo CD `Synced`/`Healthy`, production `/health` 정상 응답을
+확인했다.
 
-후속 UNIT의 rollout, production `/health`, rollback/restore 검증은 아직 수행하지
-않았다.
+UNIT-07 rollback/restore와 UNIT-08 전체 회귀 검증은 아직 수행하지 않았다.
 
 ## Commands Run
 
@@ -600,6 +600,39 @@ Result:
 운영 단계다.
 
 Status: human-required
+
+## Human Verification: UNIT-05~UNIT-06
+
+Command summary:
+사람이 Docker Hub image, Argo CD diff/Manual Sync, K3s rollout과 production
+`/health`를 운영 환경에서 검증하고 결과를 제공했다. Agent는 production command,
+`kubectl`, `argocd`, `git push`, `git merge`를 실행하지 않았다.
+
+Result:
+Docker Hub image `seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1`가
+존재하며 image platform은 `linux/arm64`다. Image index digest는
+`sha256:2024f4e3ff050f63588c316edcf90bcd6533c1047a78a15547666f101dad43d7`다.
+
+Argo CD sync 전 상태는 main revision `7aa3971` 기준 `OutOfSync`였다. Diff 대상은
+`Deployment/news-api` 1개와 CronJob 4개였고, diff 내용은 image가 `latest`에서
+`seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1`로 변경된 내용만
+존재했다.
+
+Manual Sync는 성공했다. Sync revision은
+`7aa397148a5d1c3d931cd9205553d1cd7f5838dc`다. Deployment rollout은
+successfully rolled out 상태였고 Deployment image는
+`seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1`다.
+
+Pod 2개는 모두 `Running`, `READY=true`, node는 `arm-worker-node`였다. CronJob
+4개는 모두 `seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1` image를
+사용했다. Argo CD 최종 상태는 `Synced`, `Healthy`다. Production health 응답은
+`{"status":"ok","service":"news-api","hostname":"news-api-5755fd5b99-kv847"}`다.
+
+UNIT-05와 UNIT-06은 완료로 기록한다. UNIT-07 rollback/restore와 UNIT-08 전체
+회귀 검증은 수행하지 않았으므로 pending으로 유지한다. Verification Status도
+UNIT-07~UNIT-08 완료 전까지 `pending`으로 유지한다.
+
+Status: passed
 
 Command:
 `git diff --check`
