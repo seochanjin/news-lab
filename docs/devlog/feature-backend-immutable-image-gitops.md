@@ -71,8 +71,8 @@ rollback/restore는 아직 완료하지 않았다.
   - `docs/pr/feature-backend-immutable-image-gitops.md`에 PR 초안을 작성했다.
   - `docs/fixes/feature-backend-immutable-image-gitops-approved-fixes.md`의
     FIX-01~FIX-07을 적용했다.
-  - `docs/agent/antigravity-review.md`에 review artifact가 local URI, 사용자 홈
-    경로, absolute path를 기록하지 않도록 repository-relative link 규칙을 추가했다.
+  - review instruction에 review artifact가 local URI, 사용자 홈 경로, absolute
+    path를 기록하지 않도록 repository-relative link 규칙을 추가했다.
 
 ## 구현 상세
 
@@ -203,8 +203,6 @@ Source of truth:
   - 상태: image 존재와 ARM64 platform 확인 pending
 - `actionlint`
   - 현재 로컬 환경에 설치되어 있지 않아 skipped
-- `scripts/agent_run.sh antigravity-review`
-  - 사용자 지시상 Codex/Gemini/Antigravity 자동 실행 금지이므로 skipped
 
 ## 운영 반영
 
@@ -288,3 +286,4 @@ tag로 발행하고, build 성공 이후 K8s manifest image tag 갱신 PR을 생
 - Architecture/Runbook을 실제 운영 검증 결과 기준으로 갱신
 - README 업데이트 필요성을 UNIT-08에서 최종 판단
 - `actionlint` 설치 또는 CI 도입 여부를 별도 개선으로 검토
+- CodeRabbit review와 사람 검토로 bootstrap PR의 최종 review gate 확인

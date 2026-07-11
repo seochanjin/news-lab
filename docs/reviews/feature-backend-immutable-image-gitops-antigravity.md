@@ -99,7 +99,7 @@ end
 
 ## Verdict
 
-- `PASS — UNIT-01~UNIT-04` (현재 bootstrap 구현 범위인 UNIT-01부터 UNIT-04까지의 결과물은 검증 기준과 제약 조건을 모두 정상적으로 충족하므로 PR 제출 가능 상태로 판정합니다. 전체 Task는 UNIT-05~UNIT-08 완료 전까지 `pending`이며, bootstrap PR과 bot manifest PR의 merge가 70차 전체 완료를 의미하지 않습니다.)
+- `PASS — UNIT-01~UNIT-04` (현재 bootstrap 구현 범위인 UNIT-01부터 UNIT-04까지의 결과물은 검증 기준과 제약 조건을 모두 정상적으로 충족하므로 PR 제출 가능 상태로 판정합니다. 전체 Task는 UNIT-05~UNIT-08 완료 전까지 `pending`이며, bootstrap PR과 bot manifest PR의 merge가 전체 Task 완료를 의미하지 않습니다.)
 
 ## Re-review 1
 
@@ -139,12 +139,12 @@ end
 
 ### Approved Fixes Verification
 
-- 승인된 픽스 문서 [feature-backend-immutable-image-gitops-approved-fixes.md](../docs/fixes/feature-backend-immutable-image-gitops-approved-fixes.md)를 기준으로, 리뷰 아티팩트 보정 항목(FIX-01~FIX-07)들이 정상 반영 상태를 유지하고 있으며 추가 승인된 픽스 요구 사항은 존재하지 않습니다.
+- 승인된 픽스 문서 [feature-backend-immutable-image-gitops-approved-fixes.md](../fixes/feature-backend-immutable-image-gitops-approved-fixes.md)를 기준으로, 리뷰 아티팩트 보정 항목(FIX-01~FIX-07)들이 정상 반영 상태를 유지하고 있으며 추가 승인된 픽스 요구 사항은 존재하지 않습니다.
 
 ### Verification Evidence
 
-- 검증 문서 [feature-backend-immutable-image-gitops.md](../docs/verification/feature-backend-immutable-image-gitops.md)에서 [UNIT-01] ~ [UNIT-04] 범위의 정적/CI 검증 결과가 `Status: passed`로 정상 수행되어 기록된 것을 확인했습니다.
-- [docker-build.yml](../.github/workflows/docker-build.yml) 워크플로우에 `update-manifest` 잡의 PR 생성 최소 권한 부여, GITHUB_SHA 유효성 검증 등이 설계에 맞게 완벽히 조율되었으며, [news-api.yaml](../k8s/news-api.yaml) 매니페스트에도 의도한 SHA `5cbb040f3efe858c7a898ddae611f00ad1d2aeb5`가 올바르게 적용되었습니다.
+- 검증 문서 [feature-backend-immutable-image-gitops.md](../verification/feature-backend-immutable-image-gitops.md)에서 [UNIT-01] ~ [UNIT-04] 범위의 정적/CI 검증 결과가 `Status: passed`로 기록된 것을 확인했습니다.
+- [docker-build.yml](../../.github/workflows/docker-build.yml) 워크플로우에 `update-manifest` 잡의 PR 생성 최소 권한 부여와 GITHUB_SHA 유효성 검증이 반영됐으며, [news-api.yaml](../../k8s/news-api.yaml) 매니페스트에도 의도한 SHA `5cbb040f3efe858c7a898ddae611f00ad1d2aeb5`가 적용되었습니다.
 
 ### New Problems Found
 

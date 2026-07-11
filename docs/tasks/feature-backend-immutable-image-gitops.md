@@ -367,7 +367,7 @@ rollback과 restore 각각의 실제 command, Git revision, image tag, Sync resu
 - Architecture, Runbook과 Verification에 최종 배포 흐름, 승인 gate, rollback과 실패 대응이 기록된다.
 - 실행하지 않은 검증은 통과로 기록하지 않는다.
 - Task checklist, Verification status와 Approved Fixes 상태가 일치한다.
-- Antigravity re-review에서 기존 문제 해결을 확인하고 최종 `PASS`를 받는다.
+- CodeRabbit review와 사람 검토에서 bootstrap 범위의 남은 blocker가 없음을 확인한다.
 
 ## Notes
 

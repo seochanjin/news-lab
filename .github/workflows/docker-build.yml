@@ -65,6 +65,8 @@ jobs:
     steps:
       - name: Checkout source
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Update Kubernetes manifest image tags
         run: |
