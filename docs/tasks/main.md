@@ -1,3 +1,3 @@
 # Current Task
 
-[feature-argocd-backend-manual-sync.md](feature-argocd-backend-manual-sync.md)
+[feature-backend-immutable-image-gitops.md](feature-backend-immutable-image-gitops.md)

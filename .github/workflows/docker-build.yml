@@ -12,9 +12,17 @@ on:
       - ".github/workflows/docker-build.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: seocj/news-api
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout source
@@ -29,6 +37,13 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Verify immutable image tag source
+        run: |
+          if [[ ! "${GITHUB_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "GITHUB_SHA must be a full 40-character lowercase Git SHA" >&2
+            exit 1
+          fi
+
       - name: Build and push ARM64 image
         uses: docker/build-push-action@v6
         with:
@@ -36,5 +51,103 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/news-api:${{ github.sha }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/news-api:latest
+            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.IMAGE_NAME }}:latest
+
+  update-manifest:
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Update Kubernetes manifest image tags
+        run: |
+          ruby <<'RUBY'
+          sha = ENV.fetch("GITHUB_SHA")
+          image_name = ENV.fetch("IMAGE_NAME")
+
+          unless sha.match?(/\A[0-9a-f]{40}\z/)
+            warn "GITHUB_SHA must be a full 40-character lowercase Git SHA"
+            exit 1
+          end
+
+          paths = %w[
+            k8s/news-api.yaml
+            k8s/news-rss-collector-cronjob.yaml
+            k8s/news-daily-topic-pipeline-cronjob.yaml
+            k8s/news-three-day-topic-pipeline-cronjob.yaml
+            k8s/news-weekly-topic-pipeline-cronjob.yaml
+          ]
+          image = "#{image_name}:#{sha}"
+
+          paths.each do |path|
+            content = File.read(path)
+            updated = content.gsub(/image:\s*seocj\/news-api:[0-9A-Za-z._-]+/, "image: #{image}")
+            if updated == content
+              warn "No #{image_name} image reference found in #{path}"
+              exit 1
+            end
+            File.write(path, updated)
+          end
+          RUBY
+
+      - name: Verify manifest image update
+        run: |
+          ruby -ryaml <<'RUBY'
+          images = []
+
+          Dir["k8s/*.yaml"].sort.each do |path|
+            YAML.load_stream(File.read(path)).compact.each do |doc|
+              kind = doc["kind"]
+              next unless ["Deployment", "CronJob"].include?(kind)
+
+              containers = if kind == "Deployment"
+                doc.dig("spec", "template", "spec", "containers")
+              else
+                doc.dig("spec", "jobTemplate", "spec", "template", "spec", "containers")
+              end
+
+              Array(containers).each do |container|
+                image = container["image"]
+                next unless image&.start_with?("#{ENV.fetch("IMAGE_NAME")}:")
+                images << [kind, doc.dig("metadata", "name"), image]
+              end
+            end
+          end
+
+          raise "expected five workload images, got #{images.size}" unless images.size == 5
+
+          tags = images.map { |_, _, image| image.split(":", 2).last }.uniq
+          raise "workloads use different tags: #{tags.inspect}" unless tags.size == 1
+          raise "image tag is not full git SHA: #{tags.first}" unless tags.first.match?(/\A[0-9a-f]{40}\z/)
+          raise "image tag does not match workflow SHA" unless tags.first == ENV.fetch("GITHUB_SHA")
+
+          images.each { |kind, name, image| puts "#{kind}/#{name} #{image}" }
+          puts "manifest image update verified"
+          RUBY
+
+      - name: Create manifest update pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: bot/update-news-api-image-${{ github.sha }}
+          base: main
+          commit-message: Update news-api image to ${{ github.sha }}
+          title: Update news-api image to ${{ github.sha }}
+          body: |
+            Updates the backend Kubernetes workload manifests after a successful image build.
+
+            - Source repository: seochanjin/news-lab
+            - Source commit: ${{ github.sha }}
+            - Image: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            - Resources:
+              - Deployment/news-api
+              - CronJob/news-rss-collector
+              - CronJob/news-daily-topic-pipeline
+              - CronJob/news-three-day-topic-pipeline
+              - CronJob/news-weekly-topic-pipeline
