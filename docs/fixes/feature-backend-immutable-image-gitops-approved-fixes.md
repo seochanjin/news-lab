@@ -81,6 +81,8 @@ FIX-01~FIX-05는 적용 완료했다.
 
 FIX-08~FIX-12는 CodeRabbit review 결과를 바탕으로 적용 완료했다.
 
+검증 근거: [feature-backend-immutable-image-gitops.md](../verification/feature-backend-immutable-image-gitops.md)
+
 수정 허용 범위:
 
 ```
@@ -154,7 +156,7 @@ puts "workflow yaml ok"
 
 ```bash
 rg -n \
-  '<old-numbered-task-completion-phrase>|전체 Task 완료' \
+  '70차 전체 완료|전체 Task 완료' \
   docs/reviews/feature-backend-immutable-image-gitops-antigravity.md \
   docs/fixes/feature-backend-immutable-image-gitops-approved-fixes.md
 ```
@@ -186,7 +188,7 @@ rg -n \
 
 ```bash
 rg -n \
-  'file://|/Users/|/home/|[A-Za-z]:\\\\' \
+  'file://|/Users/|/home/|[A-Za-z]:[\\/]' \
   docs/reviews/feature-backend-immutable-image-gitops-antigravity.md \
   docs/verification/feature-backend-immutable-image-gitops.md
 ```
@@ -207,12 +209,25 @@ rg -n \
 
 ```bash
 rg -n \
-  'Antigravity.*PASS|antigravity-review|최종 review gate|CodeRabbit|사람 검토' \
+  'Antigravity.*PASS|antigravity-review' \
   docs/tasks/feature-backend-immutable-image-gitops.md \
   docs/pr/feature-backend-immutable-image-gitops.md \
   docs/devlog/feature-backend-immutable-image-gitops.md \
   docs/verification/feature-backend-immutable-image-gitops.md
 ```
+
+기대 결과: 출력 없음.
+
+```bash
+rg -n \
+  'CodeRabbit|사람 검토|최종 review gate' \
+  docs/tasks/feature-backend-immutable-image-gitops.md \
+  docs/pr/feature-backend-immutable-image-gitops.md \
+  docs/devlog/feature-backend-immutable-image-gitops.md \
+  docs/verification/feature-backend-immutable-image-gitops.md
+```
+
+기대 결과: CodeRabbit review와 사람 검토가 최종 gate임을 보여주는 문구가 출력된다.
 
 확인 조건:
 
