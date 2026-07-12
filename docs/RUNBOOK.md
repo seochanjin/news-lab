@@ -24,6 +24,18 @@ curl https://api.dev-scj.site/weekly-topics/home
 Production API `curl`도 task 또는 human operator가 허용한 경우에만 agent
 verification과 구분해 실행한다.
 
+## Backend 배포와 rollback 기준
+
+Backend `news-api` 배포 image는 `seocj/news-api:<full-git-sha>` 형식의 immutable
+tag를 운영 manifest에 기록한다. GitHub Actions가 image build에 성공하면 manifest
+update bot PR을 생성하고, 사람이 PR diff를 검토해 merge한다. Argo CD는 Manual
+Sync 정책을 유지하므로 사람이 `OutOfSync`와 diff를 확인한 뒤 Sync를 승인한다.
+
+Rollback은 이전 정상 full SHA로 manifest를 바꾸는 PR과 Argo CD Manual Sync로
+수행한다. `kubectl rollout restart`만으로 image version을 변경하지 않으며,
+`latest`는 운영 manifest와 rollback 기준으로 사용하지 않는다. Auto sync,
+automatic prune, automatic self-heal은 적용하지 않는다.
+
 ## 장애 발생 시 첫 확인 순서
 
 1. Node readiness와 Pod 상태·restart count를 확인한다.

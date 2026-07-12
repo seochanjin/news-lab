@@ -19,10 +19,9 @@ application code PR merge
 → 필요 시 이전 SHA로 controlled rollback
 ```
 
-이번 단계는 UNIT-01~UNIT-04 구현과 정적 검증, 승인된 review artifact 보정
-FIX-01~FIX-07 적용까지의 bootstrap PR 초안 단계다. PR merge, manifest bot PR
-merge, Argo CD Manual Sync, K3s rollout, production verification,
-rollback/restore는 아직 완료하지 않았다.
+이번 단계는 UNIT-01~UNIT-08 구현, 정적 검증, 사람이 수행한 운영 검증 결과 정리와
+승인된 review artifact 보정까지 포함한다. Agent는 production-impacting command,
+`kubectl`, `argocd`, `git push`, `git merge`를 실행하지 않았다.
 
 ## 기존 문제
 
@@ -150,12 +149,10 @@ Approved Fixes는 구현 코드 결함 수정이 아니라 review artifact와 re
   - rollback은 이전 정상 SHA를 manifest에 되돌리는 PR 기반 절차로 정리할 수 있다.
 
 - 비용과 한계
-  - bootstrap PR merge 전에는 실제 GitHub Actions main context 실행과 bot PR 생성을
-    end-to-end로 확인할 수 없다.
-  - 현재 로컬 환경에서 Docker Hub registry DNS 조회가 실패해 SHA image 존재와 ARM64
-    platform을 확인하지 못했다.
-  - Argo CD diff, Manual Sync, rollout, production `/health`, rollback/restore는
-    사람이 실행해야 하므로 아직 pending이다.
+  - Production-impacting 단계는 사람이 수행해야 하므로 Agent 단독으로 재현하지
+    않는다.
+  - 운영 검증 결과는 사람이 제공한 실제 결과를 Verification source of truth로
+    사용한다.
   - `latest` tag는 workflow에서 보조 tag로 계속 발행되므로 registry에는 남는다.
     다만 운영 manifest와 rollback 기준으로는 사용하지 않는다.
   - `actionlint`가 로컬에 없어 workflow lint는 수행하지 못했다.
@@ -200,29 +197,20 @@ Source of truth:
 - Docker Hub image 조회
   - `docker buildx imagetools inspect "seocj/news-api:5cbb040f3efe858c7a898ddae611f00ad1d2aeb5"`
   - 결과: Docker Hub registry DNS 조회 실패
-  - 상태: image 존재와 ARM64 platform 확인 pending
+  - 상태: 이후 사람이 운영 환경에서 image 존재와 ARM64 platform을 확인
 - `actionlint`
   - 현재 로컬 환경에 설치되어 있지 않아 skipped
 
 ## 운영 반영
 
-아직 운영 반영은 완료하지 않았다.
+사람이 Docker Hub image, manifest PR merge 후 Argo CD diff와 Manual Sync, K3s
+rollout, workload image, Argo CD `Synced`/`Healthy`, production `/health`를
+확인했다. 이어서 이전 정상 full SHA로 rollback하고 최신 full SHA로 restore하는
+controlled test도 수행했다.
 
-수행하지 않은 항목:
-
-- PR merge
-- GitHub Actions main branch image build/push 실실행 확인
-- manifest image 갱신 bot PR 생성·검토·merge
-- Argo CD `news-api` OutOfSync와 diff 확인
-- Argo CD Manual Sync
-- K3s rollout 확인
-- running Pod image와 CronJob image 확인
-- Service, Ingress, CronJob schedule 회귀 확인
-- production `/health`
-- controlled rollback과 latest SHA restore
-
-이 항목들은 사람이 실행하고 실제 log를 제공해야 Verification에 완료로 기록할 수
-있다. 현재 Verification status는 `pending`이다.
+Rollback과 restore 모두 Deployment 1개와 CronJob 4개의 image 변경만 diff에
+포함됐고, Manual Sync, rollout, Pod Ready, CronJob image 일치, production
+`/health`가 정상으로 확인됐다.
 
 ## README 업데이트 판단
 
@@ -230,13 +218,12 @@ Source of truth:
 
 판단 근거:
 
-- production rollout과 rollback/restore까지 완료된 최종 운영 흐름이 아직 검증되지
-  않았다.
-- README는 현재 운영 구조를 사용자 또는 운영자에게 설명하는 성격이므로, 아직
-  `pending`인 Argo CD diff/Sync, rollout, `/health`, rollback/restore 결과를
-  완료된 흐름처럼 적으면 안 된다.
-- Task의 UNIT-08이 전체 회귀 검증, Architecture/Runbook/Verification, README 판단,
-  PR/devlog 정리를 포함하므로 README 반영은 운영 검증 완료 뒤 다시 판단한다.
+- 최종 운영 흐름은 Architecture, Runbook, Verification, PR draft와 devlog에
+  반영했다.
+- README는 backend 운영자용 상세 절차의 source of truth가 아니며, 이번 변경은
+  사용자-facing 사용법보다 운영 workflow와 verification artifact에 집중된다.
+- README 반영은 frontend Application과 전체 배포 문서 구조를 함께 정리할 때 별도
+  task로 검토한다.
 
 ## 확인 결과
 
@@ -251,7 +238,7 @@ Source of truth:
 - API, DB, application code, script, dependency 변경은 없다.
 - Approved Fixes FIX-01~FIX-07은 적용 및 검증 기록이 완료됐다.
 - Docker Hub image 존재와 ARM64 platform, Argo CD, rollout, production endpoint,
-  rollback/restore 검증은 pending이다.
+  rollback/restore 검증은 사람이 수행했고 Verification에 기록했다.
 
 ## 이번 단계의 의미
 
@@ -275,15 +262,9 @@ tag로 발행하고, build 성공 이후 K8s manifest image tag 갱신 PR을 생
 
 ## 다음 단계 후보
 
-- bootstrap PR merge 후 GitHub Actions main branch run에서 SHA image build/push 확인
-- Docker Hub에서 `seocj/news-api:<sha>` image 존재와 `linux/arm64` platform 확인
-- manifest image 갱신 bot PR 생성 여부, diff 범위와 PR body 확인
-- bot PR merge 후 Argo CD `news-api` OutOfSync와 diff 확인
-- 사람이 Argo CD Manual Sync를 실행하고 rollout, running Pod image, CronJob image,
-  Service, Ingress, production `/health` 결과 제공
-- 이전 정상 SHA를 선정해 controlled rollback PR, Manual Sync, `/health` 검증 수행
-- 최신 SHA restore 후 `Synced`, `Healthy`, rollout, `/health` 재확인
-- Architecture/Runbook을 실제 운영 검증 결과 기준으로 갱신
-- README 업데이트 필요성을 UNIT-08에서 최종 판단
+- Frontend Application 등록과 Manual Sync 검증
+- Frontend full Git SHA image tag 전환
+- Argo CD 접근 방식의 Tailscale 내부화 검토
+- README GitOps 배포 구조 반영 여부를 전체 운영 문서 구조와 함께 검토
 - `actionlint` 설치 또는 CI 도입 여부를 별도 개선으로 검토
-- CodeRabbit review와 사람 검토로 bootstrap PR의 최종 review gate 확인
+- CodeRabbit review와 사람 검토로 최종 review gate 확인

@@ -2,7 +2,7 @@
 
 ## Verification Status
 
-pending
+passed
 
 ## Verification Scope
 
@@ -20,7 +20,10 @@ UNIT-05에서는 사람이 제공한 운영 검증 결과로 Docker Hub SHA imag
 CronJob image 일치, Argo CD `Synced`/`Healthy`, production `/health` 정상 응답을
 확인했다.
 
-UNIT-07 rollback/restore와 UNIT-08 전체 회귀 검증은 아직 수행하지 않았다.
+UNIT-07에서는 사람이 제공한 운영 검증 결과로 이전 정상 full SHA rollback과
+최신 full SHA restore가 모두 manifest SHA 변경 PR, Argo CD Manual Sync, rollout,
+workload image 확인과 production `/health` 정상 확인까지 완료됐음을 확인했다.
+UNIT-08에서는 문서 정리와 로컬 최종 회귀 검증을 수행했다.
 
 ## Commands Run
 
@@ -479,6 +482,16 @@ Result:
 Status: passed
 
 Command:
+`rg -n '운영 manifest는 `seocj/news-api:latest`를 참조한다|현재 K3s manifest는 full Git SHA tag가 아니라 `latest`|현재 backend 배포|UNIT-07.*pending|UNIT-08.*pending|Verification status는 아직|Human-required / pending|아직 운영 반영' docs/architecture/argocd-manual-sync-design.md docs/runbooks/argocd-manual-sync-plan.md docs/tasks/feature-backend-immutable-image-gitops.md docs/verification/feature-backend-immutable-image-gitops.md docs/pr/feature-backend-immutable-image-gitops.md docs/devlog/feature-backend-immutable-image-gitops.md`
+
+Result:
+현행 Backend 운영 기준과 충돌하는 `latest`/pending 문구는 출력되지 않았다. 출력은
+`OutOfSync` 상태 설명의 일반 문장과 historical review artifact command 기록에만
+제한됐다.
+
+Status: passed
+
+Command:
 `git diff --name-only -- app scripts db requirements.txt docker-compose.yml`
 
 Result:
@@ -628,9 +641,8 @@ Pod 2개는 모두 `Running`, `READY=true`, node는 `arm-worker-node`였다. Cro
 사용했다. Argo CD 최종 상태는 `Synced`, `Healthy`다. Production health 응답은
 `{"status":"ok","service":"news-api","hostname":"news-api-5755fd5b99-kv847"}`다.
 
-UNIT-05와 UNIT-06은 완료로 기록한다. UNIT-07 rollback/restore와 UNIT-08 전체
-회귀 검증은 수행하지 않았으므로 pending으로 유지한다. Verification Status도
-UNIT-07~UNIT-08 완료 전까지 `pending`으로 유지한다.
+UNIT-05와 UNIT-06은 완료로 기록했다. 이후 UNIT-07 rollback/restore와 UNIT-08
+전체 회귀 검증도 완료되어 최종 Verification Status는 `passed`로 갱신했다.
 
 Status: passed
 
@@ -1318,21 +1330,131 @@ workload manifest 전환과 정적 검증을
 
 ## Manual or Production Verification
 
-수행하지 않음. UNIT-01~UNIT-04는 production-impacting command가 필요 없는 조사,
-문서화, GitHub Actions workflow 정적 변경과 K8s manifest 정적 변경 작업이다.
-Docker Hub image 조회, manifest PR merge, Argo CD refresh/diff/Sync, K3s rollout,
-production `/health`, controlled rollback/restore는 후속 UNIT 또는 사람이 수행할
-검증으로 남겼다.
+UNIT-05~UNIT-07은 사람이 운영 환경에서 수행하고 결과를 제공했다. Agent는
+production command, `kubectl`, `argocd`, `git push`, `git merge`를 실행하지
+않았다.
+
+UNIT-05~UNIT-06 운영 반영 결과:
+
+- Docker Hub image
+  `seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1` 존재와
+  `linux/arm64` platform을 확인했다.
+- Argo CD sync 전 상태는 main revision `7aa3971` 기준 `OutOfSync`였다.
+- diff는 `Deployment/news-api` 1개와 CronJob 4개의 image 변경만 포함했다.
+- Manual Sync는 revision
+  `7aa397148a5d1c3d931cd9205553d1cd7f5838dc`로 성공했다.
+- Deployment rollout은 성공했고, Pod 2개는 `Running`, `READY=true`였다.
+- Deployment와 CronJob 4개는 모두
+  `seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1` image를 사용했다.
+- Argo CD 최종 상태는 `Synced`, `Healthy`였다.
+- production `/health`는 정상 응답했다.
+
+UNIT-07 rollback 결과:
+
+- rollback image:
+  `seocj/news-api:8760b1a6dfa523d1cef7a0c0b5fc22ee014a831f`
+- Docker Hub image 존재와 `linux/arm64` platform을 확인했다.
+- rollback SHA는 `origin/main` history에 포함된다.
+- Argo CD sync 전 상태는 main revision `1766100` 기준 `OutOfSync`였다.
+- diff는 Deployment 1개와 CronJob 4개의 image 변경만 포함했다.
+- Manual Sync는 revision
+  `1766100d4e8f5abb47b95afc200555b38c7c5bcb`로 성공했다.
+- Deployment rollout은 성공했다.
+- Pod 2개는 `Running`, `READY=true`였다.
+- CronJob 4개는 모두 rollback SHA image를 사용했다.
+- Argo CD 최종 상태는 `Synced`, `Healthy`였다.
+- production `/health`는 정상이다.
+
+UNIT-07 restore 결과:
+
+- restored image:
+  `seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1`
+- Argo CD sync 전 상태는 main revision `522bc4a` 기준 `OutOfSync`였다.
+- diff는 Deployment 1개와 CronJob 4개의 image 변경만 포함했다.
+- Manual Sync는 revision
+  `522bc4a6331dcc36fda17fbec59557c11c2682ec`로 성공했다.
+- Deployment rollout은 성공했다.
+- Pod 2개는 `Running`, `READY=true`였다.
+- CronJob 4개는 모두 restored SHA image를 사용했다.
+- Argo CD 최종 상태는 `Synced`, `Healthy`였다.
+- production `/health`는 정상이다.
 
 ## Pending Verification
 
-- UNIT-05: Docker Hub SHA image 존재와 ARM64 platform 확인, manifest PR merge 후
-  Argo CD OutOfSync/diff 확인
-- UNIT-06: Manual Sync 이후 rollout, Pod/CronJob image, Service, Ingress,
-  production `/health` 확인
-- UNIT-07: 이전 정상 SHA rollback과 최신 SHA restore 실제 검증
-- UNIT-08: 전체 회귀 검증, Architecture/Runbook/Verification/README 판단,
-  PR/devlog 정리와 re-review
+없음. Production-impacting command는 사람이 수행했고, Agent가 수행한 최종 검증은
+로컬 정적 검증과 문서 정리 검증으로 제한했다. Antigravity 재실행은 요구하지
+않으며, 최종 review gate는 CodeRabbit review와 사람 검토로 유지한다.
+
+## UNIT-08 Final Verification
+
+Command:
+`ruby -e 'require "yaml"; YAML.load_file(".github/workflows/docker-build.yml"); puts "workflow yaml ok"'`
+
+Result:
+`workflow yaml ok`가 출력됐다.
+
+Status: passed
+
+Command:
+`ruby -e 'require "yaml"; Dir["k8s/*.yaml"].sort.each do |path| YAML.load_stream(File.read(path)); puts "ok #{path}"; end'`
+
+Result:
+`k8s/cluster-issuer.yaml`, `k8s/news-api.yaml`과 네 CronJob manifest가 모두 `ok`로
+출력됐다.
+
+Status: passed
+
+Command:
+`rg -n 'seocj/news-api:latest|image:[[:space:]]*.*news-api:latest' k8s`
+
+Result:
+출력 없음. K8s workload manifest에 `seocj/news-api:latest`가 없다.
+
+Status: passed
+
+Command:
+K8s YAML을 읽어 Deployment 1개와 CronJob 4개의 `seocj/news-api` image가 동일한
+40자리 Git SHA인지 검사하는 Ruby assertion.
+
+Result:
+`Deployment/news-api`, `CronJob/news-daily-topic-pipeline`,
+`CronJob/news-rss-collector`, `CronJob/news-three-day-topic-pipeline`,
+`CronJob/news-weekly-topic-pipeline`이 모두
+`seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1`를 사용한다고 출력됐고,
+`immutable image assertions passed`가 출력됐다.
+
+Status: passed
+
+Command:
+`git diff --check`
+
+Result:
+출력 없음. Whitespace error가 없다.
+
+Status: passed
+
+Command:
+`git diff --name-only -- app scripts db requirements.txt docker-compose.yml`
+
+Result:
+출력 없음. Application code, scripts, DB migration, dependency, compose 파일은
+수정하지 않았다.
+
+Status: passed
+
+Command:
+`git diff --name-only`
+
+Result:
+변경 파일은 `docs/ARCHITECTURE.md`, `docs/RUNBOOK.md`,
+`docs/architecture/argocd-manual-sync-design.md`,
+`docs/devlog/feature-backend-immutable-image-gitops.md`,
+`docs/pr/feature-backend-immutable-image-gitops.md`,
+`docs/runbooks/argocd-manual-sync-plan.md`,
+`docs/tasks/feature-backend-immutable-image-gitops.md`,
+`docs/verification/feature-backend-immutable-image-gitops.md`뿐이다.
+
+Status: passed
 
 ## Evidence Notes
 
@@ -1412,7 +1534,9 @@ Result:
 bootstrap PR merge 이후 `main SHA image build/push`, manifest image 갱신 bot PR,
 Argo CD OutOfSync/diff, Manual Sync와 rollout, rollback/restore, 최종 문서 및
 re-review 순서가 출력됐다. Verdict는 `PASS — UNIT-01~UNIT-04`로 한정돼 있고,
-전체 Task는 UNIT-05~UNIT-08 완료 전까지 `pending`이라고 기록돼 있다.
+historical review artifact에는 당시 전체 Task가 UNIT-05~UNIT-08 완료 전까지
+`pending`이라고 기록돼 있다. 현재 최종 상태는 이 문서 상단의
+`Verification Status: passed`를 따른다.
 
 Status: passed
 
@@ -1577,8 +1701,10 @@ Command:
 `rg -n 'bootstrap|UNIT-01~UNIT-04|UNIT-05~UNIT-08|PASS.*UNIT-01|pending|전체 Task' docs/reviews/feature-backend-immutable-image-gitops-antigravity.md`
 
 Result:
-bootstrap PR merge 이후 운영 검증 순서, `PASS — UNIT-01~UNIT-04`, 전체 Task
-`pending`, UNIT-05~UNIT-08 후속 수행 문구가 출력됐다.
+historical review artifact의 bootstrap PR merge 이후 운영 검증 순서,
+`PASS — UNIT-01~UNIT-04`, 당시 전체 Task `pending`, UNIT-05~UNIT-08 후속 수행
+문구가 출력됐다. 현재 최종 상태는 이 문서 상단의 `Verification Status: passed`를
+따른다.
 
 Status: passed
 
