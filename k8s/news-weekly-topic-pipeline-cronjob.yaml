@@ -23,7 +23,7 @@ spec:
             workload: app
           containers:
             - name: news-weekly-topic-pipeline
-              image: seocj/news-api:8760b1a6dfa523d1cef7a0c0b5fc22ee014a831f
+              image: seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1
               imagePullPolicy: Always
               command:
                 - python
