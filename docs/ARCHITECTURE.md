@@ -33,6 +33,18 @@ RSS source
 
 운영 변경과 production verification은 사람이 수행한다.
 
+## Backend 배포 기준
+
+Backend `news-api` 운영 workload는 full Git SHA image tag를 사용한다. GitHub
+Actions는 image build 성공 후 Kubernetes manifest image tag 갱신 branch와 PR을
+생성하고, 사람이 manifest PR을 검토해 merge한다. Argo CD `news-api`
+Application은 automated sync 없이 Git과 live state의 차이를 보여주며, 사람이
+diff를 확인한 뒤 Manual Sync를 승인한다.
+
+Rollback도 `latest`나 rollout restart가 아니라 이전 정상 full SHA를 manifest에
+반영하는 PR, merge, Argo CD Manual Sync로 수행한다. Auto sync, automatic prune,
+automatic self-heal은 적용하지 않는다.
+
 ## 세부 문서
 
 - [전체 구성과 책임](architecture/overview.md)
