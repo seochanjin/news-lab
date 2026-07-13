@@ -5,7 +5,8 @@
 pending
 
 - UNIT-02 Redis 적용 전 Baseline 부하 테스트는 완료했다.
-- UNIT-06 K3s 운영 설정 manifest와 문서 반영은 완료했다.
+- UNIT-06 K3s 운영 설정 manifest와 문서 준비는 완료했지만, Production Argo CD
+  Manual Sync와 운영 검증 전이므로 task checklist에서는 미완료로 유지한다.
 - UNIT-07 Redis 적용 후 동일 조건 비교, UNIT-08 장애·복구 검증과 최종 문서화가 남아 있으므로 전체 Verification은 아직 `pending`이다.
 
 ## Verification Scope
@@ -36,12 +37,12 @@ pending
 
 ### Immutable image assertion 정리
 
-```bash
+````bash
 rg -n 'seocj/news-api:latest' \
   tests/test_daily_topic_pipeline_cronjob_manifest.py \
   tests/test_three_day_topic_pipeline_cronjob_manifest.py \
   tests/test_weekly_topic_pipeline_cronjob_manifest.py
-```
+````
 
 Result:
 
@@ -52,13 +53,13 @@ Status: passed
 
 Notes: 세 CronJob manifest test에서 stale `latest` image 기대값이 제거됐다.
 
-```bash
+````bash
 rg -n \
   'assertRegex|[0-9a-f].*40|news-api' \
   tests/test_daily_topic_pipeline_cronjob_manifest.py \
   tests/test_three_day_topic_pipeline_cronjob_manifest.py \
   tests/test_weekly_topic_pipeline_cronjob_manifest.py
-```
+````
 
 Result:
 
@@ -70,20 +71,20 @@ Status: passed
 
 ### Targeted 및 전체 test
 
-```bash
+````bash
 PYTHONPATH=. pytest -q \
   tests/test_daily_topic_pipeline_cronjob_manifest.py \
   tests/test_three_day_topic_pipeline_cronjob_manifest.py \
   tests/test_weekly_topic_pipeline_cronjob_manifest.py
-```
+````
 
 Result: `10 passed in 0.04s`
 
 Status: passed
 
-```bash
+````bash
 PYTHONPATH=. pytest -q tests/test_topics_api.py
-```
+````
 
 Result: `13 passed in 0.27s`
 
@@ -91,9 +92,19 @@ Status: passed
 
 Notes: cache miss, hit, TTL 만료, Redis GET timeout, connection 오류, SET 실패, 손상 payload fallback, 기존 response schema 유지를 포함한다.
 
-```bash
+````bash
+PYTHONPATH=. pytest -q tests/test_topics_api.py
+````
+
+Result: `15 passed in 0.39s`
+
+Status: passed
+
+Notes: Round 2에서 malformed `REDIS_URL`과 unsupported Redis URL scheme의 cache dependency 생성 fail-open 회귀 test를 추가했다. 잘못된 Redis URL에서도 disabled cache로 전환되고 PostgreSQL fallback이 유지되며, warning log에 credential이 포함되지 않음을 확인했다.
+
+````bash
 PYTHONPATH=. pytest -q tests/test_home_api_redis_k8s_manifest.py
-```
+````
 
 Result: `4 passed in 0.02s`
 
@@ -101,9 +112,9 @@ Status: passed
 
 Notes: `news-api` Redis env, `news-redis` Deployment/Service, Argo CD Manual Sync 경계를 로컬 YAML 파싱으로 확인했다.
 
-```bash
+````bash
 PYTHONPATH=. pytest -q
-```
+````
 
 Result: `420 passed, 78 subtests passed in 15.00s`
 
@@ -113,11 +124,21 @@ Notes:
 
 - 기준 commit `15c686ef` 별도 worktree에서는 `406 passed, 3 failed, 78 subtests passed`였다.
 - 세 실패는 stale `seocj/news-api:latest` assertion이었다.
-- Fix와 UNIT-06 manifest test 추가 이후 전체 suite는 0 failed다.
+- Fix와 UNIT-06 manifest test 추가 이후 전체 suite는 실패 0건이다.
+
+````bash
+PYTHONPATH=. pytest -q
+````
+
+Result: `422 passed, 78 subtests passed in 15.10s`
+
+Status: passed
+
+Notes: Round 2 malformed/unsupported Redis URL fallback test 2건을 포함해 전체 suite 실패 0건이다.
 
 ### YAML, diff, 범위 확인
 
-```bash
+````bash
 ruby -e '
 require "yaml"
 Dir["k8s/*.yaml"].sort.each do |path|
@@ -125,7 +146,7 @@ Dir["k8s/*.yaml"].sort.each do |path|
   puts "ok #{path}"
 end
 '
-```
+````
 
 Result:
 
@@ -136,13 +157,13 @@ Result:
 
 Status: passed
 
-```bash
+````bash
 rg -n "seocj/news-api:latest|generated resource.*7|7개|일곱 resource|Backend resource 7" \
   docs/architecture/k3s-runtime.md \
   docs/architecture/argocd-manual-sync-design.md \
   docs/runbooks/argocd-manual-sync-plan.md \
   docs/RUNBOOK.md
-```
+````
 
 Result:
 
@@ -153,17 +174,17 @@ Status: passed
 
 Notes: 현재 Redis 반영 후 Argo CD generated resource 기준은 `news-api`, `news-redis`, 네 CronJob을 포함한 9개로 문서화했다. Historical baseline 기록은 당시 상태 보존 목적이라 수정하지 않았다.
 
-```bash
+````bash
 git diff --check
-```
+````
 
 Result: no output
 
 Status: passed
 
-```bash
+````bash
 git diff --name-only -- db migrations frontend
-```
+````
 
 Result: no output
 
@@ -171,47 +192,126 @@ Status: passed
 
 Notes: DB migration과 frontend 변경이 없다.
 
+### Review Round 2 문서 및 범위 확인
+
+````bash
+python - <<'PY'
+from pathlib import Path
+
+paths = [
+    Path("docs/tasks/feature-home-api-redis-cache.md"),
+    Path("docs/fixes/feature-home-api-redis-cache-approved-fixes.md"),
+    Path("docs/verification/feature-home-api-redis-cache.md"),
+]
+
+for path in paths:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for number, line in enumerate(lines, start=1):
+        if line.strip() == "```":
+            print(f"{path}:{number}: language identifier missing")
+PY
+````
+
+Result: no output
+
+Status: passed
+
+````bash
+rg -n "ruby -e '\.\.\.'|rg .*\.\.\." \
+  docs/devlog/feature-home-api-redis-cache.md \
+  docs/pr/feature-home-api-redis-cache.md
+````
+
+Result: no output, exit code 1
+
+Status: passed
+
+````bash
+awk '
+  /^## Implementation Units/ { in_units=1; next }
+  in_units && /^## / { in_units=0 }
+  in_units && NF { print }
+' docs/tasks/feature-home-api-redis-cache.md
+````
+
+Result:
+
+````text
+- [x] UNIT-01: 현재 조회 구조와 Cache 적합성 조사
+- [x] UNIT-02: Redis 적용 전 Baseline 부하 테스트
+- [x] UNIT-03: Cache 정책 설계
+- [x] UNIT-04: Redis와 Cache-aside 구현
+- [x] UNIT-05: Unit/Integration Test
+- [ ] UNIT-06: K3s와 운영 설정 반영
+- [ ] UNIT-07: Redis 적용 후 부하 테스트와 비교
+- [ ] UNIT-08: Redis 장애·복구 검증 및 최종 문서화
+````
+
+Status: passed
+
+Notes: UNIT-06은 Production Argo CD Manual Sync와 운영 검증 전이므로 미완료 상태를 유지한다.
+
+````bash
+git diff --name-only
+````
+
+Result:
+
+````text
+app/home_topics_cache.py
+docs/devlog/feature-home-api-redis-cache.md
+docs/fixes/feature-home-api-redis-cache-approved-fixes.md
+docs/pr/feature-home-api-redis-cache.md
+docs/tasks/feature-home-api-redis-cache.md
+docs/verification/feature-home-api-redis-cache.md
+tests/test_topics_api.py
+````
+
+Status: passed
+
+Notes: Round 2 allowed change scope 안의 파일만 변경했다. Production command, Argo CD Sync, `kubectl apply/delete/patch/edit/rollout`, Redis 장애 주입, Supabase SQL, DB migration, `git push`, `git merge`는 실행하지 않았다.
+
 ### Production Redis 미적용 상태 확인
 
-```bash
+````bash
 KUBECONFIG=~/.kube/oci-k3s.yaml \
 kubectl get deploy news-api \
   -n default \
   -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
-```
+````
 
 Result:
 
-```
+````
 seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1
-```
+````
 
-```bash
+````bash
 KUBECONFIG=~/.kube/oci-k3s.yaml \
 kubectl get deploy news-api \
   -n default \
   -o jsonpath='{range .spec.template.spec.containers[0].env[*]}{.name}{"\n"}{end}' \
   | grep -i redis || true
-```
+````
 
 Result: no output
 
-```bash
+````bash
 KUBECONFIG=~/.kube/oci-k3s.yaml \
 kubectl get secret news-api-secret \
   -n default \
   -o go-template='{{range $key, $value := .data}}{{printf "%s\n" $key}}{{end}}' \
   | grep -i redis || true
-```
+````
 
 Result: no output
 
-```bash
+````bash
 KUBECONFIG=~/.kube/oci-k3s.yaml \
 kubectl get deployment,service \
   -n default \
   | grep -i redis || true
-```
+````
 
 Result: no output
 
@@ -221,7 +321,7 @@ Notes: 현재 Production은 Redis 미적용 상태이므로 Redis 적용 전 Bas
 
 ### Remote DB 안전성 확인
 
-```bash
+````bash
 REDIS_URL= python - <<'PY'
 from dotenv import load_dotenv
 from urllib.parse import urlparse
@@ -234,7 +334,7 @@ if not url:
 host = urlparse(url).hostname or ''
 print('database_target=local' if host in {'localhost', '127.0.0.1', '::1'} else 'database_target=nonlocal')
 PY
-```
+````
 
 Result: `database_target=nonlocal`
 
@@ -279,9 +379,9 @@ Notes:
 
 초기 생성 파일은 line 4의 invalid character 때문에 parse 실패했고 실제 부하는 발생하지 않았다. 파일을 ASCII 내용으로 다시 생성한 뒤 검증했다.
 
-```bash
+````bash
 k6 inspect load-tests/topics-home-fixed.js
-```
+````
 
 Result:
 
@@ -294,14 +394,14 @@ Status: passed
 
 Smoke test:
 
-```bash
+````bash
 k6 run \
   --summary-trend-stats='avg,min,med,p(90),p(95),p(99),max' \
   -e BASE_URL="$BASE_URL" \
   -e VUS=1 \
   -e DURATION=10s \
   load-tests/topics-home-fixed.js
-```
+````
 
 Result:
 
@@ -353,26 +453,26 @@ Notes:
 
 ### Operational health after Baseline
 
-```bash
+````bash
 curl -fsS https://api.dev-scj.site/health
-```
+````
 
 Result:
 
-```json
+````json
 {
   "status": "ok",
   "service": "news-api",
   "hostname": "news-api-5755fd5b99-g9wxc"
 }
-```
+````
 
-```bash
+````bash
 KUBECONFIG=~/.kube/oci-k3s.yaml \
 kubectl get pods -n default \
   -o custom-columns='NAME:.metadata.name,READY:.status.containerStatuses[0].ready,RESTARTS:.status.containerStatuses[0].restartCount,NODE:.spec.nodeName' \
   | grep news-api
-```
+````
 
 Result:
 
@@ -392,6 +492,7 @@ Status: passed
 - Cache hit: DB connection factory를 호출하지 않는 test 통과
 - Cache miss: PostgreSQL 조회 후 `SETEX` 저장 test 통과
 - Redis GET, SET, connection, timeout 오류: PostgreSQL fallback test 통과
+- malformed 또는 unsupported Redis URL: disabled cache로 전환 후 PostgreSQL fallback test 통과
 - 손상된 cache payload: decode 실패 후 PostgreSQL fallback test 통과
 - Cache event: `home_topics_cache event=hit|miss|store|bypass`
 - K8s YAML parse: 통과
@@ -423,20 +524,20 @@ Status: passed
 
 ## Task Checklist State to Sync
 
-```
+````
 - [x] UNIT-01: 현재 조회 구조와 Cache 적합성 조사
 - [x] UNIT-02: Redis 적용 전 Baseline 부하 테스트
 - [x] UNIT-03: Cache 정책 설계
 - [x] UNIT-04: Redis와 Cache-aside 구현
 - [x] UNIT-05: Unit/Integration Test
-- [x] UNIT-06: K3s와 운영 설정 반영
+- [ ] UNIT-06: K3s와 운영 설정 반영
 - [ ] UNIT-07: Redis 적용 후 부하 테스트와 비교
 - [ ] UNIT-08: Redis 장애·복구 검증 및 최종 문서화
-```
+````
 
 ## Manual or Production Verification
 
-UNIT-06 완료 후 사람이 승인하고 수행해야 한다.
+UNIT-06 완료를 위해 사람이 승인하고 수행해야 한다.
 
 - Argo CD OutOfSync와 diff 확인
 - Argo CD Manual Sync

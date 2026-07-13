@@ -9,6 +9,7 @@ import os
 import unittest
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
+from unittest.mock import patch
 
 from fastapi import HTTPException
 
@@ -17,7 +18,11 @@ os.environ.setdefault(
     "postgresql+psycopg://test:test@localhost:5432/test",
 )
 
-from app.home_topics_cache import HOME_TOPICS_CACHE_KEY, HomeTopicsCache
+from app.home_topics_cache import (
+    HOME_TOPICS_CACHE_KEY,
+    HomeTopicsCache,
+    get_home_topics_cache,
+)
 from app.routers.topics import (
     fetch_home_topics_from_database,
     get_home_topics_payload,
@@ -367,6 +372,54 @@ class TopicsApiTests(unittest.TestCase):
 
         self.assertEqual(result["items"][0]["id"], 1)
         self.assertEqual(len(connection.calls), 1)
+
+    def test_home_topics_malformed_redis_url_falls_back_to_database(self):
+        """Malformed Redis URL이 dependency 생성 실패 대신 PostgreSQL fallback을 유도한다."""
+
+        get_home_topics_cache.cache_clear()
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+        redis_url = "redis://:secret-token@[bad-host"
+
+        with patch.dict(os.environ, {"REDIS_URL": redis_url}):
+            with patch("app.home_topics_cache.Redis") as redis_class:
+                redis_class.from_url.side_effect = ValueError("invalid url")
+                with self.assertLogs("app.home_topics_cache", level="WARNING") as logs:
+                    cache = get_home_topics_cache()
+
+        self.assertFalse(cache.enabled)
+        self.assertIsNone(cache.client)
+        self.assertIn("reason=invalid_redis_url", "\n".join(logs.output))
+        self.assertNotIn("secret-token", "\n".join(logs.output))
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
+        get_home_topics_cache.cache_clear()
+
+    def test_home_topics_unsupported_redis_url_scheme_disables_cache(self):
+        """지원하지 않는 Redis URL scheme도 비활성 cache로 처리해 DB 조회를 유지한다."""
+
+        get_home_topics_cache.cache_clear()
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        with patch.dict(os.environ, {"REDIS_URL": "http://redis.example/cache"}):
+            with patch("app.home_topics_cache.Redis") as redis_class:
+                redis_class.from_url.side_effect = ValueError("unsupported scheme")
+                cache = get_home_topics_cache()
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertFalse(cache.enabled)
+        self.assertIsNone(cache.client)
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
+        get_home_topics_cache.cache_clear()
 
     def test_topic_detail_returns_all_related_articles_in_relation_order(self):
         """상세 API가 대표 기사를 포함한 관련 기사 전체를 relation 순서로 반환하는지 확인한다."""

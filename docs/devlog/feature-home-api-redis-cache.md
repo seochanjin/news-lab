@@ -130,9 +130,10 @@ connection, decode, validate 실패를 모두 bypass로 기록하고 PostgreSQL 
 사용했다.
 
 - `PYTHONPATH=. pytest -q tests/test_topics_api.py`
-  - `13 passed in 0.27s`
+  - `15 passed in 0.39s`
   - cache miss, hit, TTL 만료, Redis GET timeout, connection 오류, SET 실패,
-    손상 payload fallback, 기존 response schema 유지 검증 포함
+    손상 payload fallback, malformed/unsupported Redis URL fallback, 기존
+    response schema 유지 검증 포함
 - `PYTHONPATH=. pytest -q tests/test_home_api_redis_k8s_manifest.py`
   - `4 passed in 0.02s`
   - `news-api` Redis env, `news-redis` Deployment/Service, Argo CD Manual Sync
@@ -141,10 +142,16 @@ connection, decode, validate 실패를 모두 bypass로 기록하고 PostgreSQL 
   - `10 passed in 0.04s`
   - CronJob image assertion을 immutable full Git SHA 정책으로 검증
 - `PYTHONPATH=. pytest -q`
-  - `420 passed, 78 subtests passed in 15.00s`
-- `ruby -e '...'`
+  - `422 passed, 78 subtests passed in 15.10s`
+- `ruby -e '
+require "yaml"
+Dir["k8s/*.yaml"].sort.each do |path|
+  YAML.load_stream(File.read(path))
+  puts "ok #{path}"
+end
+'`
   - `k8s/*.yaml` parse 통과
-- `rg -n 'seocj/news-api:latest' ...`
+- `rg -n 'seocj/news-api:latest' tests/test_daily_topic_pipeline_cronjob_manifest.py tests/test_three_day_topic_pipeline_cronjob_manifest.py tests/test_weekly_topic_pipeline_cronjob_manifest.py`
   - CronJob manifest test 파일에서 출력 없음
 - `k6 inspect load-tests/topics-home-fixed.js`
   - parse error 없음
@@ -156,7 +163,7 @@ connection, decode, validate 실패를 모두 bypass로 기록하고 PostgreSQL 
 기준 commit `15c686ef`의 별도 worktree에서는
 `406 passed, 3 failed, 78 subtests passed`였고, 세 실패는 모두 stale
 `seocj/news-api:latest` assertion으로 확인됐다. 이번 fix 이후 전체 suite는
-`0 failed`다.
+실패 0건이다.
 
 ## 운영 반영
 
@@ -244,7 +251,7 @@ fail-open fallback으로 처리해 API 안정성을 우선했다. Production bas
 100 VU에서 p95 2.20초, p99 3.25초까지 지연이 증가하는 포화 징후를 확인했고,
 이후 Redis 적용 후 비교를 위한 k6 fixed-VU 측정 기준을 마련했다. K3s manifest와
 Argo CD Manual Sync 경계를 문서화하고, unit/integration test와 YAML parse를
-포함해 `420 passed, 78 subtests passed`로 검증했다.
+포함해 `422 passed, 78 subtests passed`로 검증했다.
 
 ## 다음 단계 후보
 

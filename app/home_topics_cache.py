@@ -177,10 +177,14 @@ def get_home_topics_cache() -> HomeTopicsCache:
         "REDIS_TIMEOUT_SECONDS",
         DEFAULT_REDIS_TIMEOUT_SECONDS,
     )
-    client = Redis.from_url(
-        redis_url,
-        socket_connect_timeout=timeout_seconds,
-        socket_timeout=timeout_seconds,
-        decode_responses=True,
-    )
+    try:
+        client = Redis.from_url(
+            redis_url,
+            socket_connect_timeout=timeout_seconds,
+            socket_timeout=timeout_seconds,
+            decode_responses=True,
+        )
+    except ValueError:
+        logger.warning("home_topics_cache event=bypass reason=invalid_redis_url")
+        return HomeTopicsCache(client=None, ttl_seconds=ttl_seconds, enabled=False)
     return HomeTopicsCache(client=client, ttl_seconds=ttl_seconds)

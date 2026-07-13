@@ -61,16 +61,22 @@ Runbook, design, verification 문서에 기록했다.
 ## 테스트
 
 - `PYTHONPATH=. pytest -q tests/test_topics_api.py`
-  - `13 passed in 0.27s`
+  - `15 passed in 0.39s`
 - `PYTHONPATH=. pytest -q tests/test_home_api_redis_k8s_manifest.py`
   - `4 passed in 0.02s`
 - `PYTHONPATH=. pytest -q tests/test_daily_topic_pipeline_cronjob_manifest.py tests/test_three_day_topic_pipeline_cronjob_manifest.py tests/test_weekly_topic_pipeline_cronjob_manifest.py`
   - `10 passed in 0.04s`
 - `PYTHONPATH=. pytest -q`
-  - `420 passed, 78 subtests passed in 15.00s`
-- `ruby -e '...'`
+  - `422 passed, 78 subtests passed in 15.10s`
+- `ruby -e '
+require "yaml"
+Dir["k8s/*.yaml"].sort.each do |path|
+  YAML.load_stream(File.read(path))
+  puts "ok #{path}"
+end
+'`
   - `k8s/*.yaml` parse 통과
-- `rg -n 'seocj/news-api:latest' ...`
+- `rg -n 'seocj/news-api:latest' tests/test_daily_topic_pipeline_cronjob_manifest.py tests/test_three_day_topic_pipeline_cronjob_manifest.py tests/test_weekly_topic_pipeline_cronjob_manifest.py`
   - CronJob manifest test 파일에서 출력 없음
 - `k6 inspect load-tests/topics-home-fixed.js`
   - parse error 없음
@@ -85,6 +91,7 @@ Runbook, design, verification 문서에 기록했다.
 - Cache hit 시 PostgreSQL 조회 미호출 검증 완료
 - TTL 만료 후 재조회 검증 완료
 - Redis GET/SET/connection/timeout 오류 fallback 검증 완료
+- malformed/unsupported Redis URL fallback 검증 완료
 - 손상 payload fallback 검증 완료
 - 기존 `/topics/home` response schema 유지 검증 완료
 - K3s Redis manifest와 Argo CD Manual Sync 경계 로컬 검증 완료
