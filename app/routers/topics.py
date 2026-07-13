@@ -1,10 +1,20 @@
+"""Topic archive, home card, detail API를 제공하는 FastAPI router다.
+
+`/topics/home`은 PostgreSQL을 source of truth로 유지하되 Redis cache-aside를
+사용해 반복 조회 시 DB query를 건너뛴다. Redis 장애나 cache payload 오류는
+요청 실패로 전파하지 않고 PostgreSQL 직접 조회로 복구한다.
+"""
+
+from collections.abc import Callable
 from datetime import date, datetime, timezone
+from typing import ContextManager
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import get_connection
+from app.database import engine, get_connection
+from app.home_topics_cache import HomeTopicsCache, get_home_topics_cache
 
 router = APIRouter(prefix="/topics", tags=["topics"])
 HOME_TOPICS_LIMIT = 10
@@ -68,8 +78,33 @@ def get_topics(
 
 @router.get("/home")
 def get_home_topics(
-    connection: Connection = Depends(get_connection),
+    cache: HomeTopicsCache = Depends(get_home_topics_cache),
 ):
+    """Home 화면용 topic card payload를 cache-aside 정책으로 반환한다."""
+
+    return get_home_topics_payload(cache=cache, connection_factory=engine.connect)
+
+
+def get_home_topics_payload(
+    *,
+    cache: HomeTopicsCache,
+    connection_factory: Callable[[], ContextManager[Connection]],
+):
+    """Cache hit이면 cached payload를, miss이면 DB 조회 결과를 반환하고 cache에 저장한다."""
+
+    cached_payload = cache.get()
+    if cached_payload is not None:
+        return cached_payload
+
+    with connection_factory() as connection:
+        payload = fetch_home_topics_from_database(connection)
+    cache.set(payload)
+    return payload
+
+
+def fetch_home_topics_from_database(connection: Connection):
+    """PostgreSQL에서 `/topics/home` 응답 payload를 생성한다."""
+
     rows = connection.execute(
         text("""
             select

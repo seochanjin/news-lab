@@ -75,11 +75,13 @@ kubectl get clusterissuer letsencrypt-prod -o yaml
 
 `news-api` Application은 `k8s/`를 읽되 directory exclude에
 `cluster-issuer.yaml`을 지정한다. Application 생성 전에 generated manifest
-목록에 `ClusterIssuer`가 없고 다음 일곱 resource만 포함되는지 확인한다.
+목록에 `ClusterIssuer`가 없고 다음 아홉 resource만 포함되는지 확인한다.
 
 - `Deployment/news-api`
 - `Service/news-api`
 - `Ingress/news-api-ingress`
+- `Deployment/news-redis`
+- `Service/news-redis`
 - `CronJob/news-rss-collector`
 - `CronJob/news-daily-topic-pipeline`
 - `CronJob/news-three-day-topic-pipeline`
@@ -133,11 +135,13 @@ argocd app get news-api --show-operation
 argocd app diff news-api
 ```
 
-generated manifest가 정확히 다음 7개인지 확인한다.
+generated manifest가 정확히 다음 9개인지 확인한다.
 
 - `Deployment/news-api`
 - `Service/news-api`
 - `Ingress/news-api-ingress`
+- `Deployment/news-redis`
+- `Service/news-redis`
 - `CronJob/news-rss-collector`
 - `CronJob/news-daily-topic-pipeline`
 - `CronJob/news-three-day-topic-pipeline`

@@ -36,6 +36,15 @@ Rollback은 이전 정상 full SHA로 manifest를 바꾸는 PR과 Argo CD Manual
 `latest`는 운영 manifest와 rollback 기준으로 사용하지 않는다. Auto sync,
 automatic prune, automatic self-heal은 적용하지 않는다.
 
+`/topics/home` Redis cache 반영 시에도 같은 GitOps 경계를 따른다. 사람이 manifest
+diff에서 `news-redis` Deployment/Service와 `news-api`의 `REDIS_URL`,
+`HOME_TOPICS_CACHE_TTL_SECONDS`, `REDIS_TIMEOUT_SECONDS` 변경만 포함됐는지 확인한
+뒤 Argo CD Manual Sync를 승인한다.
+
+Redis 장애 검증은 사람이 승인한 운영 창에서만 수행한다. 정상 상태의 cache hit
+로그를 확인한 뒤 Redis 중단, `/topics/home` PostgreSQL fallback 정상 응답,
+Redis 복구, miss 후 재저장과 이후 hit 로그를 순서대로 확인한다.
+
 ## 장애 발생 시 첫 확인 순서
 
 1. Node readiness와 Pod 상태·restart count를 확인한다.
@@ -65,6 +74,7 @@ automatic prune, automatic self-heal은 적용하지 않는다.
 - Weekly Topic production migration, 수동 Job과 API 최종 확인
 - Secret 생성 또는 변경
 - Production verification
+- Redis 중단과 복구를 포함한 production 장애 주입
 - OCI security rule, DNS, domain, TLS 변경
 
 Agent의 상세 금지 범위는

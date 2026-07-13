@@ -12,6 +12,7 @@ import yaml
 
 
 MANIFEST_PATH = Path("k8s/news-daily-topic-pipeline-cronjob.yaml")
+API_MANIFEST_PATH = Path("k8s/news-api.yaml")
 RSS_MANIFEST_PATH = Path("k8s/news-rss-collector-cronjob.yaml")
 RAW_EXTRACTOR_MANIFEST_PATH = Path("k8s/news-raw-extractor-cronjob.yaml")
 
@@ -83,9 +84,18 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
         self.assertEqual(command, expected_command)
 
     def test_reuses_existing_image_secret_and_security_patterns(self):
-        """기존 image, Secret 이름과 최소 권한 securityContext를 재사용하는지 확인한다."""
+        """Immutable image와 Secret, 최소 권한 securityContext 재사용을 확인한다."""
 
-        self.assertEqual(self.container["image"], "seocj/news-api:latest")
+        api_manifest = next(
+            yaml.safe_load_all(API_MANIFEST_PATH.read_text(encoding="utf-8"))
+        )
+        api_container = api_manifest["spec"]["template"]["spec"]["containers"][0]
+
+        self.assertRegex(
+            self.container["image"],
+            r"^seocj/news-api:[0-9a-f]{40}$",
+        )
+        self.assertEqual(self.container["image"], api_container["image"])
         self.assertEqual(
             self.container["securityContext"],
             {

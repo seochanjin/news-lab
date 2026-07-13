@@ -12,6 +12,7 @@ import yaml
 
 
 MANIFEST_PATH = Path("k8s/news-weekly-topic-pipeline-cronjob.yaml")
+API_MANIFEST_PATH = Path("k8s/news-api.yaml")
 DAILY_MANIFEST_PATH = Path("k8s/news-daily-topic-pipeline-cronjob.yaml")
 THREE_DAY_MANIFEST_PATH = Path("k8s/news-three-day-topic-pipeline-cronjob.yaml")
 
@@ -87,9 +88,18 @@ class WeeklyTopicPipelineCronJobManifestTests(unittest.TestCase):
         self.assertNotIn("--use-embedding-provider", self.container["command"])
 
     def test_reuses_image_database_and_summary_secret_without_embedding_key(self):
-        """기존 image·Secret과 보안·resource 패턴을 필요한 환경 변수만 재사용한다."""
+        """Immutable image와 필요한 Secret, 보안·resource 패턴 재사용을 확인한다."""
 
-        self.assertEqual(self.container["image"], "seocj/news-api:latest")
+        api_manifest = next(
+            yaml.safe_load_all(API_MANIFEST_PATH.read_text(encoding="utf-8"))
+        )
+        api_container = api_manifest["spec"]["template"]["spec"]["containers"][0]
+
+        self.assertRegex(
+            self.container["image"],
+            r"^seocj/news-api:[0-9a-f]{40}$",
+        )
+        self.assertEqual(self.container["image"], api_container["image"])
         security_context = self.container["securityContext"]
         self.assertFalse(security_context["allowPrivilegeEscalation"])
         self.assertEqual(security_context["capabilities"], {"drop": ["ALL"]})
