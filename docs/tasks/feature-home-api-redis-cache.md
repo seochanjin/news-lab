@@ -17,14 +17,14 @@ Redis 적용 전후를 동일한 부하 조건으로 비교해 다음 지표를 
 
 최종적으로 첫 화면 조회 성능을 개선하면서도 Redis 장애가 서비스 장애로 이어지지 않는 구조를 검증한다.
 
-````
+```
 /topics/home 현재 구조 조사
 → Redis 적용 전 Baseline 부하 측정
 → Cache-aside와 fail-open 정책 설계
 → Redis 적용
 → 동일 조건 Before/After 비교
 → Redis 중단·복구 시 PostgreSQL fallback 검증
-````
+```
 
 이번 Task의 핵심 완료 기준은 단순히 Redis를 추가하는 것이 아니라, 측정 결과를 근거로 Cache를 적용하고 성능 개선과 장애 격리를 실제로 검증하는 것이다.
 
@@ -81,40 +81,40 @@ Redis 적용 전후를 동일한 부하 조건으로 비교해 다음 지표를 
 
 예상 Backend 파일:
 
-````
+```
 app/api/*topics*.py
 app/services/*topic*.py
 app/repositories/*topic*.py
 app/core/config.py
 app/core/redis.py 또는 동등한 Redis client 모듈
 requirements.txt
-````
+```
 
 예상 Test 파일:
 
-````
+```
 tests/api/*topics_home*.py
 tests/services/*cache*.py
-````
+```
 
 예상 K3s/운영 파일:
 
-````
+```
 k8s/news-api.yaml
 k8s/redis.yaml 또는 동등한 Redis Deployment/Service manifest
 k8s/argocd/*
-````
+```
 
 예상 부하 테스트 파일:
 
-````
+```
 load-tests/topics-home.js
 scripts/load_test_topics_home.*
-````
+```
 
 예상 문서 파일:
 
-````
+```
 docs/ARCHITECTURE.md
 docs/RUNBOOK.md
 docs/design/home-api-redis-cache.md
@@ -124,7 +124,7 @@ docs/fixes/feature-home-api-redis-cache-approved-fixes.md
 docs/verification/feature-home-api-redis-cache.md
 docs/pr/feature-home-api-redis-cache.md
 docs/devlog/feature-home-api-redis-cache.md
-````
+```
 
 실제 파일명과 책임 구조가 다르면 기존 구조를 우선한다. 같은 목적의 Redis client, config, metrics 모듈을 중복 생성하지 않는다.
 
@@ -162,52 +162,52 @@ Baseline 조사에서 DB query 자체가 병목으로 확인되더라도 이번 
 
 내부 동작만 다음과 같이 변경한다.
 
-````
+```
 Request
 → Redis GET
   ├─ HIT: cached response 반환
   └─ MISS: PostgreSQL 조회
            → Redis SET with TTL
            → response 반환
-````
+```
 
 Redis 오류 시:
 
-````
+```
 Redis timeout / connection / payload error
 → Cache bypass 기록
 → PostgreSQL 직접 조회
 → 기존 response schema로 정상 응답
-````
+```
 
 ## Test commands
 
 ### 현재 구조 조사
 
-````bash
+```bash
 rg -n "topics/home|home_topics|topics_home|Redis|redis" app tests k8s requirements.txt
-````
+```
 
-````bash
+```bash
 rg -n "replicas:|resources:|requests:|limits:|image:" k8s/news-api.yaml
-````
+```
 
 ### 변경 범위 확인
 
-````bash
+```bash
 git branch --show-current
 git status --short
 git diff --stat
 git diff --name-only
-````
+```
 
 ### Unit / Integration Test
 
 실제 프로젝트 test command를 확인한 뒤 해당 명령을 사용한다.
 
-````bash
+```bash
 pytest -q
-````
+```
 
 Cache 관련 최소 검증 항목:
 
@@ -226,15 +226,15 @@ Cache 관련 최소 검증 항목:
 
 부하 테스트 도구와 script는 UNIT-01에서 확정한다. `k6`를 사용할 경우 기본 실행 예시는 다음과 같다.
 
-````bash
+```bash
 k6 run load-tests/topics-home.js
-````
+```
 
 동시 사용자 단계 예시:
 
-````
+```
 1 → 10 → 25 → 50 → 100
-````
+```
 
 각 단계에서 기록할 값:
 
@@ -253,19 +253,19 @@ Production endpoint에 대한 부하 테스트는 사람 승인 없이 실행하
 
 실제 로컬 실행 방식을 조사한 뒤 Docker Compose 또는 단일 Container를 사용한다.
 
-````bash
+```bash
 redis-cli ping
-````
+```
 
 기대 결과:
 
-````
+```
 PONG
-````
+```
 
 ### K8s Manifest 확인
 
-````bash
+```bash
 ruby -e '
 require "yaml"
 Dir["k8s/*.yaml"].sort.each do |path|
@@ -273,17 +273,17 @@ Dir["k8s/*.yaml"].sort.each do |path|
   puts "ok #{path}"
 end
 '
-````
+```
 
 ### 정적 검증
 
-````bash
+```bash
 git diff --check
-````
+```
 
-````bash
+```bash
 git diff --name-only -- db migrations frontend
-````
+```
 
 기대 결과: 금지 영역의 신규 변경 없음.
 
@@ -291,7 +291,7 @@ git diff --name-only -- db migrations frontend
 
 다음 작업은 사람이 승인한 뒤 실행하고 결과를 Verification에 기록한다.
 
-````
+```
 Argo CD OutOfSync와 diff 확인
 → Manual Sync
 → Redis Deployment/Service 상태 확인
@@ -299,25 +299,25 @@ Argo CD OutOfSync와 diff 확인
 → /health 확인
 → /topics/home 정상 응답 확인
 → Cache hit/miss 확인
-````
+```
 
 모든 `kubectl` 명령은 다음 prefix를 사용한다.
 
-````bash
+```bash
 KUBECONFIG=~/.kube/oci-k3s.yaml \
 kubectl ...
-````
+```
 
 Redis 장애 검증은 사람이 승인한 환경에서만 수행한다.
 
-````
+```
 정상 상태에서 Cache HIT 확인
 → Redis 중단
 → /topics/home이 PostgreSQL fallback으로 정상 응답하는지 확인
 → Redis 복구
 → MISS 후 재저장
 → 이후 HIT 확인
-````
+```
 
 ## Acceptance criteria
 
@@ -363,6 +363,6 @@ Redis 장애 검증은 사람이 승인한 환경에서만 수행한다.
 - [x] UNIT-03: Cache 정책 설계
 - [x] UNIT-04: Redis와 Cache-aside 구현
 - [x] UNIT-05: Unit/Integration Test
-- [ ] UNIT-06: K3s와 운영 설정 반영
-- [ ] UNIT-07: Redis 적용 후 부하 테스트와 비교
-- [ ] UNIT-08: Redis 장애·복구 검증 및 최종 문서화
+- [x] UNIT-06: K3s와 운영 설정 반영
+- [x] UNIT-07: Redis 적용 후 부하 테스트와 비교
+- [x] UNIT-08: Redis 장애·복구 검증 및 최종 문서화
