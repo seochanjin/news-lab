@@ -21,7 +21,7 @@ spec:
             workload: app
           containers:
           - name: news-rss-collector
-            image: seocj/news-api:7636ee0db92d8fcbf2111688febea2e90edf54a1
+            image: seocj/news-api:6c988f8540ae873901d6182d66eeb351b767e160
             imagePullPolicy: Always
             command: ["python", "scripts/collect_rss.py"]
             env:
