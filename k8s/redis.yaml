@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: news-redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: news-redis
+  template:
+    metadata:
+      labels:
+        app: news-redis
+    spec:
+      nodeSelector:
+        workload: app
+      containers:
+        - name: redis
+          image: redis:7.2-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 6379
+          args:
+            - redis-server
+            - --save
+            - ""
+            - --appendonly
+            - "no"
+            - --maxmemory
+            - 96mb
+            - --maxmemory-policy
+            - allkeys-lru
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "128Mi"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: news-redis
+spec:
+  selector:
+    app: news-redis
+  ports:
+    - port: 6379
+      targetPort: 6379

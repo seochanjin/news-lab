@@ -1,11 +1,13 @@
-"""Topics API가 저장된 관련 기사 전체와 기존 response schema를 반환하는지 검증한다.
+"""Topics API의 response schema와 Home cache-aside 동작을 검증한다.
 
 가짜 DB connection을 사용해 SQL 호출과 응답 조립만 확인하며 실제 DB나
-Production API에는 접근하지 않는다.
+Production API에는 접근하지 않는다. Home cache 검증도 fake Redis client로
+hit, miss, TTL, Redis 오류와 손상 payload fallback만 재현한다.
 """
 
 import os
 import unittest
+from contextlib import nullcontext
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
@@ -15,7 +17,13 @@ os.environ.setdefault(
     "postgresql+psycopg://test:test@localhost:5432/test",
 )
 
-from app.routers.topics import get_home_topics, get_topic, get_topics
+from app.home_topics_cache import HOME_TOPICS_CACHE_KEY, HomeTopicsCache
+from app.routers.topics import (
+    fetch_home_topics_from_database,
+    get_home_topics_payload,
+    get_topic,
+    get_topics,
+)
 from app.main import app
 
 
@@ -64,6 +72,46 @@ class FakeConnection:
 
         self.calls.append((str(query), params))
         return self.results.pop(0)
+
+
+class FakeRedisClient:
+    """Home Topics cache 테스트에 필요한 Redis get/setex와 TTL 동작을 흉내 낸다."""
+
+    def __init__(self):
+        """저장소와 현재 시간을 초기화한다."""
+
+        self.values = {}
+        self.now = 0.0
+        self.get_error = None
+        self.set_error = None
+        self.set_calls = []
+
+    def get(self, key):
+        """만료 시간을 반영해 저장된 문자열 payload를 반환한다."""
+
+        if self.get_error:
+            raise self.get_error
+        entry = self.values.get(key)
+        if entry is None:
+            return None
+        value, expires_at = entry
+        if expires_at <= self.now:
+            self.values.pop(key, None)
+            return None
+        return value
+
+    def setex(self, key, ttl_seconds, value):
+        """TTL과 payload를 기록하거나 설정된 오류를 발생시킨다."""
+
+        if self.set_error:
+            raise self.set_error
+        self.set_calls.append((key, ttl_seconds, value))
+        self.values[key] = (value, self.now + ttl_seconds)
+
+    def advance(self, seconds):
+        """테스트에서 TTL 만료를 재현하기 위해 현재 시간을 이동한다."""
+
+        self.now += seconds
 
 
 def topic_row(*, article_count=5, source_count=4):
@@ -149,7 +197,7 @@ class TopicsApiTests(unittest.TestCase):
 
         connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
 
-        result = get_home_topics(connection=connection)
+        result = fetch_home_topics_from_database(connection=connection)
 
         self.assertEqual(result["topic_date"], result["items"][0]["topic_date"])
         self.assertIn("generated_at", result)
@@ -178,10 +226,147 @@ class TopicsApiTests(unittest.TestCase):
 
         connection = FakeConnection([FakeResult(rows=[])])
 
-        result = get_home_topics(connection=connection)
+        result = fetch_home_topics_from_database(connection=connection)
 
         self.assertIsNone(result["topic_date"])
         self.assertEqual(result["items"], [])
+
+    def test_home_topics_cache_miss_reads_database_and_stores_payload(self):
+        """Cache miss에서 PostgreSQL 조회 후 TTL이 있는 Redis 저장이 실행되는지 검증한다."""
+
+        client = FakeRedisClient()
+        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
+        self.assertEqual(client.set_calls[0][0], HOME_TOPICS_CACHE_KEY)
+        self.assertEqual(client.set_calls[0][1], 60)
+
+    def test_home_topics_cache_hit_skips_database_connection(self):
+        """Cache hit이면 DB connection factory를 호출하지 않아 반복 조회 부하를 막는다."""
+
+        client = FakeRedisClient()
+        cached_payload = {
+            "generated_at": "2026-07-13T00:00:00Z",
+            "topic_date": "2026-07-13",
+            "items": [
+                {
+                    "id": 1,
+                    "topic_date": "2026-07-13",
+                    "title_ko": "제목",
+                    "summary_ko": "요약",
+                    "keywords": ["키워드"],
+                    "source_count": 4,
+                    "article_count": 5,
+                }
+            ],
+        }
+        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        cache.set(cached_payload)
+
+        def fail_connection_factory():
+            """Cache hit 회귀 검증을 위해 호출되면 실패한다."""
+
+            raise AssertionError("DB connection should not be opened on cache hit")
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=fail_connection_factory,
+        )
+
+        self.assertEqual(result, cached_payload)
+
+    def test_home_topics_cache_ttl_expiry_reads_database_again(self):
+        """TTL이 지난 cached payload는 miss로 처리되어 PostgreSQL을 다시 조회한다."""
+
+        client = FakeRedisClient()
+        cache = HomeTopicsCache(client=client, ttl_seconds=1)
+        first_connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+        second_connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(first_connection),
+        )
+        client.advance(2)
+        get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(second_connection),
+        )
+
+        self.assertEqual(len(first_connection.calls), 1)
+        self.assertEqual(len(second_connection.calls), 1)
+        self.assertEqual(len(client.set_calls), 2)
+
+    def test_home_topics_cache_get_failure_falls_back_to_database(self):
+        """Redis GET timeout이 API 실패로 번지지 않고 PostgreSQL fallback으로 복구된다."""
+
+        client = FakeRedisClient()
+        client.get_error = TimeoutError("redis get timeout")
+        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_home_topics_cache_connection_failure_falls_back_to_database(self):
+        """Redis connection 오류도 bypass로 기록되고 PostgreSQL 조회 결과를 반환한다."""
+
+        client = FakeRedisClient()
+        client.get_error = OSError("connection refused")
+        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_home_topics_cache_set_failure_keeps_response_successful(self):
+        """Redis SET 실패가 PostgreSQL 조회 성공 응답을 실패시키지 않는지 확인한다."""
+
+        client = FakeRedisClient()
+        client.set_error = TimeoutError("redis set timeout")
+        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
+
+    def test_home_topics_corrupt_cache_payload_falls_back_to_database(self):
+        """손상된 cache payload를 폐기하고 PostgreSQL 재조회로 응답 schema를 복구한다."""
+
+        client = FakeRedisClient()
+        client.values[HOME_TOPICS_CACHE_KEY] = ("not-json", 60)
+        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 1)
+        self.assertEqual(len(connection.calls), 1)
 
     def test_topic_detail_returns_all_related_articles_in_relation_order(self):
         """상세 API가 대표 기사를 포함한 관련 기사 전체를 relation 순서로 반환하는지 확인한다."""
