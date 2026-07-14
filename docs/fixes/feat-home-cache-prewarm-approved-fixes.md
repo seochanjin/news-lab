@@ -208,30 +208,30 @@ RUN_ID=$(date +%Y%m%d%H%M%S)
 
 Claude 승인 Fix 적용 후 확인된 전체 테스트 결과:
 
-```
+```text
 445 passed, 91 subtests passed
 ```
 
 ### CodeRabbit 승인 Fix
 
 - [x] FIX-06: 이 문서에서 FIX-05를 기존 테스트로 검증 완료된 상태로 정리하고
-  중복 테스트나 추가 조사가 없음을 명시했다.
+      중복 테스트나 추가 조사가 없음을 명시했다.
 - [x] FIX-07: `docs/pr/feat-home-cache-prewarm.md`에서 local verification과
-  production `pending / human-required` 항목을 분리했다.
+      production `pending / human-required` 항목을 분리했다.
 - [x] FIX-08: `docs/reviews/feat-home-cache-prewarm-coderabbit.md`의 실제 리뷰
-  결과를 유지하고 `docs/reviews/feat-home-cache-prewarm-antigravity.md`를
-  `not performed` 상태로 정리했다.
+      결과를 유지하고 `docs/reviews/feat-home-cache-prewarm-antigravity.md`를
+      `not performed` 상태로 정리했다.
 - [x] FIX-09: `docs/runbooks/cronjobs.md`의 Argo CD 예상 diff에 API Redis URL,
-  timeout과 Weekly TTL을 추가했다.
+      timeout과 Weekly TTL을 추가했다.
 - [x] FIX-10: `docs/runbooks/cronjobs.md`의 세 수동 Job 이름에 `RUN_ID`를 적용하고
-  증거 보존 후 사람 주도 삭제 원칙을 기록했다.
+      증거 보존 후 사람 주도 삭제 원칙을 기록했다.
 - [x] FIX-11: `docs/runbooks/cronjobs.md`의 Daily Cache 검증을
-  `db_write_performed=True` 조건과 no-write 정상 경로에 맞췄다.
+      `db_write_performed=True` 조건과 no-write 정상 경로에 맞췄다.
 - [x] FIX-12: `docs/tasks/feat-home-cache-prewarm.md`의 현재 최종 결과를
-  `445 passed, 91 subtests passed`로 갱신하고 이전 결과를 historical baseline으로
-  구분했다.
+      `445 passed, 91 subtests passed`로 갱신하고 이전 결과를 historical baseline으로
+      구분했다.
 - [x] FIX-13: `docs/verification/feat-home-cache-prewarm.md`의 stale snapshot
-  설명에서 최신 PR/devlog를 제외하고 실제 과거 기록 위치만 명시했다.
+      설명에서 최신 PR/devlog를 제외하고 실제 과거 기록 위치만 명시했다.
 
 FIX-06부터 FIX-13 적용 시 Python application code, K8s manifest, DB schema, API 계약, Pipeline schedule, Redis key와 TTL은 변경하지 않는다.
 
