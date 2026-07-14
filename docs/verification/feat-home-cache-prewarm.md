@@ -2229,7 +2229,159 @@ Command:
 Result:
 - Read-only review confirmed both drafts describe the final Daily, 3-day and
   Weekly scope and leave production verification as human-controlled work.
-- Their `443 passed, 85 subtests passed` lines remain the pre-fix snapshot;
-  approved fix verification results are recorded only in this Verification
-  document as required.
+- Both drafts record the current final `445 passed, 91 subtests passed` result.
+- The older `443 passed, 85 subtests passed` remains only in the Task as an
+  explicit historical baseline and in this Verification document's historical
+  command/result records; it is not a stale PR or devlog result.
 Status: passed
+
+## CodeRabbit Approved Fix Verification
+
+### FIX-06
+
+Command:
+`git diff --check`
+Result:
+- No whitespace errors were reported.
+- The approved fixes document already records FIX-05 as verified by the existing
+  malformed/unsupported `REDIS_URL` tests, with no duplicate test or additional
+  investigation remaining. The CodeRabbit checklist item was marked complete.
+Status: passed
+
+### FIX-07
+
+Command:
+`git diff --check`
+Result:
+- No whitespace errors were reported.
+- The PR draft now labels local verification as passed and lists Production
+  rollout, Argo CD Manual Sync, Redis key/TTL checks and Production Home API
+  checks separately as `pending / human-required`.
+Status: passed
+
+### FIX-08
+
+Command:
+`rg -n "Review Summary|Problems Found|Required Fixes Before PR|Optional Improvements|Suggested Test Commands|Risk Notes|not performed" docs/reviews/feat-home-cache-prewarm-coderabbit.md docs/reviews/feat-home-cache-prewarm-antigravity.md`
+Result:
+- The CodeRabbit artifact contains the actual Review Summary, Problems Found,
+  Required Fixes, Optional Improvements, Suggested Test Commands and Risk Notes.
+- The Antigravity artifact records `not performed` and no longer contains empty
+  review result headings.
+Status: passed
+
+### FIX-09
+
+Command:
+`rg -n "REDIS_URL|REDIS_TIMEOUT_SECONDS|WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS|RUN_ID|db_write_performed|AlreadyExists" docs/runbooks/cronjobs.md`
+Result:
+- The Argo CD expected diff checklist now includes the API Deployment Redis URL,
+  Redis timeout and Weekly Home Cache TTL, while retaining the existing
+  Daily/3-day TTL and CronJob settings.
+Status: passed
+
+### FIX-10
+
+Command:
+`rg -n "REDIS_URL|REDIS_TIMEOUT_SECONDS|WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS|RUN_ID|db_write_performed|AlreadyExists" docs/runbooks/cronjobs.md`
+Result:
+- Daily, 3-day and Weekly prewarm verification Jobs now use timestamp-based
+  `RUN_ID` values in their names.
+- The Runbook states that completed Jobs are removed only by a person after Job
+  logs and Redis/API verification evidence are preserved, avoiding
+  `AlreadyExists` on reruns.
+Status: passed
+
+### FIX-11
+
+Command:
+`rg -n "REDIS_URL|REDIS_TIMEOUT_SECONDS|WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS|RUN_ID|db_write_performed|AlreadyExists" docs/runbooks/cronjobs.md`
+Result:
+- The Daily Runbook requires pre-request key existence and the prewarm TTL only
+  when `db_write_performed=True`.
+- Dry-run or successful no-write results may skip prewarm without being treated
+  as failures, consistent with the 3-day/Weekly publishable-result condition.
+Status: passed
+
+### FIX-12
+
+Command:
+`rg -n "443 passed|85 subtests|445 passed|91 subtests" docs/tasks/feat-home-cache-prewarm.md docs/verification/feat-home-cache-prewarm.md docs/pr/feat-home-cache-prewarm.md docs/devlog/feat-home-cache-prewarm.md`
+Result:
+- The Task now identifies `445 passed, 91 subtests passed` as the current final
+  result.
+- Its remaining `443 passed, 85 subtests passed` references are explicitly
+  labeled as the historical baseline from UNIT-10 before approved fixes.
+Status: passed
+
+### FIX-13
+
+Command:
+`rg -n "443 passed|85 subtests|445 passed|91 subtests" docs/tasks/feat-home-cache-prewarm.md docs/verification/feat-home-cache-prewarm.md docs/pr/feat-home-cache-prewarm.md docs/devlog/feat-home-cache-prewarm.md`
+Result:
+- The Verification document now states that PR and devlog contain the current
+  `445 passed, 91 subtests passed` result.
+- Older results are attributed only to the Task's explicit historical baseline
+  and Verification's historical command/result records. Production verification
+  remains unperformed and human-required.
+Status: passed
+
+## CodeRabbit Approved Fix Final Verification
+
+Command:
+`git diff --check`
+Result:
+- No whitespace errors were reported.
+Status: passed
+
+Command:
+`rg -n "443 passed|85 subtests|445 passed|91 subtests" docs/tasks/feat-home-cache-prewarm.md docs/verification/feat-home-cache-prewarm.md docs/pr/feat-home-cache-prewarm.md docs/devlog/feat-home-cache-prewarm.md`
+Result:
+- Task, PR and devlog identify `445 passed, 91 subtests passed` as the current
+  final result; older Task values are labeled historical and older Verification
+  values remain historical command/result evidence.
+Status: passed
+
+Command:
+`rg -n "REDIS_URL|REDIS_TIMEOUT_SECONDS|WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS|RUN_ID|db_write_performed|AlreadyExists" docs/runbooks/cronjobs.md`
+Result:
+- Confirmed the complete API Redis diff checklist, unique Job identifiers,
+  rerun guidance and conditional Daily no-write verification criteria.
+Status: passed
+
+Command:
+`rg -n "Review Summary|Problems Found|Required Fixes Before PR|Optional Improvements|Suggested Test Commands|Risk Notes|not performed" docs/reviews/feat-home-cache-prewarm-coderabbit.md docs/reviews/feat-home-cache-prewarm-antigravity.md`
+Result:
+- Confirmed the populated CodeRabbit artifact and explicit Antigravity
+  `not performed` state.
+Status: passed
+
+Command:
+`git status --short`
+Result:
+- Modified paths are limited to approved fixes, PR, review artifacts, CronJob
+  Runbook, Task and Verification documents.
+Status: passed
+
+Command:
+`git diff --stat`
+Result:
+- The diff contains documentation changes only.
+Status: passed
+
+Command:
+`git diff --name-only -- app scripts tests k8s db migrations frontend`
+Result:
+- No output. Application, scripts, tests, Kubernetes manifests, DB, migrations
+  and frontend have no diff.
+Status: passed
+
+Command:
+`PYTHONPATH=. pytest -q -k "home_topics or three_day or weekly or cache or prewarm or redis_url"`,
+`PYTHONPATH=. pytest -q`, and Kubernetes YAML parse
+Result:
+- Not run for FIX-06 through FIX-13 because these approved changes are
+  documentation-only and the Approved Fixes document requires reruns only when
+  Python, tests or Kubernetes YAML change.
+- The existing final result remains `445 passed, 91 subtests passed`.
+Status: skipped

@@ -275,7 +275,10 @@ git diff --name-only -- db migrations frontend
 - 각 Pipeline은 자신이 생성하는 데이터의 Home Cache만 갱신한다.
 - 세 API를 하나로 합치거나 Frontend를 수정하지 않는다.
 - UNIT-01부터 UNIT-07까지는 Daily-only 초기 범위로 로컬 구현과 검증을 마친 상태다.
-- 현재 전체 테스트 기록은 `443 passed, 85 subtests passed`다.
+- 승인 Fix 적용 후 현재 최종 전체 테스트 기록은
+  `445 passed, 91 subtests passed`다.
+- UNIT-10 완료 시점의 `443 passed, 85 subtests passed`는 승인 Fix 적용 전
+  historical baseline이다.
 - Daily-only 구현은 폐기하지 않고 3-day와 Weekly 구현의 기준 패턴으로 재사용한다.
 - 기존 UNIT-08 운영 준비 기록은 완료 Unit으로 취급하지 않는다.
 
@@ -328,8 +331,10 @@ git diff --name-only -- db migrations frontend
   설정을 기존 manifest tests와 K3s YAML parse로 검증했다.
 - Architecture, design, runbook, PR draft와 devlog draft가 Daily-only 설명이 아니라
   세 Home API와 세 Pipeline 기준으로 정합한지 검색으로 확인했다.
-- 전체 로컬 검증 결과는 `443 passed, 85 subtests passed`이며 DB migration과
-  frontend 변경은 없다.
+- UNIT-10 완료 시점의 전체 로컬 검증 결과는 승인 Fix 적용 전 historical
+  baseline인 `443 passed, 85 subtests passed`였다. 승인 Fix 적용 후 현재 최종
+  결과는 `445 passed, 91 subtests passed`이며 DB migration과 frontend 변경은
+  없다.
 
 ## Manual or Production Verification
 

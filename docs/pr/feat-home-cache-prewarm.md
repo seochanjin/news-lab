@@ -83,7 +83,7 @@
 
 ## 확인 결과
 
-- Verification 상태는 `passed`다.
+- Local verification 상태는 `passed`다.
 - 세 Home API의 cache hit, miss/store, Redis 오류와 손상 payload의 PostgreSQL
   fallback을 로컬 테스트로 확인했다.
 - 세 Pipeline의 저장 성공 후 prewarm과 dry-run/no-write skip을 확인했다.
@@ -98,8 +98,11 @@
 
 - Redis는 삭제 가능한 성능 최적화 계층이며 최신성은 TTL 만료가 아니라 각
   Pipeline 성공 시 대응 key overwrite로 관리한다.
-- PR merge, Argo CD Manual Sync, K3s rollout, 수동 Pipeline Job, Redis key/TTL 및
-  production Home API 검증은 수행하지 않았다.
+- Production rollout: `pending / human-required`
+- Argo CD Manual Sync: `pending / human-required`
+- Redis key와 TTL 확인: `pending / human-required`
+- Production Home API 확인: `pending / human-required`
+- PR merge와 수동 Pipeline Job도 수행하지 않았다.
 - 운영 반영과 검증은 `docs/runbooks/cronjobs.md` 절차에 따라 사람이 수행하고,
   실제 credential 없는 결과가 제공된 뒤 Verification에 기록해야 한다.
 - Deferred/Rejected suggestion과 승인되지 않은 review suggestion은 적용하지 않았다.
