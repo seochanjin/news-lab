@@ -16,7 +16,7 @@ spec:
         workload: app
       containers:
         - name: news-api
-          image: seocj/news-api:6c988f8540ae873901d6182d66eeb351b767e160
+          image: seocj/news-api:d18f695854cb82c6a8d2ecd5833a88eb45a6ade2
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
