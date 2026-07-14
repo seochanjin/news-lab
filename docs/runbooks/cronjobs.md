@@ -54,6 +54,178 @@ curl "https://api.dev-scj.site/weekly-topics/home"
 - 실패한 Job은 이후 성공 여부와 무관하게 원인을 확인한다.
 - Collector 이력과 topic 생성 결과가 각 Job 시각과 상태에 부합한다.
 
+## Daily Topic Pipeline Home Cache prewarm 검증
+
+이 절차는 Argo CD Manual Sync, Redis key 삭제, Daily Topic Pipeline 수동 Job
+생성, production API 확인을 포함하므로 사람이 실행한다. Agent는 사람이 제공한
+credential 없는 stdout/stderr와 Redis key/TTL 결과만 Verification 근거로
+사용한다.
+
+운영 반영 전 Argo CD `news-api` Application diff에서 예상 변경이 다음 범위인지
+확인한다.
+
+- `Deployment/news-api`의 `REDIS_URL="redis://news-redis:6379/0"` 값
+- `Deployment/news-api`의 `REDIS_TIMEOUT_SECONDS="0.05"` 값
+- `Deployment/news-api`의 `HOME_TOPICS_CACHE_TTL_SECONDS="108000"` 값
+- `Deployment/news-api`의 `THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS="108000"` 값
+- `Deployment/news-api`의 `WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS="691200"` 값
+- `CronJob/news-daily-topic-pipeline`의 `REDIS_URL` Secret 참조 추가
+- `CronJob/news-daily-topic-pipeline`의 `HOME_TOPICS_CACHE_TTL_SECONDS="108000"`
+  및 `REDIS_TIMEOUT_SECONDS="0.05"` 추가
+- `CronJob/news-three-day-topic-pipeline`의 `REDIS_URL`,
+  `THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS="108000"` 및
+  `REDIS_TIMEOUT_SECONDS="0.05"` 추가
+- `CronJob/news-weekly-topic-pipeline`의 `REDIS_URL`,
+  `WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS="691200"` 및
+  `REDIS_TIMEOUT_SECONDS="0.05"` 추가
+- 같은 배포의 의도한 image tag 변경
+
+예상하지 않은 Service, Ingress, Secret, Redis persistence, HPA, schedule, command
+또는 prune/delete 차이가 있으면 Manual Sync를 실행하지 않는다.
+
+사람 승인 후 Argo CD Manual Sync가 끝나면 다음 순서로 prewarm을 검증한다.
+
+```bash
+RUN_ID=$(date +%Y%m%d%H%M%S)
+JOB_NAME="news-daily-topic-pipeline-prewarm-verify-${RUN_ID}"
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment,pod,cronjob -n default -o wide
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli DEL topics:home:v1
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl create job \
+  --from=cronjob/news-daily-topic-pipeline \
+  "$JOB_NAME" \
+  -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl wait \
+  --for=condition=complete \
+  job/"$JOB_NAME" \
+  -n default \
+  --timeout=30m
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs \
+  job/"$JOB_NAME" \
+  -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli EXISTS topics:home:v1
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli TTL topics:home:v1
+curl -fsS https://api.newslab.ai.kr/topics/home
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli TTL topics:home:v1
+```
+
+정상 기준은 다음과 같다.
+
+- Daily Pipeline Job이 `Complete`이고 실행 결과의 `db_write_performed` 값과
+  `operation=prewarm` 성공 또는 bypass/fail-open 사유가 credential 없이 기록된다.
+- `db_write_performed=True`인 실행에서만 첫 `/topics/home` 요청 전
+  `EXISTS topics:home:v1` 결과 `1`과 Pipeline 직후 약 `108000`초 TTL을 필수로
+  확인한다.
+- Dry-run 또는 `db_write_performed=False`인 정상 no-write 실행은
+  `reason=no_db_write`로 prewarm을 건너뛰므로 Cache가 생성되지 않아도 실패로
+  판단하지 않는다.
+- `db_write_performed=True`로 prewarm된 key는 첫 `/topics/home` 요청 후 TTL이
+  감소하며 `108000`초로 다시 초기화되지 않는다.
+- `/topics/home` response schema와 status는 기존 계약과 같다.
+
+검증이 실패하면 Redis key 삭제나 Job 재생성을 반복하지 말고 Job log, Pod 상태,
+Argo CD diff, Redis `EXISTS`/`TTL` 결과를 보존한 뒤 원인을 분리한다. Redis 장애
+주입은 이 절차의 필수 조건이 아니며 별도 승인된 운영 창에서만 수행한다.
+
+## 3-day Topic Pipeline Home Cache prewarm 검증
+
+이 절차도 Argo CD Manual Sync, Redis key 삭제, 3-day Topic Pipeline 수동 Job
+생성, production API 확인을 포함하므로 사람이 실행한다. Agent는 사람이 제공한
+credential 없는 stdout/stderr와 Redis key/TTL 결과만 Verification 근거로
+사용한다.
+
+사람 승인 후 Argo CD Manual Sync가 끝나면 다음 순서로 prewarm을 검증한다.
+
+```bash
+RUN_ID=$(date +%Y%m%d%H%M%S)
+JOB_NAME="news-three-day-topic-pipeline-prewarm-verify-${RUN_ID}"
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli DEL three-day-topics:home:v1
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl create job \
+  --from=cronjob/news-three-day-topic-pipeline \
+  "$JOB_NAME" \
+  -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl wait \
+  --for=condition=complete \
+  job/"$JOB_NAME" \
+  -n default \
+  --timeout=30m
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs \
+  job/"$JOB_NAME" \
+  -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli EXISTS three-day-topics:home:v1
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli TTL three-day-topics:home:v1
+curl -fsS https://api.newslab.ai.kr/three-day-topics/home
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli TTL three-day-topics:home:v1
+```
+
+정상 기준은 다음과 같다.
+
+- 3-day Pipeline Job이 `Complete`이고 log에 `operation=prewarm` 성공 또는
+  fail-open 사유가 credential 없이 기록된다.
+- 저장된 publishable Topic이 있는 실행에서는 첫 `/three-day-topics/home` 요청 전
+  `EXISTS three-day-topics:home:v1` 결과가 `1`이다.
+- Pipeline 직후 TTL은 약 `108000`초다.
+- 첫 `/three-day-topics/home` 요청 후 TTL은 감소하며 `108000`초로 다시 초기화되지
+  않는다.
+- `/three-day-topics/home` response schema와 status는 기존 계약과 같다.
+
+## Weekly Topic Pipeline Home Cache prewarm 검증
+
+이 절차도 Argo CD Manual Sync, Redis key 삭제, Weekly Topic Pipeline 수동 Job
+생성, production API 확인을 포함하므로 사람이 실행한다. Agent는 사람이 제공한
+credential 없는 stdout/stderr와 Redis key/TTL 결과만 Verification 근거로
+사용한다.
+
+사람 승인 후 Argo CD Manual Sync가 끝나면 다음 순서로 prewarm을 검증한다.
+
+```bash
+RUN_ID=$(date +%Y%m%d%H%M%S)
+JOB_NAME="news-weekly-topic-pipeline-prewarm-verify-${RUN_ID}"
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli DEL weekly-topics:home:v1
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl create job \
+  --from=cronjob/news-weekly-topic-pipeline \
+  "$JOB_NAME" \
+  -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl wait \
+  --for=condition=complete \
+  job/"$JOB_NAME" \
+  -n default \
+  --timeout=30m
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl logs \
+  job/"$JOB_NAME" \
+  -n default
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli EXISTS weekly-topics:home:v1
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli TTL weekly-topics:home:v1
+curl -fsS https://api.newslab.ai.kr/weekly-topics/home
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl exec -n default deployment/news-redis -- \
+  redis-cli TTL weekly-topics:home:v1
+```
+
+정상 기준은 다음과 같다.
+
+- Weekly Pipeline Job이 `Complete`이고 log에 `operation=prewarm` 성공 또는
+  fail-open 사유가 credential 없이 기록된다.
+- 저장된 publishable Topic이 있는 실행에서는 첫 `/weekly-topics/home` 요청 전
+  `EXISTS weekly-topics:home:v1` 결과가 `1`이다.
+- Pipeline 직후 TTL은 약 `691200`초다.
+- 첫 `/weekly-topics/home` 요청 후 TTL은 감소하며 `691200`초로 다시 초기화되지
+  않는다.
+- `/weekly-topics/home` response schema와 status는 기존 계약과 같다.
+
+세 검증 Job은 `RUN_ID`를 포함한 고유 이름을 사용해 재실행 시 `AlreadyExists`를
+피한다. 완료 Job 삭제가 필요하면 Job log와 Redis `EXISTS`/`TTL`, API 확인 결과를
+먼저 보존하고, 사람이 검증 종료를 확인한 뒤 명시적으로 수행한다.
+
 ## 3일 Topic 최초 반영 순서
 
 아래 작업은 모두 사람이 실행한다. Migration과 manifest가 아직 적용되지 않은

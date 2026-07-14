@@ -20,6 +20,8 @@ from sqlalchemy import text
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app.home_topics_cache import get_weekly_home_topics_cache
+from app.home_topics_payload import prewarm_weekly_home_topics_cache
 from app.services.daily_topic_pipeline import create_raw_text_loader
 from app.services.weekly_topic_pipeline import (
     WeeklyOpenAISummaryProvider,
@@ -414,6 +416,7 @@ def _run():
                 run_id,
                 _completion_from_analysis(result["analysis"]),
             )
+        _prewarm_weekly_home_topics_cache_after_success(engine, result, args)
     except Exception as error:
         if repository is not None:
             repository.finish_run(
@@ -427,6 +430,48 @@ def _run():
         raise
 
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+def _prewarm_weekly_home_topics_cache_after_success(
+    engine,
+    result,
+    args,
+    *,
+    cache=None,
+):
+    """Weekly Topic 저장과 run 종료 성공 이후 Home cache prewarm을 fail-open으로 실행한다.
+
+    Dry-run 또는 publishable topic이 저장되지 않은 실행에서는 prewarm을 건너뛴다.
+    Execute 모드에서 `saved_topic_count`가 1 이상이면 최신 run이 success 또는
+    partial_success 상태로 종료된 뒤 새 read connection으로 Home payload를 읽고
+    `weekly-topics:home:v1`을 overwrite한다. Redis 미설정, SET 실패, payload
+    조회 실패는 warning이나 bypass log만 남기며 호출자에게 예외를 전파하지 않는다.
+    """
+
+    if not args.execute:
+        LOGGER.info(
+            "home_topics_cache event=bypass operation=prewarm key=weekly "
+            "reason=dry_run"
+        )
+        return
+    if result.get("analysis", {}).get("saved_topic_count", 0) < 1:
+        LOGGER.info(
+            "home_topics_cache event=bypass operation=prewarm key=weekly "
+            "reason=no_publishable_result"
+        )
+        return
+
+    try:
+        cache = cache or get_weekly_home_topics_cache()
+        prewarm_weekly_home_topics_cache(
+            cache=cache,
+            connection_factory=engine.connect,
+        )
+    except Exception as exc:  # noqa: BLE001 - prewarm must not fail the pipeline.
+        LOGGER.warning(
+            "home_topics_cache event=bypass operation=prewarm key=weekly error=%s",
+            exc.__class__.__name__,
+        )
 
 
 if __name__ == "__main__":

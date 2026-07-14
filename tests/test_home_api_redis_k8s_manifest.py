@@ -70,7 +70,18 @@ class HomeApiRedisK8sManifestTests(unittest.TestCase):
             env_by_name["REDIS_URL"]["value"],
             "redis://news-redis:6379/0",
         )
-        self.assertEqual(env_by_name["HOME_TOPICS_CACHE_TTL_SECONDS"]["value"], "60")
+        self.assertEqual(
+            env_by_name["HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            "108000",
+        )
+        self.assertEqual(
+            env_by_name["THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            "108000",
+        )
+        self.assertEqual(
+            env_by_name["WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            "691200",
+        )
         self.assertEqual(env_by_name["REDIS_TIMEOUT_SECONDS"]["value"], "0.05")
 
     def test_redis_deployment_is_ephemeral_and_bounded(self):

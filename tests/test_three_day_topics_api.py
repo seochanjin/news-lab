@@ -6,6 +6,7 @@ pipeline, migration 또는 Production API에는 접근하지 않는다.
 
 import os
 import unittest
+from contextlib import nullcontext
 from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
@@ -17,6 +18,14 @@ os.environ.setdefault(
 )
 
 from app.main import app
+from app.home_topics_cache import (
+    THREE_DAY_HOME_TOPICS_CACHE_KEY,
+    HomeTopicsCache,
+)
+from app.home_topics_payload import (
+    fetch_three_day_home_topics_from_database,
+    get_three_day_home_topics_payload,
+)
 from app.routers.three_day_topics import (
     get_three_day_home_topics,
     get_three_day_topic,
@@ -71,8 +80,35 @@ class FakeConnection:
         return self.results.pop(0)
 
 
+class FakeRedisClient:
+    """3일 Home cache 테스트에 필요한 Redis get/setex와 TTL 동작을 흉내 낸다."""
+
+    def __init__(self):
+        """저장소와 선택적 Redis 계층 오류를 초기화한다."""
+
+        self.values = {}
+        self.get_error = None
+        self.set_error = None
+        self.set_calls = []
+
+    def get(self, key):
+        """저장된 문자열 payload를 반환하거나 설정된 오류를 발생시킨다."""
+
+        if self.get_error:
+            raise self.get_error
+        return self.values.get(key)
+
+    def setex(self, key, ttl_seconds, value):
+        """TTL과 payload를 기록하거나 설정된 오류를 발생시킨다."""
+
+        if self.set_error:
+            raise self.set_error
+        self.set_calls.append((key, ttl_seconds, value))
+        self.values[key] = value
+
+
 def three_day_topic_row():
-    """목록과 상세 응답에 사용할 3일 Topic 가짜 row를 만든다."""
+    """실제 Pipeline의 draft 저장 상태를 반영한 3일 Topic 가짜 row를 만든다."""
 
     now = datetime.now(timezone.utc)
     return {
@@ -85,7 +121,7 @@ def three_day_topic_row():
         "keywords": ["정책", "시장"],
         "article_count": 5,
         "source_count": 4,
-        "status": "ready",
+        "status": "draft",
         "provider": "openai",
         "model": "summary-model",
         "prompt_version": "three-day-flow-v1",
@@ -175,7 +211,7 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
 
         connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
 
-        result = get_three_day_home_topics(connection=connection)
+        result = fetch_three_day_home_topics_from_database(connection=connection)
 
         item = result["items"][0]
         self.assertEqual(result["reference_date"], item["reference_date"])
@@ -196,12 +232,102 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
 
         connection = FakeConnection([FakeResult(rows=[])])
 
-        result = get_three_day_home_topics(connection=connection)
+        result = fetch_three_day_home_topics_from_database(connection=connection)
 
         self.assertIsNone(result["reference_date"])
         self.assertIsNone(result["window_start"])
         self.assertIsNone(result["window_end"])
         self.assertEqual(result["items"], [])
+
+    def test_home_cache_miss_reads_database_and_stores_payload(self):
+        """3일 Home cache miss에서 DB 조회 후 별도 key와 30시간 TTL로 저장한다."""
+
+        client = FakeRedisClient()
+        cache = HomeTopicsCache(
+            client=client,
+            key=THREE_DAY_HOME_TOPICS_CACHE_KEY,
+            ttl_seconds=108000,
+        )
+        connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+        result = get_three_day_home_topics_payload(
+            cache=cache,
+            connection_factory=lambda: nullcontext(connection),
+        )
+
+        self.assertEqual(result["items"][0]["id"], 31)
+        self.assertEqual(len(connection.calls), 1)
+        self.assertEqual(client.set_calls[0][0], THREE_DAY_HOME_TOPICS_CACHE_KEY)
+        self.assertEqual(client.set_calls[0][1], 108000)
+
+    def test_home_cache_hit_skips_database_connection(self):
+        """3일 Home cache hit이면 DB connection을 열지 않고 cached payload를 반환한다."""
+
+        client = FakeRedisClient()
+        cached_payload = {
+            "generated_at": "2026-07-13T00:00:00Z",
+            "reference_date": "2026-07-13",
+            "window_start": "2026-07-10T00:00:00Z",
+            "window_end": "2026-07-13T00:00:00Z",
+            "items": [
+                {
+                    "id": 31,
+                    "reference_date": "2026-07-13",
+                    "window_start": "2026-07-10T00:00:00Z",
+                    "window_end": "2026-07-13T00:00:00Z",
+                    "title_ko": "3일 이슈",
+                    "summary_ko": "3일 요약",
+                    "keywords": ["정책"],
+                    "article_count": 5,
+                    "source_count": 4,
+                }
+            ],
+        }
+        cache = HomeTopicsCache(
+            client=client,
+            key=THREE_DAY_HOME_TOPICS_CACHE_KEY,
+            ttl_seconds=108000,
+        )
+        cache.set(cached_payload)
+
+        def fail_connection_factory():
+            """Cache hit 회귀 검증을 위해 호출되면 실패한다."""
+
+            raise AssertionError("DB connection should not be opened on cache hit")
+
+        result = get_three_day_home_topics_payload(
+            cache=cache,
+            connection_factory=fail_connection_factory,
+        )
+
+        self.assertEqual(result, cached_payload)
+
+    def test_home_cache_errors_fall_back_to_database(self):
+        """Redis GET 오류와 손상 payload가 3일 Home DB fallback으로 복구되는지 확인한다."""
+
+        for cached_value, get_error in (
+            (None, TimeoutError("redis get timeout")),
+            ("not-json", None),
+        ):
+            with self.subTest(get_error=get_error):
+                client = FakeRedisClient()
+                client.get_error = get_error
+                if cached_value is not None:
+                    client.values[THREE_DAY_HOME_TOPICS_CACHE_KEY] = cached_value
+                cache = HomeTopicsCache(
+                    client=client,
+                    key=THREE_DAY_HOME_TOPICS_CACHE_KEY,
+                    ttl_seconds=108000,
+                )
+                connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
+
+                result = get_three_day_home_topics_payload(
+                    cache=cache,
+                    connection_factory=lambda: nullcontext(connection),
+                )
+
+                self.assertEqual(result["items"][0]["id"], 31)
+                self.assertEqual(len(connection.calls), 1)
 
     def test_detail_returns_articles_in_rank_order_with_role_flags(self):
         """상세가 대표·Summary 근거 flag를 포함해 관련 기사를 순위순 반환하는지 확인한다."""

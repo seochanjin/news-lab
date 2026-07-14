@@ -3,7 +3,9 @@
 최근 기사 조회부터 embedding, topic 선정, 원문 확보, summary 저장 계획까지
 service package의 단계를 순서대로 호출한다. 기본 실행은 dry-run이며
 `--execute`가 지정된 경우에만 주입된 adapter를 통해 DB 쓰기와 원문 추출이
-발생한다.
+발생한다. Execute 모드의 topic 저장 commit이 성공한 뒤에는 PostgreSQL을 다시
+조회해 Home Redis cache를 prewarm하지만, prewarm 실패는 pipeline 성공 여부에
+영향을 주지 않는다.
 """
 
 import argparse
@@ -19,6 +21,8 @@ from sqlalchemy import text
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app.home_topics_cache import get_home_topics_cache
+from app.home_topics_payload import prewarm_home_topics_cache
 from app.services.daily_topic_pipeline import (
     acquire_pipeline_embeddings,
     acquire_selected_article_raw_texts,
@@ -396,10 +400,41 @@ def _run():
         save_executor=save_executor,
         pipeline_context=pipeline_context,
     )
+    _prewarm_home_topics_cache_after_success(engine, result, args)
     if args.report_path:
         args.report_path.parent.mkdir(parents=True, exist_ok=True)
         args.report_path.write_text(render_report(result), encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
+
+
+def _prewarm_home_topics_cache_after_success(engine, result, args, *, cache=None):
+    """DB 저장 성공 이후 Home cache prewarm을 시도하고 실패를 pipeline 밖으로 격리한다.
+
+    Dry-run 또는 저장할 topic이 없어 실제 DB write가 없었던 실행에서는 prewarm을
+    건너뛴다. Execute 모드에서 `db_write_performed`가 참이면 `engine.begin()`
+    저장 transaction이 정상 종료된 뒤 새 read connection으로 Home payload를
+    조회하고 Redis에 overwrite한다. Redis 미설정, SET 실패, payload 조회 실패는
+    warning이나 bypass log만 남기며 호출자에게 예외를 전파하지 않는다.
+    """
+
+    if not args.execute:
+        LOGGER.info("home_topics_cache event=bypass operation=prewarm reason=dry_run")
+        return
+    if not result.get("analysis", {}).get("db_write_performed"):
+        LOGGER.info("home_topics_cache event=bypass operation=prewarm reason=no_db_write")
+        return
+
+    try:
+        cache = cache or get_home_topics_cache()
+        prewarm_home_topics_cache(
+            cache=cache,
+            connection_factory=engine.connect,
+        )
+    except Exception as exc:  # noqa: BLE001 - prewarm must not fail the pipeline.
+        LOGGER.warning(
+            "home_topics_cache event=bypass operation=prewarm error=%s",
+            exc.__class__.__name__,
+        )
 
 
 def _load_candidates(engine, args):

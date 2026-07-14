@@ -2,12 +2,11 @@
 
 `/topics/home`은 PostgreSQL을 source of truth로 유지하되 Redis cache-aside를
 사용해 반복 조회 시 DB query를 건너뛴다. Redis 장애나 cache payload 오류는
-요청 실패로 전파하지 않고 PostgreSQL 직접 조회로 복구한다.
+요청 실패로 전파하지 않고 PostgreSQL 직접 조회로 복구한다. Home payload 생성
+책임은 API와 pipeline이 공유할 수 있도록 `app.home_topics_payload`에 둔다.
 """
 
-from collections.abc import Callable
-from datetime import date, datetime, timezone
-from typing import ContextManager
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
@@ -15,9 +14,9 @@ from sqlalchemy.engine import Connection
 
 from app.database import engine, get_connection
 from app.home_topics_cache import HomeTopicsCache, get_home_topics_cache
+from app.home_topics_payload import get_home_topics_payload
 
 router = APIRouter(prefix="/topics", tags=["topics"])
-HOME_TOPICS_LIMIT = 10
 
 
 @router.get("")
@@ -83,45 +82,6 @@ def get_home_topics(
     """Home 화면용 topic card payload를 cache-aside 정책으로 반환한다."""
 
     return get_home_topics_payload(cache=cache, connection_factory=engine.connect)
-
-
-def get_home_topics_payload(
-    *,
-    cache: HomeTopicsCache,
-    connection_factory: Callable[[], ContextManager[Connection]],
-):
-    """Cache hit이면 cached payload를, miss이면 DB 조회 결과를 반환하고 cache에 저장한다."""
-
-    cached_payload = cache.get()
-    if cached_payload is not None:
-        return cached_payload
-
-    with connection_factory() as connection:
-        payload = fetch_home_topics_from_database(connection)
-    cache.set(payload)
-    return payload
-
-
-def fetch_home_topics_from_database(connection: Connection):
-    """PostgreSQL에서 `/topics/home` 응답 payload를 생성한다."""
-
-    rows = connection.execute(
-        text("""
-            select
-                id, topic_date, title_ko, summary_ko, keywords,
-                source_count, article_count
-            from topics
-            order by topic_date desc, article_count desc, source_count desc, id desc
-            limit :limit
-        """),
-        {"limit": HOME_TOPICS_LIMIT},
-    ).mappings().all()
-    items = [dict(row) for row in rows]
-    return {
-        "generated_at": datetime.now(timezone.utc),
-        "topic_date": items[0]["topic_date"] if items else None,
-        "items": items,
-    }
 
 
 @router.get("/{topic_id}")

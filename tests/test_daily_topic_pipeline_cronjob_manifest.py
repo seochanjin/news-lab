@@ -83,13 +83,21 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
 
         self.assertEqual(command, expected_command)
 
-    def test_reuses_existing_image_secret_and_security_patterns(self):
-        """Immutable image와 Secret, 최소 권한 securityContext 재사용을 확인한다."""
+    def test_reuses_existing_image_secret_cache_env_and_security_patterns(self):
+        """Immutable image, Secret, Redis cache env와 보안 설정 재사용을 확인한다."""
 
         api_manifest = next(
             yaml.safe_load_all(API_MANIFEST_PATH.read_text(encoding="utf-8"))
         )
         api_container = api_manifest["spec"]["template"]["spec"]["containers"][0]
+        api_env = {
+            item["name"]: item
+            for item in api_container["env"]
+        }
+        cron_env = {
+            item["name"]: item
+            for item in self.container["env"]
+        }
 
         self.assertRegex(
             self.container["image"],
@@ -105,8 +113,9 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
             },
         )
         secret_refs = {
-            item["name"]: item["valueFrom"]["secretKeyRef"]
-            for item in self.container["env"]
+            name: item["valueFrom"]["secretKeyRef"]
+            for name, item in cron_env.items()
+            if "valueFrom" in item
         }
         self.assertEqual(
             secret_refs,
@@ -124,6 +133,22 @@ class DailyTopicPipelineCronJobManifestTests(unittest.TestCase):
                     "key": "OPENAI_SUMMARY_API_KEY",
                 },
             },
+        )
+        self.assertEqual(
+            cron_env["REDIS_URL"]["value"],
+            api_env["REDIS_URL"]["value"],
+        )
+        self.assertEqual(
+            cron_env["HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            "108000",
+        )
+        self.assertEqual(
+            cron_env["HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            api_env["HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+        )
+        self.assertEqual(
+            cron_env["REDIS_TIMEOUT_SECONDS"]["value"],
+            api_env["REDIS_TIMEOUT_SECONDS"]["value"],
         )
 
     def test_pipeline_replaces_scheduled_raw_extractor(self):

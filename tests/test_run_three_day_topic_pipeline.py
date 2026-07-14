@@ -1,16 +1,19 @@
-"""3일 Topic 실행 진입점의 CLI 안전성과 단계 조정 계약을 검증한다.
+"""3일 Topic 실행 진입점의 CLI 안전성, 단계 조정과 cache hook을 검증한다.
 
 가짜 stage 결과와 mock dependency만 사용해 dry-run 기본값, embedding provider
-옵션 부재, 공통 context 전달, 실행 통계와 run 종료 변환을 확인한다. 실제 DB,
-원문 추출, 외부 Summary API와 파일 쓰기는 수행하지 않는다.
+옵션 부재, 공통 context 전달, 실행 통계, run 종료 변환과 Redis SETEX fail-open을
+확인한다. 실제 DB, Redis, 원문 추출, 외부 Summary API와 파일 쓰기는 수행하지
+않는다.
 """
 
 import os
 import unittest
-from datetime import datetime, timedelta, timezone
+from contextlib import nullcontext
+from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from app.home_topics_cache import HomeTopicsCache, THREE_DAY_HOME_TOPICS_CACHE_KEY
 from app.services.three_day_topic_pipeline import (
     ThreeDayCandidateStageResult,
     ThreeDayRawAcquisitionResult,
@@ -20,6 +23,7 @@ from app.services.three_day_topic_pipeline import (
 )
 from scripts.run_three_day_topic_pipeline import (
     _completion_from_analysis,
+    _prewarm_three_day_home_topics_cache_after_success,
     build_pipeline,
     load_candidates_for_context,
     parse_args,
@@ -39,6 +43,23 @@ def _args(*, execute=False):
         max_raw_chars_per_article=3000,
         extraction_limit=5,
     )
+
+
+class FakeRedisSetClient:
+    """3일 prewarm 테스트에서 Redis SETEX 성공과 실패만 재현한다."""
+
+    def __init__(self, *, set_error=None):
+        """SETEX 호출 기록과 선택적 오류를 초기화한다."""
+
+        self.set_error = set_error
+        self.set_calls = []
+
+    def setex(self, key, ttl_seconds, value):
+        """SETEX 호출을 기록하거나 지정된 Redis 계층 오류를 발생시킨다."""
+
+        if self.set_error:
+            raise self.set_error
+        self.set_calls.append((key, ttl_seconds, value))
 
 
 class RunThreeDayTopicPipelineTests(unittest.TestCase):
@@ -282,6 +303,169 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
         self.assertEqual(completion.candidate_count, 10)
         self.assertEqual(completion.saved_topic_count, 2)
         self.assertEqual(completion.failed_topic_count, 1)
+
+    def test_execute_saved_topics_prewarm_reads_three_day_home_payload(self):
+        """3일 Topic 저장 성공 결과에서 Home payload를 조회해 prewarm 저장한다."""
+
+        row = {
+            "id": 31,
+            "reference_date": date(2026, 7, 14),
+            "window_start": datetime(2026, 7, 11, tzinfo=timezone.utc),
+            "window_end": datetime(2026, 7, 14, tzinfo=timezone.utc),
+            "title_ko": "3일 이슈",
+            "summary_ko": "3일 요약",
+            "keywords": ["정책"],
+            "source_count": 4,
+            "article_count": 5,
+        }
+        query_result = Mock()
+        query_result.mappings.return_value.all.return_value = [row]
+        connection = Mock()
+        connection.execute.return_value = query_result
+        engine = SimpleNamespace(connect=lambda: nullcontext(connection))
+        cache = Mock()
+
+        _prewarm_three_day_home_topics_cache_after_success(
+            engine,
+            {"analysis": {"saved_topic_count": 1}},
+            _args(execute=True),
+            cache=cache,
+        )
+
+        cache.set.assert_called_once()
+        payload = cache.set.call_args.args[0]
+        self.assertEqual(cache.set.call_args.kwargs["operation"], "prewarm")
+        self.assertEqual(payload["items"], [row])
+        self.assertEqual(payload["reference_date"], date(2026, 7, 14))
+        self.assertIn("generated_at", payload)
+        self.assertEqual(connection.execute.call_args.args[1], {"limit": 10})
+
+    def test_dry_run_and_no_publishable_result_skip_three_day_prewarm(self):
+        """Dry-run 또는 저장된 publishable Topic이 없으면 prewarm을 호출하지 않는다."""
+
+        engine = Mock()
+        cache = Mock()
+
+        _prewarm_three_day_home_topics_cache_after_success(
+            engine,
+            {"analysis": {"saved_topic_count": 1}},
+            _args(execute=False),
+            cache=cache,
+        )
+        _prewarm_three_day_home_topics_cache_after_success(
+            engine,
+            {"analysis": {"saved_topic_count": 0}},
+            _args(execute=True),
+            cache=cache,
+        )
+
+        engine.connect.assert_not_called()
+        cache.set.assert_not_called()
+
+    def test_three_day_prewarm_failure_does_not_fail_pipeline(self):
+        """3일 prewarm 조회 실패가 pipeline 성공 결과를 예외로 바꾸지 않는다."""
+
+        secret_text = "redis://:secret-token@redis:6379/0"
+        engine = SimpleNamespace(connect=Mock(side_effect=RuntimeError(secret_text)))
+
+        with self.assertLogs("scripts.run_three_day_topic_pipeline", level="WARNING") as logs:
+            _prewarm_three_day_home_topics_cache_after_success(
+                engine,
+                {"analysis": {"saved_topic_count": 1}},
+                _args(execute=True),
+                cache=Mock(),
+            )
+
+        rendered_logs = "\n".join(logs.output)
+        self.assertIn("operation=prewarm key=three-day error=RuntimeError", rendered_logs)
+        self.assertNotIn("secret-token", rendered_logs)
+
+    def test_three_day_prewarm_disabled_redis_logs_bypass_without_failure(self):
+        """Redis 미설정 상태의 3일 prewarm bypass가 pipeline 성공 흐름을 유지한다."""
+
+        row = {
+            "id": 31,
+            "reference_date": date(2026, 7, 14),
+            "window_start": datetime(2026, 7, 11, tzinfo=timezone.utc),
+            "window_end": datetime(2026, 7, 14, tzinfo=timezone.utc),
+            "title_ko": "3일 이슈",
+            "summary_ko": "3일 요약",
+            "keywords": ["정책"],
+            "source_count": 4,
+            "article_count": 5,
+        }
+        query_result = Mock()
+        query_result.mappings.return_value.all.return_value = [row]
+        connection = Mock()
+        connection.execute.return_value = query_result
+        engine = SimpleNamespace(connect=lambda: nullcontext(connection))
+        cache = HomeTopicsCache(
+            client=None,
+            key=THREE_DAY_HOME_TOPICS_CACHE_KEY,
+            enabled=False,
+        )
+
+        with self.assertLogs("app.home_topics_cache", level="INFO") as logs:
+            _prewarm_three_day_home_topics_cache_after_success(
+                engine,
+                {"analysis": {"saved_topic_count": 1}},
+                _args(execute=True),
+                cache=cache,
+            )
+
+        self.assertIn(
+            "event=bypass operation=prewarm reason=disabled",
+            "\n".join(logs.output),
+        )
+
+    def test_three_day_prewarm_redis_set_failures_are_fail_open(self):
+        """Redis connection, timeout, SETEX 실패가 3일 Pipeline 성공을 바꾸지 않는다."""
+
+        row = {
+            "id": 31,
+            "reference_date": date(2026, 7, 14),
+            "window_start": datetime(2026, 7, 11, tzinfo=timezone.utc),
+            "window_end": datetime(2026, 7, 14, tzinfo=timezone.utc),
+            "title_ko": "3일 이슈",
+            "summary_ko": "3일 요약",
+            "keywords": ["정책"],
+            "source_count": 4,
+            "article_count": 5,
+        }
+        query_result = Mock()
+        query_result.mappings.return_value.all.return_value = [row]
+        connection = Mock()
+        connection.execute.return_value = query_result
+        engine = SimpleNamespace(connect=lambda: nullcontext(connection))
+        secret_text = "redis://:secret-token@redis:6379/0"
+
+        for error in (
+            OSError(secret_text),
+            TimeoutError(secret_text),
+            ValueError(secret_text),
+        ):
+            with self.subTest(error=error.__class__.__name__):
+                cache = HomeTopicsCache(
+                    client=FakeRedisSetClient(set_error=error),
+                    key=THREE_DAY_HOME_TOPICS_CACHE_KEY,
+                    ttl_seconds=108000,
+                )
+
+                with self.assertLogs("app.home_topics_cache", level="WARNING") as logs:
+                    _prewarm_three_day_home_topics_cache_after_success(
+                        engine,
+                        {"analysis": {"saved_topic_count": 1}},
+                        _args(execute=True),
+                        cache=cache,
+                    )
+
+                rendered_logs = "\n".join(logs.output)
+                self.assertIn(
+                    f"event=bypass operation=prewarm error={error.__class__.__name__}",
+                    rendered_logs,
+                )
+                self.assertNotIn("secret-token", rendered_logs)
+                self.assertNotIn(secret_text, rendered_logs)
 
 class _RecordingConnection:
     """후보 조회 connection 반환 시점을 기록하는 테스트용 connection이다."""
