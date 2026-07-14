@@ -71,6 +71,12 @@ spec:
                     secretKeyRef:
                       name: news-api-secret
                       key: OPENAI_SUMMARY_API_KEY
+                - name: REDIS_URL
+                  value: redis://news-redis:6379/0
+                - name: HOME_TOPICS_CACHE_TTL_SECONDS
+                  value: "108000"
+                - name: REDIS_TIMEOUT_SECONDS
+                  value: "0.05"
               resources:
                 requests:
                   cpu: "100m"

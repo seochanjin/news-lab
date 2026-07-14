@@ -2,20 +2,23 @@
 
 이 router는 `three_day_topics` 계열과 기존 기사 metadata를 읽기만 한다.
 Pipeline 실행, run 오류 노출, 원문 조회와 DB 쓰기는 담당하지 않으며 모든
-사용자 입력은 SQLAlchemy bind parameter로 query에 전달한다.
+사용자 입력은 SQLAlchemy bind parameter로 query에 전달한다. Home payload는
+API와 pipeline prewarm이 같은 DB builder를 쓰도록 `app.home_topics_payload`에
+위임한다.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import get_connection
+from app.database import engine, get_connection
+from app.home_topics_cache import HomeTopicsCache, get_three_day_home_topics_cache
+from app.home_topics_payload import get_three_day_home_topics_payload
 
 
 router = APIRouter(prefix="/three-day-topics", tags=["three_day_topics"])
-HOME_TOPICS_LIMIT = 10
 
 
 @router.get("")
@@ -91,52 +94,14 @@ def get_three_day_topics(
 
 @router.get("/home")
 def get_three_day_home_topics(
-    connection: Connection = Depends(get_connection),
+    cache: HomeTopicsCache = Depends(get_three_day_home_topics_cache),
 ):
     """성공 또는 부분 성공한 최신 72시간 publishable window card를 반환한다."""
 
-    rows = connection.execute(
-        text("""
-            with latest_window as (
-                select t.window_start, t.window_end
-                from three_day_topics t
-                join three_day_topic_runs r on r.id = t.run_id
-                where r.status in ('success', 'partial_success')
-                order by t.window_end desc, t.window_start desc, t.id desc
-                limit 1
-            )
-            select
-                t.id,
-                t.reference_date,
-                t.window_start,
-                t.window_end,
-                t.title_ko,
-                t.summary_ko,
-                t.keywords,
-                t.article_count,
-                t.source_count
-            from three_day_topics t
-            join latest_window w
-              on w.window_start = t.window_start
-             and w.window_end = t.window_end
-            order by
-                t.article_count desc,
-                t.source_count desc,
-                t.id desc
-            limit :limit
-        """),
-        {"limit": HOME_TOPICS_LIMIT},
-    ).mappings().all()
-    items = [dict(row) for row in rows]
-    latest = items[0] if items else None
-
-    return {
-        "generated_at": datetime.now(timezone.utc),
-        "reference_date": latest["reference_date"] if latest else None,
-        "window_start": latest["window_start"] if latest else None,
-        "window_end": latest["window_end"] if latest else None,
-        "items": items,
-    }
+    return get_three_day_home_topics_payload(
+        cache=cache,
+        connection_factory=engine.connect,
+    )
 
 
 @router.get("/{topic_id}")

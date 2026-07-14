@@ -81,13 +81,21 @@ class ThreeDayTopicPipelineCronJobManifestTests(unittest.TestCase):
         )
         self.assertNotIn("--use-embedding-provider", self.container["command"])
 
-    def test_reuses_image_database_and_summary_secret_without_embedding_key(self):
-        """Immutable image와 필요한 Secret, 보안·resource 패턴 재사용을 확인한다."""
+    def test_reuses_image_database_summary_secret_and_cache_env(self):
+        """Immutable image, 필요한 Secret, Redis cache env와 보안 설정을 확인한다."""
 
         api_manifest = next(
             yaml.safe_load_all(API_MANIFEST_PATH.read_text(encoding="utf-8"))
         )
         api_container = api_manifest["spec"]["template"]["spec"]["containers"][0]
+        api_env = {
+            item["name"]: item
+            for item in api_container["env"]
+        }
+        cron_env = {
+            item["name"]: item
+            for item in self.container["env"]
+        }
 
         self.assertRegex(
             self.container["image"],
@@ -113,8 +121,9 @@ class ThreeDayTopicPipelineCronJobManifestTests(unittest.TestCase):
             },
         )
         secret_refs = {
-            item["name"]: item["valueFrom"]["secretKeyRef"]
-            for item in self.container["env"]
+            name: item["valueFrom"]["secretKeyRef"]
+            for name, item in cron_env.items()
+            if "valueFrom" in item
         }
         self.assertEqual(
             secret_refs,
@@ -128,6 +137,19 @@ class ThreeDayTopicPipelineCronJobManifestTests(unittest.TestCase):
                     "key": "OPENAI_SUMMARY_API_KEY",
                 },
             },
+        )
+        self.assertEqual(cron_env["REDIS_URL"]["value"], api_env["REDIS_URL"]["value"])
+        self.assertEqual(
+            cron_env["THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            "108000",
+        )
+        self.assertEqual(
+            cron_env["THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            api_env["THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+        )
+        self.assertEqual(
+            cron_env["REDIS_TIMEOUT_SECONDS"]["value"],
+            api_env["REDIS_TIMEOUT_SECONDS"]["value"],
         )
 
 

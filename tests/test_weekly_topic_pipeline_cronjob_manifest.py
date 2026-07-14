@@ -1,8 +1,8 @@
-"""7일 Topic CronJob manifest의 schedule, 실행 계약과 안전 설정을 검증한다.
+"""7일 Topic CronJob manifest의 schedule, 실행 계약과 cache 설정을 검증한다.
 
 로컬 YAML만 파싱해 월요일 00:30 서울 실행, bounded CLI 인자, 기존 image·Secret
-재사용과 pod 보안 설정을 확인한다. Kubernetes object를 생성하거나 변경하지
-않는다.
+재사용, pod 보안 설정과 API Deployment의 Weekly cache TTL 정합성을 확인한다.
+Kubernetes object를 생성하거나 변경하지 않는다.
 """
 
 import unittest
@@ -88,12 +88,13 @@ class WeeklyTopicPipelineCronJobManifestTests(unittest.TestCase):
         self.assertNotIn("--use-embedding-provider", self.container["command"])
 
     def test_reuses_image_database_and_summary_secret_without_embedding_key(self):
-        """Immutable image와 필요한 Secret, 보안·resource 패턴 재사용을 확인한다."""
+        """Image, Secret, 보안 설정과 API의 Weekly cache TTL 정합성을 확인한다."""
 
         api_manifest = next(
             yaml.safe_load_all(API_MANIFEST_PATH.read_text(encoding="utf-8"))
         )
         api_container = api_manifest["spec"]["template"]["spec"]["containers"][0]
+        api_env = {item["name"]: item for item in api_container["env"]}
 
         self.assertRegex(
             self.container["image"],
@@ -118,9 +119,11 @@ class WeeklyTopicPipelineCronJobManifestTests(unittest.TestCase):
                 "limits": {"cpu": "500m", "memory": "512Mi"},
             },
         )
+        env_by_name = {item["name"]: item for item in self.container["env"]}
         secret_refs = {
-            item["name"]: item["valueFrom"]["secretKeyRef"]
-            for item in self.container["env"]
+            name: item["valueFrom"]["secretKeyRef"]
+            for name, item in env_by_name.items()
+            if "valueFrom" in item
         }
         self.assertEqual(
             secret_refs,
@@ -135,6 +138,19 @@ class WeeklyTopicPipelineCronJobManifestTests(unittest.TestCase):
                 },
             },
         )
+        self.assertEqual(
+            env_by_name["REDIS_URL"]["value"],
+            "redis://news-redis:6379/0",
+        )
+        self.assertEqual(
+            env_by_name["WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            "691200",
+        )
+        self.assertEqual(
+            env_by_name["WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+            api_env["WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS"]["value"],
+        )
+        self.assertEqual(env_by_name["REDIS_TIMEOUT_SECONDS"]["value"], "0.05")
 
 
 if __name__ == "__main__":

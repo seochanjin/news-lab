@@ -5,19 +5,17 @@ Weekly pipeline 실행, run 오류 노출, 원문 조회와 DB 쓰기는 담당�
 모든 사용자 입력은 SQLAlchemy bind parameter로 query에 전달한다.
 """
 
-from datetime import date, datetime, timezone
+from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import text
 from sqlalchemy.engine import Connection
 
-from app.database import get_connection
-from app.services.weekly_topic_pipeline import PUBLISHABLE_TOPIC_STATUSES
-
+from app.database import engine, get_connection
+from app.home_topics_cache import HomeTopicsCache, get_weekly_home_topics_cache
+from app.home_topics_payload import get_weekly_home_topics_payload
 
 router = APIRouter(prefix="/weekly-topics", tags=["weekly_topics"])
-HOME_TOPICS_LIMIT = 10
-PUBLISHABLE_TOPIC_STATUS = next(iter(PUBLISHABLE_TOPIC_STATUSES))
 
 
 @router.get("")
@@ -94,59 +92,14 @@ def get_weekly_topics(
 
 @router.get("/home")
 def get_weekly_home_topics(
-    connection: Connection = Depends(get_connection),
+    cache: HomeTopicsCache = Depends(get_weekly_home_topics_cache),
 ):
     """성공 또는 부분 성공한 최신 완료 주간의 publishable card를 반환한다."""
 
-    rows = connection.execute(
-        text("""
-            with latest_window as (
-                select t.window_start, t.window_end
-                from weekly_topics t
-                join weekly_topic_runs r on r.id = t.run_id
-                where r.status in ('success', 'partial_success')
-                  and t.status = :publishable_status
-                order by t.window_end desc, t.window_start desc, t.id desc
-                limit 1
-            )
-            select
-                t.id,
-                t.week_start,
-                t.week_end,
-                t.window_start,
-                t.window_end,
-                t.title_ko,
-                t.summary_ko,
-                t.keywords,
-                t.article_count,
-                t.source_count
-            from weekly_topics t
-            join latest_window w
-              on w.window_start = t.window_start
-             and w.window_end = t.window_end
-            where t.status = :publishable_status
-            order by
-                t.article_count desc,
-                t.source_count desc,
-                t.id desc
-            limit :limit
-        """),
-        {
-            "limit": HOME_TOPICS_LIMIT,
-            "publishable_status": PUBLISHABLE_TOPIC_STATUS,
-        },
-    ).mappings().all()
-    items = [dict(row) for row in rows]
-    latest = items[0] if items else None
-
-    return {
-        "generated_at": datetime.now(timezone.utc),
-        "week_start": latest["week_start"] if latest else None,
-        "week_end": latest["week_end"] if latest else None,
-        "window_start": latest["window_start"] if latest else None,
-        "window_end": latest["window_end"] if latest else None,
-        "items": items,
-    }
+    return get_weekly_home_topics_payload(
+        cache=cache,
+        connection_factory=engine.connect,
+    )
 
 
 @router.get("/{topic_id}")

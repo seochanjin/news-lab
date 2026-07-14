@@ -1,12 +1,23 @@
+"""Daily Topic Pipeline의 stage 조립, 실행 조건과 후속 cache hook을 검증한다.
+
+테스트는 fake provider, fake DB connection, mock executor를 사용해 실제 DB,
+Redis, OpenAI API, production workload에 접근하지 않는다. Execute 모드의 저장
+성공 이후 Home cache prewarm이 commit 경계 뒤에서 동작하는지도 local mock으로
+회귀 검증한다.
+"""
+
 import os
 import unittest
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from app.home_topics_cache import HomeTopicsCache
 from app.utils.article_embedding_storage import EmbeddingResult
 from app.utils.topic_summary import DeterministicSummaryProvider
 from scripts.run_daily_topic_pipeline import (
+    _prewarm_home_topics_cache_after_success,
     _topic_selection_key,
     acquire_pipeline_embeddings,
     build_pipeline,
@@ -38,14 +49,37 @@ class SequenceEmbeddingProvider:
 
 
 class FailFirstSummaryProvider(DeterministicSummaryProvider):
+    """첫 summary 생성만 실패시켜 topic 단위 실패 격리를 재현한다."""
+
     def __init__(self):
+        """호출 횟수를 초기화해 첫 호출 실패를 제어한다."""
+
         self.call_count = 0
 
     def summarize(self, topic_input):
+        """첫 호출에서는 예외를 내고 이후에는 deterministic summary를 반환한다."""
+
         self.call_count += 1
         if self.call_count == 1:
             raise RuntimeError("summary provider unavailable")
         return super().summarize(topic_input)
+
+
+class FakeRedisSetClient:
+    """Pipeline prewarm 테스트에서 Redis SETEX 성공과 실패만 재현한다."""
+
+    def __init__(self, *, set_error=None):
+        """SETEX 호출 기록과 선택적 오류를 초기화한다."""
+
+        self.set_error = set_error
+        self.set_calls = []
+
+    def setex(self, key, ttl_seconds, value):
+        """SETEX 호출을 기록하거나 지정된 Redis 계층 오류를 발생시킨다."""
+
+        if self.set_error:
+            raise self.set_error
+        self.set_calls.append((key, ttl_seconds, value))
 
 
 def rows():
@@ -573,6 +607,160 @@ class RunDailyTopicPipelineTests(unittest.TestCase):
                     None,
                 ),
             )
+
+    def test_execute_db_write_success_prewarm_reads_home_payload(self):
+        """DB write가 완료된 execute 결과에서 Home payload를 조회해 prewarm 저장한다."""
+
+        row = {
+            "id": 1,
+            "topic_date": date(2026, 7, 14),
+            "title_ko": "제목",
+            "summary_ko": "요약",
+            "keywords": ["키워드"],
+            "source_count": 2,
+            "article_count": 3,
+        }
+        query_result = Mock()
+        query_result.mappings.return_value.all.return_value = [row]
+        connection = Mock()
+        connection.execute.return_value = query_result
+        engine = SimpleNamespace(connect=lambda: nullcontext(connection))
+        cache = Mock()
+
+        _prewarm_home_topics_cache_after_success(
+            engine,
+            {"analysis": {"db_write_performed": True}},
+            args(execute=True),
+            cache=cache,
+        )
+
+        cache.set.assert_called_once()
+        payload = cache.set.call_args.args[0]
+        self.assertEqual(cache.set.call_args.kwargs["operation"], "prewarm")
+        self.assertEqual(payload["items"], [row])
+        self.assertEqual(payload["topic_date"], date(2026, 7, 14))
+        self.assertIn("generated_at", payload)
+        self.assertEqual(connection.execute.call_args.args[1], {"limit": 10})
+
+    def test_dry_run_and_no_db_write_skip_home_cache_prewarm(self):
+        """Dry-run 또는 실제 DB 저장이 없던 성공 결과에서는 prewarm을 호출하지 않는다."""
+
+        engine = Mock()
+        cache = Mock()
+
+        _prewarm_home_topics_cache_after_success(
+            engine,
+            {"analysis": {"db_write_performed": True}},
+            args(execute=False),
+            cache=cache,
+        )
+        _prewarm_home_topics_cache_after_success(
+            engine,
+            {"analysis": {"db_write_performed": False}},
+            args(execute=True),
+            cache=cache,
+        )
+
+        engine.connect.assert_not_called()
+        cache.set.assert_not_called()
+
+    def test_home_cache_prewarm_failure_does_not_fail_pipeline(self):
+        """Prewarm 조회나 저장 준비 실패가 pipeline 성공 결과를 예외로 바꾸지 않는다."""
+
+        secret_text = "redis://:secret-token@redis:6379/0"
+        engine = SimpleNamespace(
+            connect=Mock(side_effect=RuntimeError(secret_text)),
+        )
+
+        with self.assertLogs("scripts.run_daily_topic_pipeline", level="WARNING") as logs:
+            _prewarm_home_topics_cache_after_success(
+                engine,
+                {"analysis": {"db_write_performed": True}},
+                args(execute=True),
+                cache=Mock(),
+            )
+
+        rendered_logs = "\n".join(logs.output)
+        self.assertIn("operation=prewarm error=RuntimeError", rendered_logs)
+        self.assertNotIn("secret-token", rendered_logs)
+
+    def test_home_cache_prewarm_disabled_redis_logs_bypass_without_failure(self):
+        """Redis 미설정 상태의 prewarm bypass가 pipeline 성공 흐름을 유지하는지 검증한다."""
+
+        row = {
+            "id": 1,
+            "topic_date": date(2026, 7, 14),
+            "title_ko": "제목",
+            "summary_ko": "요약",
+            "keywords": ["키워드"],
+            "source_count": 2,
+            "article_count": 3,
+        }
+        query_result = Mock()
+        query_result.mappings.return_value.all.return_value = [row]
+        connection = Mock()
+        connection.execute.return_value = query_result
+        engine = SimpleNamespace(connect=lambda: nullcontext(connection))
+        cache = HomeTopicsCache(client=None, enabled=False)
+
+        with self.assertLogs("app.home_topics_cache", level="INFO") as logs:
+            _prewarm_home_topics_cache_after_success(
+                engine,
+                {"analysis": {"db_write_performed": True}},
+                args(execute=True),
+                cache=cache,
+            )
+
+        self.assertIn(
+            "event=bypass operation=prewarm reason=disabled",
+            "\n".join(logs.output),
+        )
+
+    def test_home_cache_prewarm_redis_set_failures_are_fail_open(self):
+        """Redis connection, timeout, SET 직렬화 실패가 prewarm 예외로 전파되지 않는다."""
+
+        row = {
+            "id": 1,
+            "topic_date": date(2026, 7, 14),
+            "title_ko": "제목",
+            "summary_ko": "요약",
+            "keywords": ["키워드"],
+            "source_count": 2,
+            "article_count": 3,
+        }
+        query_result = Mock()
+        query_result.mappings.return_value.all.return_value = [row]
+        connection = Mock()
+        connection.execute.return_value = query_result
+        engine = SimpleNamespace(connect=lambda: nullcontext(connection))
+        secret_text = "redis://:secret-token@redis:6379/0"
+
+        for error in (
+            OSError(secret_text),
+            TimeoutError(secret_text),
+            ValueError(secret_text),
+        ):
+            with self.subTest(error=error.__class__.__name__):
+                cache = HomeTopicsCache(
+                    client=FakeRedisSetClient(set_error=error),
+                    ttl_seconds=108000,
+                )
+
+                with self.assertLogs("app.home_topics_cache", level="WARNING") as logs:
+                    _prewarm_home_topics_cache_after_success(
+                        engine,
+                        {"analysis": {"db_write_performed": True}},
+                        args(execute=True),
+                        cache=cache,
+                    )
+
+                rendered_logs = "\n".join(logs.output)
+                self.assertIn(
+                    f"event=bypass operation=prewarm error={error.__class__.__name__}",
+                    rendered_logs,
+                )
+                self.assertNotIn("secret-token", rendered_logs)
+                self.assertNotIn(secret_text, rendered_logs)
 
 
 if __name__ == "__main__":

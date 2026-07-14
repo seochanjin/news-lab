@@ -19,13 +19,16 @@ os.environ.setdefault(
 )
 
 from app.home_topics_cache import (
+    DEFAULT_HOME_TOPICS_CACHE_TTL_SECONDS,
     HOME_TOPICS_CACHE_KEY,
     HomeTopicsCache,
     get_home_topics_cache,
 )
-from app.routers.topics import (
+from app.home_topics_payload import (
     fetch_home_topics_from_database,
     get_home_topics_payload,
+)
+from app.routers.topics import (
     get_topic,
     get_topics,
 )
@@ -237,10 +240,10 @@ class TopicsApiTests(unittest.TestCase):
         self.assertEqual(result["items"], [])
 
     def test_home_topics_cache_miss_reads_database_and_stores_payload(self):
-        """Cache miss에서 PostgreSQL 조회 후 TTL이 있는 Redis 저장이 실행되는지 검증한다."""
+        """Cache miss에서 PostgreSQL 조회 후 기본 30시간 TTL 저장이 실행되는지 검증한다."""
 
         client = FakeRedisClient()
-        cache = HomeTopicsCache(client=client, ttl_seconds=60)
+        cache = HomeTopicsCache(client=client)
         connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
 
         result = get_home_topics_payload(
@@ -251,7 +254,16 @@ class TopicsApiTests(unittest.TestCase):
         self.assertEqual(result["items"][0]["id"], 1)
         self.assertEqual(len(connection.calls), 1)
         self.assertEqual(client.set_calls[0][0], HOME_TOPICS_CACHE_KEY)
-        self.assertEqual(client.set_calls[0][1], 60)
+        self.assertEqual(client.set_calls[0][1], 108000)
+
+    def test_home_topics_cache_default_ttl_is_thirty_hours(self):
+        """환경변수 override가 없을 때 Home cache 기본 TTL이 30시간인지 고정한다."""
+
+        client = FakeRedisClient()
+        cache = HomeTopicsCache(client=client)
+
+        self.assertEqual(cache.ttl_seconds, DEFAULT_HOME_TOPICS_CACHE_TTL_SECONDS)
+        self.assertEqual(DEFAULT_HOME_TOPICS_CACHE_TTL_SECONDS, 108000)
 
     def test_home_topics_cache_hit_skips_database_connection(self):
         """Cache hit이면 DB connection factory를 호출하지 않아 반복 조회 부하를 막는다."""

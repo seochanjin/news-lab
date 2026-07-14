@@ -60,6 +60,12 @@ spec:
                     secretKeyRef:
                       name: news-api-secret
                       key: DATABASE_URL
+                - name: REDIS_URL
+                  value: redis://news-redis:6379/0
+                - name: WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS
+                  value: "691200"
+                - name: REDIS_TIMEOUT_SECONDS
+                  value: "0.05"
                 - name: OPENAI_SUMMARY_API_KEY
                   valueFrom:
                     secretKeyRef:

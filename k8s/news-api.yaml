@@ -29,7 +29,11 @@ spec:
             - name: REDIS_URL
               value: redis://news-redis:6379/0
             - name: HOME_TOPICS_CACHE_TTL_SECONDS
-              value: "60"
+              value: "108000"
+            - name: THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS
+              value: "108000"
+            - name: WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS
+              value: "691200"
             - name: REDIS_TIMEOUT_SECONDS
               value: "0.05"
           resources:
