@@ -36,14 +36,16 @@ Rollback은 이전 정상 full SHA로 manifest를 바꾸는 PR과 Argo CD Manual
 `latest`는 운영 manifest와 rollback 기준으로 사용하지 않는다. Auto sync,
 automatic prune, automatic self-heal은 적용하지 않는다.
 
-`/topics/home` Redis cache 반영 시에도 같은 GitOps 경계를 따른다. 사람이 manifest
-diff에서 `news-redis` Deployment/Service와 `news-api`의 `REDIS_URL`,
-`HOME_TOPICS_CACHE_TTL_SECONDS`, `REDIS_TIMEOUT_SECONDS` 변경만 포함됐는지 확인한
-뒤 Argo CD Manual Sync를 승인한다.
+Daily·3-day·Weekly Home Redis cache 반영 시에도 같은 GitOps 경계를 따른다.
+사람이 manifest diff에서 `news-redis` Deployment/Service와 `news-api` 및 세
+Pipeline CronJob의 `REDIS_URL`, 기간별 TTL, `REDIS_TIMEOUT_SECONDS` 변경만
+포함됐는지 확인한 뒤 Argo CD Manual Sync를 승인한다. 현재 TTL은 Daily·3-day
+`108000`초, Weekly `691200`초다.
 
 Redis 장애 검증은 사람이 승인한 운영 창에서만 수행한다. 정상 상태의 cache hit
-로그를 확인한 뒤 Redis 중단, `/topics/home` PostgreSQL fallback 정상 응답,
-Redis 복구, miss 후 재저장과 이후 hit 로그를 순서대로 확인한다.
+로그를 확인한 뒤 Redis 중단, 세 Home API의 PostgreSQL fallback 정상 응답,
+Redis 복구, miss 후 재저장과 이후 hit 로그를 순서대로 확인한다. 기간별 key와
+Pipeline prewarm 검증은 [CronJob 운영](runbooks/cronjobs.md)을 따른다.
 
 ## 장애 발생 시 첫 확인 순서
 

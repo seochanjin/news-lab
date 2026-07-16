@@ -24,6 +24,9 @@ Migration 실행은 사람이 수행한다.
 | `three_day_topic_runs` | 3일 Topic pipeline 실행 window, 상태와 통계 |
 | `three_day_topics` | 현재 활성 72시간 Topic 결과와 Summary metadata |
 | `three_day_topic_articles` | 3일 Topic의 관련·대표·Summary 근거 기사 연결 |
+| `weekly_topic_runs` | 주간 Topic pipeline 실행 주간, 상태와 통계 |
+| `weekly_topics` | 현재 활성 완료 주간 Topic 결과와 Summary metadata |
+| `weekly_topic_articles` | 주간 Topic의 관련·대표·Summary 근거 기사 연결 |
 
 `sources`와 `articles`의 초기 schema는 repository 밖에서 시작되었고, 현재
 repository migration은 `sources.feed_url`, 실행 이력, raw article, topic
@@ -39,6 +42,8 @@ topics N ── N articles (topic_articles)
 articles 1 ── N article_embeddings
 three_day_topic_runs 1 ── N three_day_topics
 three_day_topics N ── N articles (three_day_topic_articles)
+weekly_topic_runs 1 ── N weekly_topics
+weekly_topics N ── N articles (weekly_topic_articles)
 ```
 
 `crawl_runs`와 `extraction_runs`는 batch 실행 단위의 상태와 count, 오류 정보를
@@ -83,6 +88,21 @@ absolute window가 다르면 별도 결과로 취급한다.
 
 Migration 적용 전후 확인과 중단 기준은
 [Database runbook](../runbooks/database-check.md)을 따른다.
+
+## 주간 Topic 저장
+
+`db/migrations/008_create_weekly_topic_tables.sql`은 Daily·3일 Topic 계열과
+분리된 세 table을 정의한다.
+
+- `weekly_topic_runs`는 완료 주간 window별 실행 이력과 처리 통계를 보존한다.
+- `weekly_topics`는 현재 주간 결과를 저장하고
+  `(window_start, window_end, topic_candidate_id)`로 중복을 방어한다.
+- `weekly_topic_articles`는 Topic별 article을 한 번만 연결하고 rank,
+  대표 기사와 Summary 근거 기사 여부를 저장한다.
+
+동일 window 재실행은 run row를 새로 남기되 활성 Topic set은 transaction 안에서
+교체한다. 결과 교체 전 PostgreSQL advisory transaction lock을 사용하며, 삭제와
+삽입 중 하나라도 실패하면 기존 결과가 유지된다.
 
 ## 변경 원칙
 
