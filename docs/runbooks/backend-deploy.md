@@ -35,7 +35,9 @@ argocd app get news-api
 argocd app diff news-api
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment news-api
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -l app=news-api -o wide
-KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob \
+  news-rss-collector news-daily-topic-pipeline \
+  news-three-day-topic-pipeline news-weekly-topic-pipeline
 ```
 
 Diff가 승인된 manifest image 변경과 일치하고 예상하지 않은 resource 생성·삭제,
@@ -62,9 +64,11 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get pods -l app=news-api -o wide
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get deployment news-api \
   -o=jsonpath='{.spec.template.spec.containers[0].image}'
 KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get cronjob \
+  news-rss-collector news-daily-topic-pipeline \
+  news-three-day-topic-pipeline news-weekly-topic-pipeline \
   -o=custom-columns='NAME:.metadata.name,IMAGE:.spec.jobTemplate.spec.template.spec.containers[0].image'
 argocd app get news-api
-curl -sS https://api.newslab.ai.kr/health
+curl --fail-with-body -sS https://api.newslab.ai.kr/health
 ```
 
 Deployment와 네 CronJob image가 승인한 full SHA와 일치하고, Argo CD가
@@ -104,10 +108,10 @@ KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get secret \
 Certificate가 `Ready=True`인 뒤 사람이 두 host를 확인한다.
 
 ```bash
-curl -I https://api.newslab.ai.kr/health
-curl -sS https://api.newslab.ai.kr/health
-curl -I https://api.dev-scj.site/health
-curl -sS https://api.dev-scj.site/health
+curl --fail -I https://api.newslab.ai.kr/health
+curl --fail-with-body -sS https://api.newslab.ai.kr/health
+curl --fail -I https://api.dev-scj.site/health
+curl --fail-with-body -sS https://api.dev-scj.site/health
 ```
 
 ## 실패 시 중단과 확인

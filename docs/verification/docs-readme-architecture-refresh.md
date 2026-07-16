@@ -38,6 +38,78 @@ Result:
 
 Status: passed
 
+## Approved Fixes Verification
+
+Command:
+`rg -n -A4 -B2 'kubectl get cronjob|curl .*health' docs/runbooks/backend-deploy.md`
+
+Result:
+- Exit code 0. Argo CD diff와 Sync 후 image 확인 명령이
+  `news-rss-collector`, `news-daily-topic-pipeline`,
+  `news-three-day-topic-pipeline`, `news-weekly-topic-pipeline`을 명시한다.
+- Production health HEAD/GET이 `curl --fail` 또는 `curl --fail-with-body`를 사용해
+  HTTP 4xx/5xx에서 non-zero exit status를 반환하도록 문서화됐다.
+
+Status: passed
+
+Command:
+Task fence 목록을 `rg`로 확인한 뒤, opening/closing fence를 추적하고 언어가 없는
+opening fence 또는 닫히지 않은 fence에서 실패하는 `awk` 검사를 실행했다.
+
+Result:
+- 두 command 모두 exit code 0. 여섯 기존 unlabeled opening fence는 모두
+  `text`로 지정됐고, 나머지 opening fence는 `bash`다.
+- Unlabeled opening fence와 unclosed fence가 없다.
+
+Status: passed
+
+Command:
+Verification status와 UNIT-06 historical 문구를 `rg`로 확인하고, 정확히
+`## Verification Status`인 heading 수가 하나인지 `awk`로 검사했다.
+
+Result:
+- 두 command 모두 exit code 0. Canonical `Verification Status` heading은 하나며
+  값은 `passed`다.
+- UNIT-06은 UNIT-07 이전 historical snapshot으로 명시됐고 당시 `pending` 상태는
+  과거형으로 구분됐다.
+
+Status: passed
+
+Command:
+`git branch --show-current && git status --short && git diff --stat && git diff --name-only`
+
+Result:
+- Exit code 0. Branch는 `docs/readme-architecture-refresh`다.
+- 현재 worktree에는 Approved Fixes 대상 문서와 적용 전부터 존재한 CodeRabbit
+  Review 변경만 있다. Review 문서는 이번 적용에서 수정하지 않았다.
+
+Status: passed
+
+Command:
+`git diff --name-only -- app scripts k8s .github/workflows db migrations requirements.txt docker-compose.yml`
+
+Result:
+- 출력 없음. Application, script, Kubernetes manifest, workflow, database,
+  migration과 dependency 경로는 변경되지 않았다.
+
+Status: passed
+
+Command:
+`git diff --check`
+
+Result:
+- Exit code 0, 출력 없음. 당시 tracked diff에 whitespace 오류가 없다.
+
+Status: passed
+
+### Approved Fixes Evidence Notes
+
+- Application test suite는 documentation-only Approved Fixes 범위가 아니므로
+  실행하지 않았고 통과로 기록하지 않는다.
+- Python 파일을 만들거나 수정하지 않아 한글 docstring 변경 대상이 없다.
+- Production API request, Kubernetes/Argo CD 변경, DB 작업, `git push`와
+  `git merge`를 실행하지 않았다.
+
 ## UNIT-07 Verification
 
 Command:
@@ -144,6 +216,10 @@ Status: passed
   did not require docstring changes.
 
 ## UNIT-06 Verification
+
+> Historical snapshot: 이 section은 UNIT-07 최종 검증 전에 기록한 UNIT-06
+> 시점의 상태다. 문서 상단의 `Verification Status: passed`가 현재 전체 Task의
+> canonical status다.
 
 Command:
 Task-provided repository consistency searches for architecture image/current
@@ -274,8 +350,9 @@ Status: passed
 ### UNIT-06 Pending Verification
 
 - UNIT-07 remains pending and was not started.
-- Overall Verification Status remains `pending`; final whole-task verification,
-  PR/Devlog completion and task-wide status reconciliation belong to UNIT-07.
+- At this UNIT-06 historical snapshot, the overall Verification Status was
+  `pending`; final whole-task verification, PR/Devlog completion and task-wide
+  status reconciliation belonged to UNIT-07 and are recorded above.
 
 ### UNIT-06 Evidence Notes
 
