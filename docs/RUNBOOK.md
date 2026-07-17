@@ -59,6 +59,7 @@ Pipeline prewarm 검증은 [CronJob 운영](runbooks/cronjobs.md)을 따른다.
 ## 세부 Runbook
 
 - [일상 운영 점검](runbooks/routine-check.md)
+- [Monitoring과 Dashboard 확인](runbooks/monitoring.md)
 - [Backend 배포와 domain/TLS 확인](runbooks/backend-deploy.md)
 - [CronJob 운영](runbooks/cronjobs.md)
 - [Database와 local read check](runbooks/database-check.md)

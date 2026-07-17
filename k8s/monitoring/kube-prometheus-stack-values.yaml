@@ -3,6 +3,9 @@ alertmanager:
   enabled: false
 
 grafana:
+  grafana.ini:
+    dataproxy:
+      timeout: 120
   nodeSelector:
     observability: "true"
   resources:
@@ -10,7 +13,7 @@ grafana:
       cpu: 50m
       memory: 256Mi
     limits:
-      cpu: 300m
+      cpu: 200m
       memory: 512Mi
 
 kube-state-metrics:
