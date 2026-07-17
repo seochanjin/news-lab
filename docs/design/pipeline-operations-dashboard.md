@@ -411,7 +411,8 @@ Prometheus scrape target에서 제공되지 않는다.
 | DB run table last success·상세 status | kube-state-metrics는 application DB record를 읽지 않음 |
 | candidate count | Pod/Job resource metric에 선정 대상 건수가 포함되지 않음 |
 | embedding created/reused/missing count | CPU/Memory는 embedding 처리 결과를 구분하지 못함 |
-| saved/failed topic count | Job exit code로 Topic별 부분 저장 결과를 복원할 수 없음 |
+| saved topic count | Job exit code로 저장된 Topic 수를 복원할 수 없음 |
+| failed topic count | Job exit code로 저장 실패 Topic 수를 복원할 수 없음 |
 | Pipeline stage별 duration | Job 전체 시간과 stage별 소요 시간은 다름 |
 | Summary provider 오류 수 | container waiting/restart는 provider API 오류를 보여 주지 않음 |
 
@@ -427,9 +428,9 @@ Prometheus scrape target에서 제공되지 않는다.
 
 | 후보 | Query 핵심 | 관찰값 | 76차 결정 항목 |
 | --- | --- | --- | --- |
-| CronJob suspend | `kube_cronjob_spec_suspend{namespace="default",cronjob=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline|weekly-topic-pipeline)"} == 1` | 네 CronJob 모두 `0` | 의도한 중지의 silence 정책 |
-| CronJob schedule 지연 | `time() - kube_cronjob_status_last_schedule_time{namespace="default",cronjob=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline|weekly-topic-pipeline)"}` | 네 CronJob series 확인 | 일간 3개와 주간 1개의 허용 지연을 분리 |
-| 정기 Job 실패 | `kube_job_status_failed{namespace="default",job_name=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline|weekly-topic-pipeline)-[0-9]+"} > 0` 후 `kube_job_owner` join | 보존 정기 Job 9개 모두 `0` | Job 삭제·`1d` retention 전 평가 간격 |
+| CronJob suspend | `kube_cronjob_spec_suspend{namespace="default",cronjob=~"news-(rss-collector\|daily-topic-pipeline\|three-day-topic-pipeline\|weekly-topic-pipeline)"} == 1` | 네 CronJob 모두 `0` | 의도한 중지의 silence 정책 |
+| CronJob schedule 지연 | `time() - kube_cronjob_status_last_schedule_time{namespace="default",cronjob=~"news-(rss-collector\|daily-topic-pipeline\|three-day-topic-pipeline\|weekly-topic-pipeline)"}` | 네 CronJob series 확인 | 일간 3개와 주간 1개의 허용 지연을 분리 |
+| 정기 Job 실패 | `kube_job_status_failed{namespace="default",job_name=~"news-(rss-collector\|daily-topic-pipeline\|three-day-topic-pipeline\|weekly-topic-pipeline)-[0-9]+"} > 0` 후 `kube_job_owner` join | 보존 정기 Job 9개 모두 `0` | Job 삭제·`1d` retention 전 평가 간격 |
 | Node NotReady | `kube_node_status_condition{condition="Ready",status="true"} != 1` | 세 Node 모두 `1` | scrape 소실 `absent` 후보와 `for` 기간 |
 | Pipeline Pod restart | `increase(kube_pod_container_status_restarts_total{namespace="default",pod=~"CANONICAL_REGULAR_POD"}[15m]) > 0` 후 정기 Pod canonical owner join | 정기 Pod 9개 restart `0`; 24h query 9개 | window, completed Pod 보존, 회복 알림 정책 |
 

@@ -35,6 +35,222 @@ passed
 
 ## Commands Run
 
+### Approved Fix 10: Alerting 후보 표 PromQL pipe escape
+
+Command:
+
+```bash
+sed -n '420,440p' docs/design/pipeline-operations-dashboard.md
+rg -n 'rss-collector\\\|daily-topic-pipeline' \
+  docs/design/pipeline-operations-dashboard.md
+git diff --check
+```
+
+Result:
+
+```text
+Alerting 후보 표의 CronJob suspend, CronJob schedule 지연, 정기 Job 실패 행에서
+inline PromQL 정규식 pipe가 모두 escape됨
+표 구분용 pipe와 Dashboard JSON/실제 PromQL은 변경하지 않음
+git diff --check: no output
+```
+
+Status: passed
+
+### Approved Fix 11: 업무 metric 수 8개 정합화
+
+Command:
+
+```bash
+rg -n \
+  '업무 metric [0-9]+개|업무 metric은 [0-9]+개|확인할 수 없는.*[0-9]+개|[78]개 업무 metric' \
+  docs/tasks/feat-pipeline-operations-dashboard.md \
+  docs/pr/feat-pipeline-operations-dashboard.md \
+  docs/design/pipeline-operations-dashboard.md \
+  docs/devlog/feat-pipeline-operations-dashboard.md \
+  docs/verification/feat-pipeline-operations-dashboard.md
+sed -n '118,138p' docs/tasks/feat-pipeline-operations-dashboard.md
+sed -n '405,420p' docs/design/pipeline-operations-dashboard.md
+git diff --check
+```
+
+Result:
+
+```text
+관련 현재 문서의 명시 수치: 8개
+Task 목록: 기존 8개 유지, text fence 적용
+Design 목록: saved topic count와 failed topic count를 별도 항목으로 유지
+해당 업무 metric 구현 변경: 없음
+git diff --check: no output
+```
+
+Status: passed
+
+### Approved Fix 12: Task resource 변경 금지 예외 정합화
+
+Command:
+
+```bash
+rg -n 'resource request/limit|300m|200m|Do not change|변경하지' \
+  docs/tasks/feat-pipeline-operations-dashboard.md \
+  docs/pr/feat-pipeline-operations-dashboard.md \
+  docs/fixes/feat-pipeline-operations-dashboard-approved-fixes.md \
+  docs/devlog/feat-pipeline-operations-dashboard.md
+git diff --check
+```
+
+Result:
+
+```text
+Task Do not change: Approved Fix 7의 Grafana CPU limit 300m → 200m 정합화만 예외
+그 외 Grafana, Prometheus, kube-state-metrics resource 변경 금지 유지
+PR/Devlog: 성능 증설이 아닌 Production baseline drift 방지로 일치
+git diff --check: no output
+```
+
+Status: passed
+
+### Approved Fix 13: review artifact 정리
+
+Command:
+
+```bash
+for file in \
+  docs/reviews/feat-pipeline-operations-dashboard-coderabbit.md \
+  docs/reviews/feat-pipeline-operations-dashboard-antigravity.md; do
+  if [ -f "$file" ]; then
+    echo "===== $file ====="
+    sed -n '1,220p' "$file"
+  fi
+done
+
+rg -n \
+  '^## (Review Summary|Problems Found|Required Fixes Before PR|Optional Improvements|Suggested Test Commands|Risk Notes)$' \
+  docs/reviews/feat-pipeline-operations-dashboard-coderabbit.md
+
+rg -n 'Antigravity|antigravity' \
+  docs/tasks/feat-pipeline-operations-dashboard.md \
+  docs/pr/feat-pipeline-operations-dashboard.md \
+  docs/devlog/feat-pipeline-operations-dashboard.md \
+  docs/verification/feat-pipeline-operations-dashboard.md \
+  docs/design/pipeline-operations-dashboard.md \
+  docs/runbooks/monitoring.md \
+  docs/ARCHITECTURE.md docs/RUNBOOK.md || true
+
+git diff --check
+```
+
+Result:
+
+```text
+CodeRabbit review: 실제 PR #63 finding과 필수 6개 section 존재
+Antigravity review evidence: 없음
+빈 Antigravity placeholder: 삭제
+Task의 Antigravity expected artifact 참조: 제거
+허위 Antigravity review 상태: 생성하지 않음
+git diff --check: no output
+```
+
+Status: passed
+
+### Approved Fix 14: fenced code language identifier 보완
+
+Command:
+
+````bash
+python3 - <<'PY'
+from pathlib import Path
+
+paths = [
+    Path('docs/fixes/feat-pipeline-operations-dashboard-approved-fixes.md'),
+    Path('docs/tasks/feat-pipeline-operations-dashboard.md'),
+]
+
+failed = []
+for path in paths:
+    in_fence = False
+    for index, line in enumerate(
+        path.read_text(encoding='utf-8').splitlines(), start=1
+    ):
+        stripped = line.strip()
+        if not in_fence and stripped.startswith('```'):
+            if stripped == '```':
+                failed.append(f'{path}:{index}: opening fence has no language')
+            in_fence = True
+        elif in_fence and stripped == '```':
+            in_fence = False
+
+if failed:
+    print('\n'.join(failed))
+    raise SystemExit(1)
+
+print('fenced code language identifiers: OK')
+PY
+
+git diff --check
+````
+
+Result:
+
+```text
+fenced code language identifiers: OK
+git diff --check: no output
+```
+
+Status: passed
+
+### Approved Fix 10~15 CodeRabbit follow-up 최종 regression
+
+Command:
+
+```bash
+npx --yes markdownlint-cli2 \
+  --config /tmp/newslab-markdownlint.jsonc \
+  docs/design/pipeline-operations-dashboard.md \
+  docs/tasks/feat-pipeline-operations-dashboard.md \
+  docs/pr/feat-pipeline-operations-dashboard.md \
+  docs/fixes/feat-pipeline-operations-dashboard-approved-fixes.md \
+  docs/reviews/feat-pipeline-operations-dashboard-coderabbit.md
+
+PYTHONPATH=. pytest -q
+
+git diff --name-only
+git diff --check
+
+git diff --name-only -- \
+  app scripts db migrations requirements.txt \
+  k8s/monitoring/dashboards/news-lab-pipeline-operations.json \
+  k8s/monitoring/kube-prometheus-stack-values.yaml
+```
+
+Result:
+
+```text
+markdownlint-cli2: 0 issues in 0 files
+445 passed, 91 subtests passed in 15.17s
+changed files: approved scope의 문서 7개
+git diff --check: no output
+application/Pipeline/DB/migration/dependency/Dashboard JSON/monitoring values diff:
+no output
+```
+
+Notes:
+
+- 첫 markdownlint 실행은 network 제한으로 package 조회에 실패했고, 허용 후
+  실행에서는 기존 MD013 line-length와 CodeRabbit review의 MD040을 포함해 106건을
+  보고했다.
+- Fix 14 범위의 review fence identifier를 보완했다. 기존 장문 table/PromQL의
+  대규모 reflow는 승인 범위가 아니므로 임시 config에서 MD013만 비활성화하고
+  MD040, MD056을 포함한 나머지 rule을 재실행해 0건을 확인했다.
+- `/tmp/newslab-markdownlint.jsonc`는 `{"MD013": false}`만 포함한 일시적 local
+  lint 설정이며 repository artifact가 아니다.
+- Antigravity review evidence가 없어 빈 placeholder를 삭제했고 허위 review
+  결과를 작성하지 않았다.
+- Dashboard JSON, 실제 PromQL, Monitoring values와 Production 설정은 변경하지
+  않았으며 Production query/Helm/Kubernetes 검증을 재실행하지 않았다.
+
+Status: passed
+
 ### UNIT-06 운영자 Production 적용과 Grafana UI 최종 검증
 
 Command (운영자 제공):
@@ -46,6 +262,10 @@ kubectl apply -k k8s/monitoring/dashboards
 Agent는 이 명령, Helm 변경, rollout, Secret 조회·변경을 실행하지 않았다. Helm과
 rollout은 운영자가 제공한 sanitized 결과를 근거로 기록하며, 제공되지 않은 정확한
 Helm 명령은 추정해 적지 않는다.
+
+추가 운영자 확인으로 `--dry-run=server --hide-secret` 기반 Helm 변경 범위 검토도
+실제로 완료됐다. dry-run 원문과 Secret, Base64, password 값은 제공받거나 이
+문서에 기록하지 않았다.
 
 Result:
 
@@ -2829,7 +3049,7 @@ rg -n \
   docs/design/pipeline-operations-dashboard.md
 ```
 
-Result: 76차 CronJob/Node/Pod restart 후보와 7개 업무 metric 공백 문서
+Result: 76차 CronJob/Node/Pod restart 후보와 8개 업무 metric 공백 문서
 heading/entry를 확인했다.
 
 Status: passed
@@ -2926,7 +3146,7 @@ Notes:
 - Weekly CPU/Memory `No data`는 실행 후 24시간 초과와 retention `1d`에 따른 예상
   결과다.
 - UNIT-05 전체 검증을 완료했다.
-- UNIT-06의 76차 Alerting 후보와 7개 업무 metric 공백을 확정했다.
+- UNIT-06의 76차 Alerting 후보와 8개 업무 metric 공백을 확정했다.
 - Approved Fix로 target 20개의 Instant 전용 설정, DateTime query 세 개의
   milliseconds 변환, empty-result `No data` 정책, Grafana data proxy timeout
   `120s`, 자동 refresh `15m`와 CPU·Memory·Restart 정기 Pod 조기 필터를

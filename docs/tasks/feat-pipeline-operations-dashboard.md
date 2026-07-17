@@ -6,7 +6,7 @@
 
 대상 Pipeline은 다음 네 CronJob이다.
 
-```
+```text
 news-rss-collector
 news-daily-topic-pipeline
 news-three-day-topic-pipeline
@@ -15,7 +15,7 @@ news-weekly-topic-pipeline
 
 다음 순서로 진행한다.
 
-```
+```text
 Repository Monitoring 설정 조사
 → Production Prometheus target과 storage 상태 확인
 → CronJob·Job·Pod·Node metric과 label inventory 작성
@@ -50,7 +50,7 @@ Dashboard는 다음 질문에 답할 수 있어야 한다.
 - `kube-state-metrics`가 노출하는 CronJob과 Job metric 이름 및 label을 실제 Prometheus에서 확인한다.
 - 다음 metric 계열의 존재 여부를 확인하되, 존재한다고 가정하지 않는다.
 
-```
+```text
 kube_cronjob_*
 kube_job_*
 kube_pod_*
@@ -64,7 +64,7 @@ node_filesystem_*
 
 - 각 query에서 실제로 사용할 다음 label의 존재와 값을 확인한다.
 
-```
+```text
 namespace
 cronjob
 job_name
@@ -87,7 +87,7 @@ reason
 - Dashboard의 기본 시간 범위와 timezone 표시 방식을 명시한다.
 - Dashboard에 최소한 다음 panel group을 구성한다.
 
-```
+```text
 1. Pipeline Overview
 - CronJob 최근 schedule 시각
 - 가능한 경우 최근 successful 시각
@@ -122,7 +122,7 @@ reason
 - Dashboard panel별 PromQL, unit, legend, threshold와 `No data` 의미를 문서화한다.
 - Kubernetes metric만으로 확인할 수 없는 NewsLab 업무 상태를 명시한다.
 
-```
+```text
 Pipeline partial_success
 DB run table의 last success와 상세 status
 candidate count
@@ -149,7 +149,8 @@ Summary provider 오류 수
 - Telegram, email, Slack 등 알림 채널 구성
 - Prometheus retention `1d` 변경
 - Prometheus PVC, `storageSpec`, StorageClass와 장기 storage 추가
-- Grafana, Prometheus와 kube-state-metrics의 resource request/limit 변경
+- Approved Fix 7의 Grafana CPU limit `300m → 200m` Production baseline 정합화
+  외 Grafana, Prometheus와 kube-state-metrics의 resource request/limit 변경
 - Monitoring workload의 nodeSelector와 toleration 변경
 - Helm chart version upgrade
 - Production Helm release upgrade 또는 재설치
@@ -176,7 +177,7 @@ Summary provider 오류 수
 
 현재 확인된 Monitoring 기준 파일:
 
-```
+```text
 k8s/monitoring/kube-prometheus-stack-values.yaml
 docs/verification/infra-monitoring-baseline.md
 docs/ARCHITECTURE.md
@@ -185,13 +186,13 @@ docs/RUNBOOK.md
 
 예상 Dashboard artifact:
 
-```
+```text
 k8s/monitoring/dashboards/news-lab-pipeline-operations.json
 ```
 
 현재 provisioning 방식에 따라 다음 중 필요한 파일만 추가 또는 수정한다.
 
-```
+```text
 k8s/monitoring/*dashboard*.yaml
 k8s/monitoring/*configmap*.yaml
 k8s/monitoring/kube-prometheus-stack-values.yaml
@@ -201,7 +202,7 @@ k8s/monitoring/kube-prometheus-stack-values.yaml
 
 예상 검증 또는 Test 파일:
 
-```
+```text
 tests/test_monitoring_dashboard.py
 scripts/validate_monitoring_dashboard.*
 ```
@@ -210,11 +211,10 @@ scripts/validate_monitoring_dashboard.*
 
 예상 문서 파일:
 
-```
+```text
 docs/design/pipeline-operations-dashboard.md
 docs/runbooks/monitoring.md
 docs/tasks/feat-pipeline-operations-dashboard.md
-docs/reviews/feat-pipeline-operations-dashboard-antigravity.md
 docs/reviews/feat-pipeline-operations-dashboard-coderabbit.md
 docs/fixes/feat-pipeline-operations-dashboard-approved-fixes.md
 docs/verification/feat-pipeline-operations-dashboard.md
@@ -402,7 +402,7 @@ Credential, internal IP와 전체 target response는 문서에 원문 그대로 
 
 다음 metric 이름은 후보이며 실제 존재 여부와 label을 확인한 뒤 사용한다.
 
-```
+```text
 kube_cronjob_status_last_schedule_time
 kube_cronjob_status_last_successful_time
 kube_cronjob_spec_suspend

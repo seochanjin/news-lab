@@ -9,7 +9,7 @@
   관계를 확인하고 실제 Prometheus에서 검증한 PromQL만 사용했습니다.
 - 기존 Grafana sidecar가 감시하는 `grafana_dashboard: "1"` label 기반의 최소
   Kustomize ConfigMap provisioning artifact를 추가했습니다.
-- Kubernetes metric으로 확인할 수 없는 업무 metric 7개와 76차 Alerting 후보를
+- Kubernetes metric으로 확인할 수 없는 업무 metric 8개와 76차 Alerting 후보를
   문서화했습니다.
 - Approved Fix 1~8을 적용하고 local 회귀, Production Prometheus query와 운영자
   Grafana UI 검증까지 완료했습니다.
