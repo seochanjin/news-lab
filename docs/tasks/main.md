@@ -1,3 +1,3 @@
 # Current Task
 
-[docs-readme-architecture-refresh.md](docs-readme-architecture-refresh.md)
+[feat-pipeline-operations-dashboard.md](feat-pipeline-operations-dashboard.md)

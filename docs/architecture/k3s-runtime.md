@@ -62,10 +62,20 @@ node-exporter는 control-plane/master taint와
 `node-role=news-edge-worker:NoSchedule` taint를 toleration하므로 application을
 Pi worker에 허용하지 않고도 세 노드의 node metric을 수집할 수 있다. Prometheus
 retention은 `1d`이며 Alertmanager는 현재 values에서 비활성화되어 있다.
+Repository에는 custom Dashboard artifact나 provider override가 없지만 chart
+`86.2.0` 기본 Grafana sidecar가 `grafana_dashboard: "1"` ConfigMap을 감시한다.
+Prometheus `storageSpec`도 없으므로 local render에는 PVC template이 생성되지
+않는다. 이 값과 현재 Production object/PVC의 일치 여부는 운영자 tunnel을 통한
+read-only 조회로 별도 확인한다.
 Grafana 접근과 live metric 확인은 operator가 Tailscale 기반 접근 경로에서
 수행하며, public application ingress로 Grafana를 노출하는 구조로 설명하지
 않는다. Manifest는 이 desired placement를 증명하지만 현재 Pod readiness와
 metric 수집 상태는 새로운 운영 log 없이 재검증된 것으로 간주하지 않는다.
+Dashboard provisioning과 target 확인 절차는
+[Monitoring runbook](../runbooks/monitoring.md)을 따른다.
+NewsLab custom Dashboard는 JSON source와 최소 Kustomize ConfigMap generator를
+`k8s/monitoring/dashboards/`에 둔다. generator는 chart 기본 sidecar label을
+사용하지만 현재 non-recursive Argo CD Application에는 자동 포함되지 않는다.
 
 ## 접근 경로
 
