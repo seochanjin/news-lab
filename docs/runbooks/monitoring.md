@@ -3,7 +3,7 @@
 [Runbook index로 돌아가기](../RUNBOOK.md)
 
 이 절차는 사람이 Tailscale/SSH tunnel과 kubeconfig 접근을 준비한 뒤 Production
-Monitoring baseline과 Dashboard provisioning을 read-only로 확인할 때 사용한다.
+Monitoring baseline, Dashboard와 Alertmanager provisioning을 확인할 때 사용한다.
 출력에는 credential, private address, kubeconfig 내용과 전체 target metadata를
 남기지 않는다.
 
@@ -65,8 +65,8 @@ Grafana dashboard sidecar가 감시한다. Repository Dashboard를 반영할 때
 
 - Dashboard JSON과 ConfigMap diff가 승인된 범위인지 확인한다.
 - ConfigMap이 `monitoring` namespace와 기존 label 규칙을 사용하는지 확인한다.
-- Argo CD diff에서 retention, storage, resource, Alertmanager 변경이 없는지
-  확인한다.
+- Argo CD diff에서 retention, storage, resource와 의도하지 않은 Alertmanager
+  변경이 없는지 확인한다.
 - 사람이 현재 Application 포함 범위와 별도 provisioning diff를 확인한 후에만
   Production에 반영한다.
 
@@ -197,11 +197,116 @@ dashboard ConfigMap은 삭제하거나 재설정하지 않는다.
 ConfigMap 적용 성공만으로 UI 검증을 통과 처리하지 않으며, sanitized
 text 결과나 screenshot을 근거로 각 항목을 구분해 남긴다.
 
-## 5. 76차 Alerting 인계 경계
+## 5. Alertmanager Secret 준비와 관리
 
-CronJob schedule/suspend/failed Job, Node Ready와 Pipeline Pod restart query를
-Alerting 후보로 인계한다. Alertmanager, `PrometheusRule`, notification route,
-threshold과 `for` 기간은 이 Task에서 변경하지 않는다. 일간과 주간
-CronJob은 stale threshold를 분리하고 `1d` retention과 Job object 정리 한계를
-반영한다. 정확한 query와 관찰값은
-[Dashboard 설계](../design/pipeline-operations-dashboard.md#76차-alerting-후보)를 따른다.
+Alertmanager 외부 전송은 `alert_scope="news-lab"` label을 가진 Alert만
+`news-lab-telegram` native Telegram receiver로 보낸다. bot token과 개인 채팅 ID는
+Repository나 Helm values가 아니라 `monitoring/news-lab-alertmanager-telegram`
+Secret의 `bot-token`, `chat-id` key로 관리한다. 상세 구조는
+[Pipeline Operations Alerting 설계](../design/pipeline-operations-alerting.md)를
+따른다.
+
+다음 Secret 생성·변경 command는 모두 human-controlled다. 운영자는 먼저 승인된
+Telegram bot token과 개인 chat ID를 운영 credential manager에서 준비하고, 각각
+한 값만 든 권한 제한 파일을 Git working tree와 일반 `/tmp` 밖에 만든다. 실제
+token이나 chat ID를 command 인자, shell history, 문서, ticket, Verification 또는
+Helm values에 넣지 않는다. 아래 경로 placeholder는 운영자가 관리하는 안전한 파일
+경로로 바꾼다.
+
+```bash
+umask 077
+KUBECONFIG=~/.kube/oci-k3s.yaml \
+kubectl create secret generic news-lab-alertmanager-telegram \
+  --namespace monitoring \
+  --from-file=bot-token=/path/to/operator-managed-bot-token-file \
+  --from-file=chat-id=/path/to/operator-managed-chat-id-file \
+  --dry-run=client -o yaml | \
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl apply -f -
+```
+
+Helm 변경 전에 다음 read-only command로 resource 이름과 두 key 존재만 확인한다.
+`-o yaml`, `-o json`, `jsonpath`로 `.data` 값을 출력하거나 Base64를 decode하지
+않는다.
+
+```bash
+KUBECONFIG=~/.kube/oci-k3s.yaml kubectl get secret \
+  -n monitoring news-lab-alertmanager-telegram \
+  -o go-template='name={{.metadata.name}}{{"\n"}}{{if index .data "bot-token"}}bot-token-key=present{{"\n"}}{{end}}{{if index .data "chat-id"}}chat-id-key=present{{"\n"}}{{end}}'
+```
+
+예상 sanitized 결과는 Secret 이름, `bot-token-key=present`와
+`chat-id-key=present`이며 실제 값은 포함하지 않는다. key가 없거나
+이름·namespace가 다르면 Helm 반영을 중단하고 Secret 입력을 바로잡는다.
+
+Secret과 values diff를 사람이 승인한 뒤에만 Task에 적힌
+`helm upgrade --dry-run=server --hide-secret`을 먼저 수행한다. raw render나
+`--hide-secret` 없는 diff는 저장·공유하지 않는다. 실제 Helm upgrade, rollout과
+test alert 적용은 별도의 human-controlled 단계이며 UNIT-05 전에는 완료로 기록하지
+않는다. 실제 sanitized 적용·전달 evidence가 제공된 뒤에만 완료로 기록한다.
+
+### 회전, 전달 실패와 rollback
+
+bot token 또는 chat ID 회전은 같은 이름과 key로 Secret을 갱신한 뒤 사람이
+Alertmanager의 configuration reload 또는 rollout 상태를 확인하고 test alert의
+firing과 resolved 알림을 개인 채팅에서 모두 수신해야 완료다. 기존 값은 새 값 검증
+전까지 운영 credential manager의 rollback 값으로 보존하되 Repository나
+Verification에 복사하지 않는다.
+
+알림이 수신되지 않으면 다음 순서로 점검한다.
+
+1. Alert에 `alert_scope="news-lab"` label이 있는지 확인한다.
+2. Secret 이름과 `bot-token`, `chat-id` key 존재, Alertmanager Pod의 mount 상태를
+   값 출력 없이 확인한다.
+3. Alertmanager configuration status와 log에서 parse, file read와 Telegram API
+   delivery 오류를 확인하고 token과 chat ID는 sanitize한다.
+4. firing만 오거나 resolved만 누락되면 receiver render의
+   `send_resolved: true`와 test alert 해제 상태를 확인한다.
+5. 새 credential 또는 chat ID 문제라면 기존 승인 값으로 같은 Secret을 다시 만들고,
+   사람이 reload 또는 rollout과 firing·resolved 전달을 재검증한다.
+
+Secret 파일과 shell session 정리는 운영 credential 정책에 따라 사람이 수행한다.
+Secret 삭제, `kubectl apply`, Helm upgrade와 rollout을 Agent가 실행하지 않는다.
+
+### Silence 운영 원칙
+
+Silence는 계획된 점검이나 이미 대응 중인 Alert의 중복 전달을 제한할 때만 사람이
+생성한다. `alert_scope="news-lab"`만으로 넓게 묶지 않고 가능하면 `alertname`,
+`namespace` 등 대상 matcher를 함께 지정하며, 종료 시각과 사유·담당자를 남긴다.
+무기한 Silence와 chart 기본 Alert 전체를 가리는 matcher는 사용하지 않는다.
+
+생성 전에는 현재 firing Alert와 matcher 영향 범위를 확인하고, 생성 후에는 의도한
+Alert만 silenced인지 확인한다. 점검이 끝나면 만료 또는 삭제 상태를 확인하고 실제
+Rule이 정상 상태인지 다시 조회한다. Silence 생성·삭제와 운영 API 호출은 모두
+human-controlled이며 sanitized 결과만 Verification에 기록한다.
+
+### 전달 test rule 경계
+
+전달 테스트용 Repository artifact는
+`k8s/monitoring/rules/news-lab-alert-delivery-test.yaml`이다. 이 파일은
+`vector(1)` 기반이며 정상 운영 rule Kustomization에서 제외되어 있다. 운영자는
+승인된 운영 검증에서만 test rule을 별도로 적용하고 1분 이상 지속된 firing 수신을
+확인한다. 이어서 운영용 임시 사본의 expression을 `vector(0) > 0`으로 바꿔
+적용하고 resolved 수신을 확인한다. `vector(0)`만 사용하면 값이 0인 시계열이
+계속 반환되어 firing 상태가 유지된다. Repository 원본은 firing 검증용
+`vector(1)`을 유지한다.
+
+firing과 resolved evidence를 확보한 뒤 test `PrometheusRule` object를 제거하고,
+`news-lab-pipeline-alerts`의 실제 Alert 3종만 남았는지 확인한다. 적용·수정·삭제
+command는 human-controlled이며, 실제 수행 결과와 sanitized Alert 이름·상태만
+Verification에 기록한다.
+
+### 76차 Production 검증 완료 baseline
+
+사람이 Monitoring Helm revision `4`와 Alertmanager `v0.32.2`를 반영하고 실제
+NewsLab Rule 3종이 `health=ok`, `state=inactive`, `lastError` 없음임을 확인했다.
+별도 test Rule로 Telegram firing 메시지를 수신한 뒤 `vector(0) > 0`으로 전환해
+resolved 메시지를 수신했고, test Rule 제거 후 Kubernetes API `NotFound`와
+Prometheus Rules API 제거 상태를 확인했다. 최종 Production에는
+`news-lab-pipeline-alerts`만 유지한다.
+
+Alertmanager 전달과 NewsLab Rule에서는 오류가 확인되지 않았다. Prometheus의 기존
+`kube-apiserver-burnrate.rules`에서는 간헐적인 evaluation timeout이 있었지만 현재
+관찰 대상 Rule은 `health=ok`, `lastError` 없음이다. 정확한 원인은 76차에서 확정하지
+않았으며, 기본 Rule timeout을 조정하거나 Rule을 비활성화하지 않는다. 후속 운영
+개선에서는 retention, query timeout, Rule 평가 시간과 Prometheus CPU·메모리·스토리지
+상태를 함께 조사한다.

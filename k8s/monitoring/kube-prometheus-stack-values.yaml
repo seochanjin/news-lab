@@ -1,6 +1,35 @@
 # Monitoring core components run on the labeled Oracle ARM worker.
 alertmanager:
-  enabled: false
+  enabled: true
+  config:
+    global:
+      resolve_timeout: 5m
+    inhibit_rules: []
+    route:
+      group_by:
+        - alertname
+        - severity
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 12h
+      receiver: "null"
+      routes:
+        - receiver: news-lab-telegram
+          matchers:
+            - 'alert_scope = "news-lab"'
+    receivers:
+      - name: "null"
+      - name: news-lab-telegram
+        telegram_configs:
+          - send_resolved: true
+            bot_token_file: /etc/alertmanager/secrets/news-lab-alertmanager-telegram/bot-token
+            chat_id_file: /etc/alertmanager/secrets/news-lab-alertmanager-telegram/chat-id
+            parse_mode: HTML
+  alertmanagerSpec:
+    secrets:
+      - news-lab-alertmanager-telegram
+    nodeSelector:
+      observability: "true"
 
 grafana:
   grafana.ini:

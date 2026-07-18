@@ -1,0 +1,22 @@
+# Human-controlled delivery test only. This file is intentionally excluded from kustomization.yaml.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: news-lab-alert-delivery-test
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: news-lab.alert-delivery-test
+      rules:
+        - alert: NewsLabAlertDeliveryTest
+          expr: vector(1)
+          for: 1m
+          labels:
+            alert_scope: news-lab
+            severity: warning
+          annotations:
+            summary: NewsLab Alert 전달 경로 테스트
+            description: >-
+              사람이 통제하는 firing 및 resolved 전달 검증용 임시 Alert입니다.
