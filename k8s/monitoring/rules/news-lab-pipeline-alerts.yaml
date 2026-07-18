@@ -1,0 +1,88 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: news-lab-pipeline-alerts
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: news-lab.pipeline.operations
+      rules:
+        - alert: PipelineScheduleDelayed
+          expr: |
+            label_replace(
+              (
+                time()
+                  - kube_cronjob_status_last_schedule_time{
+                      namespace="default",
+                      cronjob=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline)"
+                    }
+                  > 26 * 60 * 60
+              ),
+              "cadence", "daily", "cronjob", ".+"
+            )
+            or
+            label_replace(
+              (
+                time()
+                  - kube_cronjob_status_last_schedule_time{
+                      namespace="default",
+                      cronjob="news-weekly-topic-pipeline"
+                    }
+                  > 8 * 24 * 60 * 60
+              ),
+              "cadence", "weekly", "cronjob", ".+"
+            )
+          for: 30m
+          labels:
+            alert_scope: news-lab
+            severity: warning
+          annotations:
+            summary: NewsLab Pipeline 정기 실행이 지연됨
+            description: >-
+              {{ $labels.namespace }}/{{ $labels.cronjob }}의 {{ $labels.cadence }}
+              schedule이 허용 지연 시간을 넘긴 상태로 30분간 지속됐습니다.
+
+        - alert: PipelineScheduledJobFailed
+          expr: |
+            (
+              max by (namespace, job_name) (
+                kube_job_status_failed{
+                  namespace="default",
+                  job_name=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline|weekly-topic-pipeline)-[0-9]+"
+                }
+              ) > 0
+            )
+            * on (namespace, job_name) group_left (owner_name)
+            kube_job_owner{
+              namespace="default",
+              owner_kind="CronJob",
+              owner_name=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline|weekly-topic-pipeline)",
+              job_name=~"news-(rss-collector|daily-topic-pipeline|three-day-topic-pipeline|weekly-topic-pipeline)-[0-9]+"
+            }
+          for: 10m
+          labels:
+            alert_scope: news-lab
+            severity: warning
+          annotations:
+            summary: NewsLab 정기 Job이 실패함
+            description: >-
+              {{ $labels.namespace }}/{{ $labels.job_name }} 정기 Job이 실패했습니다.
+              CronJob owner는 {{ $labels.owner_name }}입니다.
+
+        - alert: NewsLabNodeNotReady
+          expr: |
+            kube_node_status_condition{
+              condition="Ready",
+              status="true",
+              node=~"arm-master-node|arm-worker-node|pi-worker-node"
+            } == 0
+          for: 10m
+          labels:
+            alert_scope: news-lab
+            severity: critical
+          annotations:
+            summary: NewsLab Kubernetes Node가 NotReady 상태임
+            description: >-
+              {{ $labels.node }}의 Ready=true condition이 10분간 0으로 유지됐습니다.

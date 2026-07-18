@@ -140,6 +140,7 @@ automatic self-heal은 적용하지 않는다.
 - [Argo CD Manual Sync 설계](architecture/argocd-manual-sync-design.md)
 - [Home API Redis Cache 설계](design/home-api-redis-cache.md)
 - [Pipeline Operations Dashboard 설계](design/pipeline-operations-dashboard.md)
+- [Pipeline Operations Alerting 설계](design/pipeline-operations-alerting.md)
 - [3일 Topic 저장·실행 설계](design/three-day-topic-pipeline.md)
 - [7일 Topic 저장·실행 설계](design/weekly-topic-pipeline.md)
 
