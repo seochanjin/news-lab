@@ -6,7 +6,7 @@
 
 최종 목표는 rule manifest를 추가하는 데서 끝나지 않고 다음 전달 경로를 Production에서 직접 검증하는 것이다.
 
-```
+```text
 PrometheusRule
 → Prometheus evaluation
 → Alertmanager route
@@ -116,7 +116,7 @@ PrometheusRule
 
 예상 변경 파일은 Repository 구조 조사 후 확정하되, 기본 후보는 다음과 같다.
 
-```
+```text
 k8s/monitoring/kube-prometheus-stack-values.yaml
 k8s/monitoring/rules/kustomization.yaml
 k8s/monitoring/rules/news-lab-pipeline-alerts.yaml
@@ -180,11 +180,50 @@ kubectl kustomize k8s/monitoring/rules
 ### PrometheusRule 정적 검증
 
 ```bash
-promtool check rules \
-  k8s/monitoring/rules/news-lab-pipeline-alerts.yaml
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+sources = {
+    Path('k8s/monitoring/rules/news-lab-pipeline-alerts.yaml'):
+        Path('/tmp/news-lab-pipeline-alerts.rules.yaml'),
+    Path('k8s/monitoring/rules/news-lab-alert-delivery-test.yaml'):
+        Path('/tmp/news-lab-alert-delivery-test.rules.yaml'),
+}
+
+for source, target in sources.items():
+    with source.open(encoding='utf-8') as stream:
+        manifest = yaml.safe_load(stream)
+    with target.open('w', encoding='utf-8') as stream:
+        yaml.safe_dump(
+            {'groups': manifest['spec']['groups']},
+            stream,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    print(target)
+PY
+
+docker run --rm \
+  --entrypoint /bin/promtool \
+  -v /tmp/news-lab-pipeline-alerts.rules.yaml:/rules/pipeline.rules.yaml:ro \
+  -v /tmp/news-lab-alert-delivery-test.rules.yaml:/rules/delivery-test.rules.yaml:ro \
+  quay.io/prometheus/prometheus:v3.12.0-distroless \
+  check rules \
+  --lint=all \
+  --lint-fatal \
+  /rules/pipeline.rules.yaml \
+  /rules/delivery-test.rules.yaml
+
+rm -f \
+  /tmp/news-lab-pipeline-alerts.rules.yaml \
+  /tmp/news-lab-alert-delivery-test.rules.yaml
 ```
 
-`promtool` 사용 환경이 없으면 chart image 또는 임시 container를 사용하되 Production workload를 변경하지 않는다.
+두 `PrometheusRule` CR의 `spec.groups`를 별도 native rule 파일로 추출해 함께
+검사한다. Production과 동일한 Prometheus `v3.12.0-distroless` image를 사용할 수
+없으면 호환되는 local `promtool`을 사용하되 Production workload는 변경하지 않는다.
+검증 후 임시 파일은 삭제한다.
 
 ### Helm render
 

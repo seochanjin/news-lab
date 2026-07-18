@@ -114,6 +114,11 @@ README 변경은 필요하지 않다.
   Prometheus CPU·메모리·스토리지 상태를 함께 조사할 수 있다.
 - 이번 변경에서 chart 기본 Rule, retention, query timeout, Prometheus resource와
   storage를 수정하거나 비활성화하지 않았다.
-- Approved Fixes 문서에는 적용 대상으로 승인된 finding이 없다. Review 파일을
-  Verification 통과 근거로 사용하지 않았다.
+- CodeRabbit의 minor actionable finding 2개를 승인해 Task의 Markdown fence와
+  두 Rule artifact promtool 절차, Review·Approved Fixes·PR 문서를 정정했다.
+- 이 승인 fix는 문서-only 변경이며 Alertmanager, 실제 Alert 3종, 전달 test Rule과
+  Telegram receiver 구현은 변경하지 않았다. Production 재적용·재검증도 수행하지
+  않았다.
+- Review 파일은 Verification 통과 근거로 사용하지 않았다. CodeRabbit inline
+  thread 확인·resolve는 수정 commit 이후 사람 또는 별도 승인 작업으로 남긴다.
 - Pending Verification은 없다. PR commit, push, merge는 수행하지 않았다.

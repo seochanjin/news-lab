@@ -1375,6 +1375,245 @@ Notes:
 - Alert Rule, chart 기본 Rule, application, Pipeline, DB와 dependency는 UNIT-06에서
   수정하지 않았다.
 
+### Approved FIX-01 Task fence 검증
+
+Command:
+
+```bash
+rg -n '^```$' docs/tasks/feat-pipeline-operations-alerting.md
+npx --yes markdownlint-cli2 \
+  docs/tasks/feat-pipeline-operations-alerting.md
+```
+
+Result:
+
+```text
+rg: closing fence 8개 출력
+markdownlint-cli2: MD040 없음
+markdownlint-cli2: 기존 MD013 line-length 6건만 출력, exit 1
+```
+
+Status: passed
+
+Notes:
+
+- 전달 경로와 Expected files의 두 opening fence에 `text` identifier를 추가했다.
+- 승인 문서의 `rg '^```$'` 명령은 opening fence뿐 아니라 정상적인 closing
+  fence도 찾으므로 출력 없음 조건을 완료 판정으로 사용하지 않았다.
+- FIX-01 범위인 `MD040`은 해소됐다. 승인되지 않은 기존 `MD013` 6건은 수정하지
+  않았다.
+
+### Approved FIX-02 두 PrometheusRule artifact 검증
+
+Command:
+
+```bash
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+sources = {
+    Path('k8s/monitoring/rules/news-lab-pipeline-alerts.yaml'):
+        Path('/tmp/news-lab-pipeline-alerts.rules.yaml'),
+    Path('k8s/monitoring/rules/news-lab-alert-delivery-test.yaml'):
+        Path('/tmp/news-lab-alert-delivery-test.rules.yaml'),
+}
+
+for source, target in sources.items():
+    with source.open(encoding='utf-8') as stream:
+        manifest = yaml.safe_load(stream)
+    with target.open('w', encoding='utf-8') as stream:
+        yaml.safe_dump(
+            {'groups': manifest['spec']['groups']},
+            stream,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    print(target)
+PY
+
+.venv/bin/python - <<'PY'
+from pathlib import Path
+import yaml
+
+sources = {
+    Path('k8s/monitoring/rules/news-lab-pipeline-alerts.yaml'):
+        Path('/tmp/news-lab-pipeline-alerts.rules.yaml'),
+    Path('k8s/monitoring/rules/news-lab-alert-delivery-test.yaml'):
+        Path('/tmp/news-lab-alert-delivery-test.rules.yaml'),
+}
+
+for source, target in sources.items():
+    with source.open(encoding='utf-8') as stream:
+        manifest = yaml.safe_load(stream)
+    with target.open('w', encoding='utf-8') as stream:
+        yaml.safe_dump(
+            {'groups': manifest['spec']['groups']},
+            stream,
+            sort_keys=False,
+            allow_unicode=True,
+        )
+    print(target)
+PY
+
+docker run --rm \
+  --entrypoint /bin/promtool \
+  -v /tmp/news-lab-pipeline-alerts.rules.yaml:/rules/pipeline.rules.yaml:ro \
+  -v /tmp/news-lab-alert-delivery-test.rules.yaml:/rules/delivery-test.rules.yaml:ro \
+  quay.io/prometheus/prometheus:v3.12.0-distroless \
+  check rules \
+  --lint=all \
+  --lint-fatal \
+  /rules/pipeline.rules.yaml \
+  /rules/delivery-test.rules.yaml
+
+kubectl kustomize k8s/monitoring/rules |
+rg 'alert:|NewsLabAlertDeliveryTest'
+
+rg -n 'expr: vector\(1\)' \
+  k8s/monitoring/rules/news-lab-alert-delivery-test.yaml
+
+git diff --name-only -- k8s/monitoring/rules
+
+rm -f \
+  /tmp/news-lab-pipeline-alerts.rules.yaml \
+  /tmp/news-lab-alert-delivery-test.rules.yaml
+```
+
+Result:
+
+```text
+system python3 extraction: ModuleNotFoundError: No module named 'yaml'
+.venv/bin/python extraction: 2 temporary native rule files generated
+Checking /rules/pipeline.rules.yaml
+  SUCCESS: 3 rules found
+Checking /rules/delivery-test.rules.yaml
+  SUCCESS: 1 rules found
+Kustomize alerts: PipelineScheduleDelayed, PipelineScheduledJobFailed,
+  NewsLabNodeNotReady
+NewsLabAlertDeliveryTest in Kustomize: absent
+test manifest expression: vector(1)
+k8s/monitoring/rules tracked diff: none
+temporary native rule files: removed
+```
+
+Status: passed
+
+Notes:
+
+- 시스템 `python3`에는 PyYAML이 없어 첫 추출이 실패했으며, 같은 script를
+  Repository `.venv` Python으로 재실행해 검증을 완료했다.
+- Production workload와 Alert Rule manifest는 변경하지 않았다.
+
+### Approved FIX-03 Review와 Approved Fixes artifact 검증
+
+Command:
+
+```bash
+npx --yes markdownlint-cli2 \
+  docs/reviews/feat-pipeline-operations-alerting-coderabbit.md \
+  docs/fixes/feat-pipeline-operations-alerting-approved-fixes.md
+```
+
+Result:
+
+```text
+MD040: 없음
+기존 MD013 line-length: 26건
+exit code: 1
+```
+
+Status: passed
+
+Notes:
+
+- 실제 CodeRabbit 결과, 승인·거절 결정, 적용 변경과 검증 절차를 지정 section에
+  기록했다.
+- 새 artifact의 모든 fenced code block에 language identifier가 있다.
+- FIX-03 범위인 artifact 작성과 `MD040` 검증은 완료됐다. 승인되지 않은 기존
+  `MD013` line-length는 수정하지 않았다.
+
+### Approved FIX-04 PR review 상태 정합성 검증
+
+Command:
+
+```bash
+rg -n \
+  'CodeRabbit|finding|Production 재적용|thread|승인된 finding 없음' \
+  docs/pr/feat-pipeline-operations-alerting.md
+
+npx --yes markdownlint-cli2 \
+  docs/pr/feat-pipeline-operations-alerting.md
+```
+
+Result:
+
+```text
+CodeRabbit minor actionable finding 2개 승인·반영 문구: present
+승인된 finding 없음 문구: absent
+문서-only 변경과 Production 재적용·재검증 미수행 문구: present
+inline thread 후속 확인 문구: present
+markdownlint-cli2: 0 issues
+```
+
+Status: passed
+
+Notes:
+
+- Alertmanager·Rule·Telegram 구현 변경이나 Production 완료를 새로 주장하지
+  않았다.
+- Review artifact는 Verification 통과 근거로 사용하지 않았다.
+
+### Approved Fixes 최종 회귀와 scope 검증
+
+Command:
+
+```bash
+PYTHONPATH=. pytest -q
+
+npx --yes markdownlint-cli2 \
+  docs/tasks/feat-pipeline-operations-alerting.md \
+  docs/reviews/feat-pipeline-operations-alerting-coderabbit.md \
+  docs/fixes/feat-pipeline-operations-alerting-approved-fixes.md
+
+kubectl kustomize k8s/monitoring/rules |
+rg 'alert:|NewsLabAlertDeliveryTest'
+
+git diff --name-only
+git diff --name-only -- \
+  k8s/monitoring/kube-prometheus-stack-values.yaml \
+  k8s/monitoring/rules app scripts db requirements.txt
+git diff --check
+
+# 승인 문서 5개의 trailing whitespace와 fence pairing 확인
+# git diff의 Telegram token, private key와 literal chat ID pattern 확인
+git status --short --branch
+```
+
+Result:
+
+```text
+pytest: 445 passed, 91 subtests passed in 14.87s
+markdownlint-cli2: MD040 없음, 기존 MD013 32건, exit 1
+Kustomize alerts: 실제 Alert 3종만 포함, NewsLabAlertDeliveryTest 없음
+changed files: 승인된 문서와 Verification 기록 5개
+runtime/Alert Rule scope tracked diff: none
+git diff --check: OK
+trailing whitespace: none
+Markdown fences: paired
+credential value pattern: none
+branch: feat/pipeline-operations-alerting
+```
+
+Status: passed
+
+Notes:
+
+- Markdown lint의 exit 1은 승인 범위 밖 기존 `MD013` line-length 32건 때문이다.
+  이번 승인 finding인 `MD040`은 세 대상 문서 모두 해소됐다.
+- CodeRabbit inline thread 확인·resolve는 commit 이후 작업이라 실행하지 않았다.
+- Production command, Secret 조회·변경, commit, push와 merge는 수행하지 않았다.
+
 ## Results
 
 - UNIT-01 조사 시점 Repository values에서 Alertmanager는 비활성이고, 당시 render에는
@@ -1416,6 +1655,10 @@ Notes:
 - NewsLab Rule과 Telegram 전달 경로에서는 오류가 없었다. 기존 chart 기본
   `kube-apiserver-burnrate.rules`의 간헐적인 evaluation timeout은 별도 비차단
   관찰로 기록했다.
+- 승인된 CodeRabbit minor finding 2개에 따라 Task fence와 promtool 절차를
+  정정하고 Review·Approved Fixes·PR artifact를 실제 적용 상태로 갱신했다.
+- 승인 fix 적용 후 전체 pytest와 문서·scope 검증을 다시 수행했으며 runtime과
+  Alert Rule manifest는 변경하지 않았다.
 
 UNIT-01 Status: passed
 
@@ -1459,3 +1702,6 @@ address와 kubeconfig 내용은 제공받거나 문서에 기록하지 않았다
   sanitized 운영 evidence만 문서에 반영했다.
 - generic webhook receiver는 Production 적용 전에 폐기했고 native Telegram
   receiver로 변경했다. 이 변경 자체를 UNIT-05 완료 evidence로 사용하지 않는다.
+- Approved FIX-01~04는 모두 적용·검증했다. Markdown lint의 기존 `MD013`은 승인
+  범위 밖이라 유지했고, CodeRabbit thread 확인·resolve는 commit 이후 후속으로
+  남겼다.
