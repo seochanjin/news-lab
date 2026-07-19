@@ -63,6 +63,7 @@ Pipeline prewarm 검증은 [CronJob 운영](runbooks/cronjobs.md)을 따른다.
 - [Backend 배포와 domain/TLS 확인](runbooks/backend-deploy.md)
 - [CronJob 운영](runbooks/cronjobs.md)
 - [Database와 local read check](runbooks/database-check.md)
+- [Database logical Backup과 격리 Restore 훈련](runbooks/database-backup-restore.md)
 - [장애 초기 대응](runbooks/troubleshooting.md)
 - [Argo CD Manual Sync 계획](runbooks/argocd-manual-sync-plan.md)
 
