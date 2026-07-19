@@ -824,7 +824,7 @@ Row count:
 - Actual total rows: 12330
 - All 14 table row counts: passed
 
-Object and constraint count:
+Aggregate object and constraint count parity:
 
 | object | expected | actual | match |
 | --- | ---: | ---: | --- |
@@ -1135,12 +1135,95 @@ Notes:
   `445 passed, 91 subtests passed in 15.29s` 결과를 유지한다.
 - Agent는 Docker, filesystem, DB와 보존 artifact에 접근하지 않았다.
 
+### Approved FIX-01 SHA-256 evidence 정책 검증
+
+Command:
+
+```bash
+rg -n \
+  'Verification에는 archive basename|실제 SHA-256 hash 값|checksum 생성·' \
+  docs/tasks/feat-database-backup-restore-drill.md \
+  docs/runbooks/database-backup-restore.md \
+  docs/verification/feat-database-backup-restore-drill.md
+git diff --check -- docs/tasks/feat-database-backup-restore-drill.md
+git diff --no-index --check /dev/null \
+  docs/tasks/feat-database-backup-restore-drill.md
+```
+
+Result:
+
+- Task에서 실제 SHA-256 digest 기록 요구를 제거했다.
+- Checksum 생성·최초 검증·권한 변경 후 재검증 성공 여부는 evidence로 유지했다.
+- 실제 SHA-256 hash 값은 Task, Runbook과 Verification에 기록하지 않는 정책으로
+  일치한다.
+- Task whitespace 검사와 민감정보 value pattern 검사가 통과했다.
+
+Status: passed
+
+### Approved FIX-02 count parity 표현 검증
+
+Command:
+
+```bash
+git diff --check
+for document in \
+  docs/tasks/feat-database-backup-restore-drill.md \
+  docs/verification/feat-database-backup-restore-drill.md \
+  docs/devlog/feat-database-backup-restore-drill.md \
+  docs/pr/feat-database-backup-restore-drill.md \
+  docs/fixes/feat-database-backup-restore-drill-approved-fixes.md; do
+  document_check_output=$(git diff --no-index --check /dev/null \
+    "$document" 2>&1 || true)
+  test -z "$document_check_output"
+done
+
+structure_pattern='구조가 .*''일치|구조 ''검증|완전[^\n]*''일치|정의[^\n]*''일치'
+equivalence_pattern="(index|constraint|object)[^\n]{0,80}($structure_pattern)|($structure_pattern)[^\n]{0,80}(index|constraint|object)"
+if rg -n -i "$equivalence_pattern" \
+  docs/verification/feat-database-backup-restore-drill.md \
+  docs/devlog/feat-database-backup-restore-drill.md \
+  docs/pr/feat-database-backup-restore-drill.md; then
+  exit 1
+else
+  test "$?" -eq 1
+fi
+
+rg -n \
+  'aggregate count parity|aggregate object·constraint count|constraint 유형별 count parity|Aggregate object and constraint count parity' \
+  docs/verification/feat-database-backup-restore-drill.md \
+  docs/devlog/feat-database-backup-restore-drill.md \
+  docs/pr/feat-database-backup-restore-drill.md
+```
+
+Result:
+
+- 첫 equivalence pattern은 정상적인 `archive 구조 검증`까지 탐지해 exit 1이었다.
+  Index·constraint 문맥으로 pattern을 제한해 과대 탐지를 제거했다.
+- 제한한 pattern을 Verification에 그대로 기록한 뒤에는 검사식 자체가 self-match해
+  다시 exit 1이었다. Pattern을 shell 변수 조각으로 나눠 self-match를 제거했다.
+- 수정한 Verification, Devlog와 PR에서 index·constraint 검증을 aggregate count와
+  constraint 유형별 count parity로 명시했다.
+- Exact definition 또는 identity-level structural equivalence를 검증했다고 주장하는
+  문구가 없음을 확인했다.
+- 변경 문서 whitespace, `git diff --check`와 민감정보 value pattern 검사가
+  통과했다.
+- `git diff --no-index --check`는 내용 차이 exit 1을 허용해 수집했으며 whitespace
+  진단 출력은 없었다.
+- Workflow 상태는 completed unit 6, pending unit 0, Verification `passed`,
+  Approved fixes `applied`다.
+- `git diff --name-only`에 작업 시작 전부터 수정 상태였던 CodeRabbit review가
+  포함됐으며 이번 fix 적용에서는 해당 파일을 수정하지 않았다.
+- Application code 변경이 없어 pytest는 재실행하지 않았다. 기존
+  `445 passed, 91 subtests passed in 15.29s` evidence를 유지한다.
+
+Status: passed
+
 ## Results
 
 - Repository에서 확인 가능한 연결 계약, application object 기대 목록, vector
   type/dimension 기대값과 artifact 경계를 Task의 UNIT-01 baseline에 기록했다.
-- 사람이 제공한 sanitized evidence에서 Production catalog와 Repository 기대
-  구조가 application table 14개 기준으로 일치함을 확인했다.
+- 사람이 제공한 sanitized evidence에서 Production catalog와 Repository의 예상
+  application table count가 14개로 일치함을 확인했다.
 - `public`을 Backup 대상으로 확정했다. `extensions` schema 전체는 제외하고
   `pgvector` 0.8.0을 Restore 사전 조건으로 준비한다.
 - `supabase_migrations`는 Production에 존재하지 않아 Backup에서 제외한다.
@@ -1166,7 +1249,8 @@ Notes:
 - Restore 후 container restart count는 0이고 running 상태를 유지해 UNIT-04
   blocker를 해소했다.
 - Production baseline과 Restore의 14개 table row count 및 total 12330이 모두
-  일치하고 public object·constraint 유형별 count도 일치했다.
+  일치했다. Public table·sequence·index aggregate count와 constraint 유형별
+  count parity도 확인했다.
 - Sequence 14개의 expected value와 `last_value >= MAX(id)`가 통과했으며 foreign
   key 11개의 orphan count는 모두 0이다.
 - pgvector version·schema·dimension·NULL 정책이 일치하고 대표 read-only 관계
@@ -1208,7 +1292,8 @@ UNIT-04 human verification: passed
 UNIT-05 human verification: passed
 
 - 사람이 Local Restore DB에서 read-only transaction과 rollback 경계로 row count,
-  object, sequence, FK, pgvector와 대표 query 정합성을 확인했다.
+  aggregate object·constraint count parity, sequence 값, FK orphan, pgvector와
+  대표 query 정합성을 확인했다.
 - Production DB에는 재접속하지 않았고 Local Restore resource는 변경하지 않았다.
 
 UNIT-06 human verification: passed

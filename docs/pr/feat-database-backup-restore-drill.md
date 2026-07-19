@@ -5,8 +5,8 @@
 - Production Supabase PostgreSQL을 변경하지 않는 read-only logical Backup을
   생성하고 checksum과 custom archive 구조를 검증했다.
 - Production과 분리된 Local PostgreSQL 17·pgvector 0.8.0 Docker 환경에 archive를
-  Restore하고 schema, data, constraint, index, sequence와 vector 정합성을
-  확인했다.
+  Restore하고 table row·sequence 값·vector 정합성, FK orphan 및 aggregate
+  object·constraint count parity를 확인했다.
 - 검증이 끝난 임시 Restore container·volume·credential·log를 정리하고, 검증된
   Backup과 checksum은 Repository 밖에 permission 600으로 보존했다.
 - 반복 가능한 수동 Backup·Restore·검증·cleanup 절차를 전용 Runbook으로 작성하고
@@ -32,8 +32,8 @@
     Restore했다.
 - 정합성 검증
   - 14개 table과 총 12,330개 row가 Production baseline과 일치했다.
-  - Table 14개, sequence 14개, index 45개, constraint 83개와 constraint 유형별
-    개수가 일치했다.
+  - Table 14개, sequence 14개, index 45개의 aggregate count parity와 constraint
+    83개 및 constraint 유형별 count parity를 확인했다.
   - Sequence 14개가 source `last_value`와 일치하고 모두 table `MAX(id)`를
     포함하며, foreign key 11개의 orphan은 0건이다.
   - pgvector 0.8.0, `extensions.vector(1536)`, NULL 0건, dimension mismatch 0건과
@@ -101,8 +101,8 @@ README 변경은 필요하지 않다.
 - Local Restore는 PostgreSQL 17.6·pgvector 0.8.0에서 성공했다. 기록된 Restore
   duration 0초는 정수 초 측정에서 1초 미만일 수 있으며, exit success, error scan,
   table·sequence 개수와 vector type 결과로 성공을 확인했다.
-- Source/Restore row count 14개와 total 12,330, object·constraint count,
-  sequence·FK·pgvector 및 대표 query 검증이 모두 통과했다.
+- Source/Restore row count 14개와 total 12,330, aggregate object·constraint count
+  parity, sequence·FK·pgvector 및 대표 query 검증이 모두 통과했다.
 - Cleanup 후 Restore container·volume·Local DB data·password file·Restore log와
   local listener가 제거됐고 Production DB와 다른 Local DB는 변경되지 않았다.
 - Backup과 checksum은 최종 checksum 검증 및 permission 600 상태로 Repository
@@ -114,7 +114,7 @@ README 변경은 필요하지 않다.
 - Host PATH에서 `pg_dump`, `psql`, `pg_restore`를 찾지 못한 초기 실패와 Direct
   connection 주소 해석 실패는 historical evidence로 보존했다. PostgreSQL 17
   Docker client와 Shared Pooler session mode 검증으로 blocker를 해소했다.
-- Approved Fixes 문서에는 승인·적용된 finding이 없다. Review artifact를 test나
+- Approved Fixes의 FIX-01·FIX-02만 적용했다. Review artifact 자체를 test나
   Verification 통과 근거로 사용하지 않았다.
 - Backup archive, checksum, raw archive list, password와 Restore log는 Repository에
   추가하지 않았다. 실제 host, user, project reference, connection URI, 기사 본문,

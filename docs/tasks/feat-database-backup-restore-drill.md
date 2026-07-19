@@ -552,9 +552,10 @@ docker run --rm \
   `<ARCHIVE_NAME>.list`는 같은 directory에 둔다. Archive와 raw list는
   Production data·object metadata artifact로 간주해 Git, Notion, chat,
   ticket에 첨부하지 않는다.
-- Verification에는 archive basename, byte size, elapsed time, SHA-256 digest,
-  `pg_restore --list` exit status와 entry count만 기록한다. Raw list와
-  archive 내용은 복사하지 않는다.
+- Verification에는 archive basename, byte size, elapsed time, checksum 생성·
+  최초 검증·권한 변경 후 재검증 성공 여부, `pg_restore --list` exit status와
+  entry count만 기록한다. 실제 SHA-256 hash 값, raw list와 archive 내용은
+  복사하지 않는다.
 - Archive와 checksum은 UNIT-04·05가 완료될 때까지 유지한다.
   UNIT-06에서 최종 보존 경로와 권한 또는 삭제 결과를 확정하며,
   UNIT-02에서 미리 삭제하지 않는다.
