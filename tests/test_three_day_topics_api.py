@@ -150,6 +150,15 @@ def home_topic_row():
     }
 
 
+def invalid_home_topic_row():
+    """3-day reference date와 window가 불일치하는 Home 가짜 row를 만든다."""
+
+    row = home_topic_row()
+    row["id"] = 32
+    row["reference_date"] = date(2026, 6, 22)
+    return row
+
+
 def detail_topic_row(key_points=None):
     """상세 API 응답에 필요한 key_points field를 포함한 가짜 row를 만든다."""
 
@@ -245,6 +254,35 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         self.assertEqual(detail["title_ko"], "반도체 경쟁")
         self.assertEqual(stored_row["title_ko"], "최근 3일 반도체 경쟁")
 
+    def test_archive_skips_invalid_period_row_and_keeps_pagination_metadata(self):
+        """3-day archive가 invalid row만 제외하고 count 기반 pagination을 유지한다."""
+
+        valid_row = three_day_topic_row()
+        invalid_row = {**valid_row, "id": 32, "reference_date": date(2026, 6, 22)}
+        connection = FakeConnection(
+            [FakeResult(scalar=2), FakeResult(rows=[invalid_row, valid_row])]
+        )
+
+        with self.assertLogs("app.routers.three_day_topics", level="WARNING") as logs:
+            result = get_three_day_topics(
+                page=1,
+                page_size=20,
+                reference_date=None,
+                date_from=None,
+                date_to=None,
+                keyword=None,
+                status=None,
+                connection=connection,
+            )
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["page"], 1)
+        self.assertEqual(result["page_size"], 20)
+        self.assertFalse(result["has_next"])
+        self.assertEqual([item["id"] for item in result["items"]], [31])
+        self.assertIn("topic_type=three_day topic_id=32", logs.output[0])
+        self.assertNotIn("정책 시장 변화", logs.output[0])
+
     def test_home_returns_latest_publishable_window_cards_only(self):
         """Home이 최신 publishable card와 공통 window·KST 기간을 반환하는지 확인한다."""
 
@@ -278,6 +316,37 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         self.assertIsNone(result["reference_date"])
         self.assertIsNone(result["window_start"])
         self.assertIsNone(result["window_end"])
+        self.assertIsNone(result["period_start"])
+        self.assertIsNone(result["period_end"])
+        self.assertEqual(result["items"], [])
+
+    def test_home_skips_invalid_period_row_and_keeps_valid_metadata(self):
+        """Invalid 3-day row만 제외하고 첫 valid row의 Home metadata를 유지한다."""
+
+        valid_row = home_topic_row()
+        connection = FakeConnection(
+            [FakeResult(rows=[invalid_home_topic_row(), valid_row])]
+        )
+
+        with self.assertLogs("app.home_topics_payload", level="WARNING") as logs:
+            result = fetch_three_day_home_topics_from_database(connection)
+
+        self.assertEqual([item["id"] for item in result["items"]], [31])
+        self.assertEqual(result["reference_date"], valid_row["reference_date"])
+        self.assertEqual(result["period_start"], date(2026, 6, 20))
+        self.assertEqual(result["period_end"], date(2026, 6, 23))
+        self.assertIn("topic_type=three_day topic_id=32", logs.output[0])
+        self.assertNotIn("정책 시장 변화", logs.output[0])
+
+    def test_home_returns_empty_payload_when_all_period_rows_are_invalid(self):
+        """모든 3-day row가 invalid면 기존 null metadata 빈 payload를 반환한다."""
+
+        connection = FakeConnection([FakeResult(rows=[invalid_home_topic_row()])])
+
+        with self.assertLogs("app.home_topics_payload", level="WARNING"):
+            result = fetch_three_day_home_topics_from_database(connection)
+
+        self.assertIsNone(result["reference_date"])
         self.assertIsNone(result["period_start"])
         self.assertIsNone(result["period_end"])
         self.assertEqual(result["items"], [])
@@ -453,6 +522,27 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
 
         self.assertEqual(result["key_points"], [])
         self.assertEqual(result["articles"], [])
+
+    def test_detail_returns_fixed_500_for_invalid_period_metadata(self):
+        """Invalid 3-day detail metadata를 내부 값 없는 고정 HTTP 500으로 변환한다."""
+
+        invalid_row = detail_topic_row([])
+        invalid_row["reference_date"] = date(2026, 6, 22)
+        connection = FakeConnection([FakeResult(first=invalid_row)])
+
+        with self.assertLogs("app.routers.three_day_topics", level="WARNING") as logs:
+            with self.assertRaises(HTTPException) as context:
+                get_three_day_topic(31, connection=connection)
+
+        self.assertEqual(context.exception.status_code, 500)
+        self.assertEqual(
+            context.exception.detail,
+            "Invalid three-day topic period metadata",
+        )
+        self.assertEqual(len(connection.calls), 1)
+        self.assertIn("topic_type=three_day topic_id=31", logs.output[0])
+        self.assertNotIn("reference_date", logs.output[0])
+        self.assertNotIn("정책 시장 변화", logs.output[0])
 
     def test_detail_preserves_empty_key_points_array(self):
         """상세 row의 key_points가 빈 배열이면 빈 배열 계약을 유지하는지 확인한다."""

@@ -156,6 +156,15 @@ def home_topic_row():
     }
 
 
+def invalid_home_topic_row():
+    """Weekly 날짜와 window가 불일치하는 Home 가짜 row를 만든다."""
+
+    row = home_topic_row()
+    row["id"] = 72
+    row["week_start"] = date(2026, 6, 16)
+    return row
+
+
 class WeeklyTopicsApiTests(unittest.TestCase):
     """7일 Topic route 순서, filter, 빈 응답, 상세 기사 역할을 검증한다."""
 
@@ -240,6 +249,35 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         self.assertEqual(detail["title_ko"], "정책 변화")
         self.assertEqual(stored_row["title_ko"], "(월요일~일요일) 정책 변화")
 
+    def test_archive_skips_invalid_period_row_and_keeps_pagination_metadata(self):
+        """Weekly archive가 invalid row만 제외하고 count 기반 pagination을 유지한다."""
+
+        valid_row = weekly_topic_row()
+        invalid_row = {**valid_row, "id": 72, "week_start": date(2026, 6, 16)}
+        connection = FakeConnection(
+            [FakeResult(scalar=2), FakeResult(rows=[invalid_row, valid_row])]
+        )
+
+        with self.assertLogs("app.routers.weekly_topics", level="WARNING") as logs:
+            result = get_weekly_topics(
+                page=1,
+                page_size=20,
+                week_start=None,
+                date_from=None,
+                date_to=None,
+                keyword=None,
+                status=None,
+                connection=connection,
+            )
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["page"], 1)
+        self.assertEqual(result["page_size"], 20)
+        self.assertFalse(result["has_next"])
+        self.assertEqual([item["id"] for item in result["items"]], [71])
+        self.assertIn("topic_type=weekly topic_id=72", logs.output[0])
+        self.assertNotIn("시장 공급 변화", logs.output[0])
+
     def test_home_returns_latest_publishable_window_cards_only(self):
         """Home이 최신 publishable card와 공통 주간 window·기간을 반환하는지 확인한다."""
 
@@ -291,6 +329,37 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         self.assertIsNone(result["week_end"])
         self.assertIsNone(result["window_start"])
         self.assertIsNone(result["window_end"])
+        self.assertIsNone(result["period_start"])
+        self.assertIsNone(result["period_end"])
+        self.assertEqual(result["items"], [])
+
+    def test_home_skips_invalid_period_row_and_keeps_valid_metadata(self):
+        """Invalid Weekly row만 제외하고 첫 valid row의 Home metadata를 유지한다."""
+
+        valid_row = home_topic_row()
+        connection = FakeConnection(
+            [FakeResult(rows=[invalid_home_topic_row(), valid_row])]
+        )
+
+        with self.assertLogs("app.home_topics_payload", level="WARNING") as logs:
+            result = fetch_weekly_home_topics_from_database(connection)
+
+        self.assertEqual([item["id"] for item in result["items"]], [71])
+        self.assertEqual(result["week_start"], valid_row["week_start"])
+        self.assertEqual(result["period_start"], date(2026, 6, 15))
+        self.assertEqual(result["period_end"], date(2026, 6, 22))
+        self.assertIn("topic_type=weekly topic_id=72", logs.output[0])
+        self.assertNotIn("시장 공급 변화", logs.output[0])
+
+    def test_home_returns_empty_payload_when_all_period_rows_are_invalid(self):
+        """모든 Weekly row가 invalid면 기존 null metadata 빈 payload를 반환한다."""
+
+        connection = FakeConnection([FakeResult(rows=[invalid_home_topic_row()])])
+
+        with self.assertLogs("app.home_topics_payload", level="WARNING"):
+            result = fetch_weekly_home_topics_from_database(connection)
+
+        self.assertIsNone(result["week_start"])
         self.assertIsNone(result["period_start"])
         self.assertIsNone(result["period_end"])
         self.assertEqual(result["items"], [])
@@ -458,3 +527,24 @@ class WeeklyTopicsApiTests(unittest.TestCase):
 
         self.assertEqual(context.exception.status_code, 404)
         self.assertEqual(context.exception.detail, "Weekly topic not found")
+
+    def test_detail_returns_fixed_500_for_invalid_period_metadata(self):
+        """Invalid Weekly detail metadata를 내부 값 없는 고정 HTTP 500으로 변환한다."""
+
+        invalid_row = weekly_topic_row()
+        invalid_row["week_start"] = date(2026, 6, 16)
+        connection = FakeConnection([FakeResult(first=invalid_row)])
+
+        with self.assertLogs("app.routers.weekly_topics", level="WARNING") as logs:
+            with self.assertRaises(HTTPException) as context:
+                get_weekly_topic(71, connection=connection)
+
+        self.assertEqual(context.exception.status_code, 500)
+        self.assertEqual(
+            context.exception.detail,
+            "Invalid weekly topic period metadata",
+        )
+        self.assertEqual(len(connection.calls), 1)
+        self.assertIn("topic_type=weekly topic_id=71", logs.output[0])
+        self.assertNotIn("week_start", logs.output[0])
+        self.assertNotIn("시장 공급 변화", logs.output[0])
