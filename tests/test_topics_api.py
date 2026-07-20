@@ -200,6 +200,38 @@ class TopicsApiTests(unittest.TestCase):
         self.assertEqual(connection.calls[0][1]["keyword"], "%AI%")
         self.assertIn(":date_from", connection.calls[0][0])
 
+    def test_existing_titles_are_sanitized_in_list_home_and_detail(self):
+        """Daily의 세 read 경로가 기존 날짜 제목을 DB 수정 없이 정제하는지 확인한다."""
+
+        stored_row = topic_row()
+        stored_row["title_ko"] = "2026-07-12 AI 반도체 경쟁"
+        list_connection = FakeConnection(
+            [FakeResult(scalar=1), FakeResult(rows=[stored_row])]
+        )
+        home_connection = FakeConnection(
+            [FakeResult(rows=[{**home_topic_row(), "title_ko": stored_row["title_ko"]}])]
+        )
+        detail_connection = FakeConnection(
+            [FakeResult(first=stored_row), FakeResult(rows=[])]
+        )
+
+        listed = get_topics(
+            page=1,
+            page_size=20,
+            status=None,
+            date_from=None,
+            date_to=None,
+            keyword=None,
+            connection=list_connection,
+        )
+        home = fetch_home_topics_from_database(home_connection)
+        detail = get_topic(1, connection=detail_connection)
+
+        self.assertEqual(listed["items"][0]["title_ko"], "AI 반도체 경쟁")
+        self.assertEqual(home["items"][0]["title_ko"], "AI 반도체 경쟁")
+        self.assertEqual(detail["title_ko"], "AI 반도체 경쟁")
+        self.assertEqual(stored_row["title_ko"], "2026-07-12 AI 반도체 경쟁")
+
     def test_home_topics_returns_lightweight_card_payload(self):
         """Home API가 관련 기사 전체 집계값을 기존 card schema로 반환하는지 확인한다."""
 

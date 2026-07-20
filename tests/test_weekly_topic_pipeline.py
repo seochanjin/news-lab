@@ -823,6 +823,11 @@ class WeeklyRawAndSummaryStageTests(unittest.TestCase):
         prompt = build_weekly_summary_prompt(summary_input)
         self.assertIn("주간 뉴스 흐름", prompt)
         self.assertIn("반복해서 등장한 쟁점", prompt)
+        self.assertIn(
+            "제목에는 날짜, 연도, 월, 일, 요일, 기간과 시간 범위를 포함하지 않는다.",
+            prompt,
+        )
+        self.assertIn("제목은 뉴스 내용과 핵심 주제만 표현한다.", prompt)
         self.assertEqual(
             build_weekly_summary_input_hash(summary_input),
             build_weekly_summary_input_hash(reordered),
@@ -901,6 +906,49 @@ class WeeklyRawAndSummaryStageTests(unittest.TestCase):
         self.assertEqual([article.article_id for article in saved_topic.articles], [7, 8, 9, 10, 11])
         self.assertTrue(saved_topic.articles[0].is_representative)
         self.assertTrue(all(article.is_summary_evidence for article in saved_topic.articles))
+
+    def test_topic_record_uses_sanitized_title_and_keyword_fallback(self):
+        """숫자 날짜뿐인 provider 제목을 keyword fallback으로 바꿔 record에 저장한다."""
+
+        raw_result = WeeklyRawAcquisitionResult(
+            article_raw_texts={index: f"raw {index}" for index in range(1, 12)},
+            reused_article_ids=list(range(1, 12)),
+            extracted_article_ids=[],
+            failed_article_ids=[],
+            missing_article_ids=[],
+            extraction_results=[],
+        )
+        provider = RecordingWeeklySummaryProvider()
+        provider.summarize = Mock(
+            return_value={
+                "title_ko": "2026-07-12~2026-07-19",
+                "summary_ko": "주간 순서 요약",
+                "key_points": ["핵심"],
+                "keywords": ["로봇 산업 재편"],
+                "confidence": 0.82,
+            }
+        )
+
+        repository = RecordingWeeklyRepository()
+        result = summarize_and_persist_weekly_topics(
+            self.topic_result,
+            raw_result,
+            pipeline_context=self.context,
+            summary_provider=provider,
+            repository=repository,
+            run_id=80,
+            execute=True,
+            max_raw_chars_per_article=1000,
+        )
+
+        self.assertEqual(
+            [topic.title_ko for topic in result.topics],
+            ["로봇 산업 재편", "로봇 산업 재편"],
+        )
+        self.assertEqual(
+            [topic.title_ko for topic in repository.calls[0]["topics"]],
+            ["로봇 산업 재편", "로봇 산업 재편"],
+        )
 
     def test_all_topic_failures_preserve_existing_window_results(self):
         """성공 Topic이 없는 실패 실행은 repository 교체를 호출하지 않는다."""

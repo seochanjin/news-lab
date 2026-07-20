@@ -1,3 +1,9 @@
+"""Daily Topic Summary 입력, provider 응답과 prompt 안전 계약을 검증한다.
+
+외부 HTTP는 mock으로 대체하고 DB 쓰기 없이 입력 제한, JSON 응답 검증, 원문 비노출,
+날짜·기간을 제외한 제목 지시문을 확인한다.
+"""
+
 import json
 import unittest
 from unittest.mock import patch
@@ -13,14 +19,20 @@ from app.utils.topic_summary import (
 
 
 def topic(topic_id, articles):
+    """테스트용 Topic candidate와 기사 목록을 구성한다."""
+
     return {"topic_candidate_id": topic_id, "articles": articles}
 
 
 def article(article_id, title, source):
+    """Summary 입력에 필요한 최소 기사 dictionary를 반환한다."""
+
     return {"id": article_id, "title": title, "source": source}
 
 
 class TopicSummaryTests(unittest.TestCase):
+    """Daily Summary 생성 helper와 provider adapter의 회귀를 검증한다."""
+
     def test_build_inputs_uses_only_raw_text_and_applies_limits(self):
         inputs = build_topic_summary_inputs(
             [
@@ -240,6 +252,8 @@ class TopicSummaryTests(unittest.TestCase):
 
     @patch("app.utils.topic_summary.requests.post")
     def test_openai_provider_parses_mock_response(self, post):
+        """OpenAI adapter가 제목 제외 계약을 보내고 mock JSON 응답을 parse한다."""
+
         post.return_value.json.return_value = {
             "output_text": (
                 '{"title_ko":"제목","summary_ko":"요약",'
@@ -253,6 +267,12 @@ class TopicSummaryTests(unittest.TestCase):
 
         self.assertEqual(result["summary_ko"], "요약")
         post.assert_called_once()
+        prompt = post.call_args.kwargs["json"]["input"]
+        self.assertIn(
+            "제목에는 날짜, 연도, 월, 일, 요일, 기간과 시간 범위를 포함하지 않는다.",
+            prompt,
+        )
+        self.assertIn("제목은 뉴스 내용과 핵심 주제만 표현한다.", prompt)
 
     def test_report_contains_safety_and_used_article_fields(self):
         summary = {

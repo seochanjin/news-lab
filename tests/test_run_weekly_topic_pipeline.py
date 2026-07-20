@@ -317,7 +317,7 @@ class RunWeeklyTopicPipelineTests(unittest.TestCase):
         self.assertEqual(completion.failed_topic_count, 1)
 
     def test_successful_weekly_save_prewarms_home_cache(self):
-        """저장된 Weekly Topic이 있으면 run 종료 후 Home cache를 같은 payload builder로 덮어쓴다."""
+        """Weekly 저장 성공 뒤 계산된 기간을 포함한 Home payload를 prewarm한다."""
 
         row = {
             "id": 71,
@@ -348,9 +348,13 @@ class RunWeeklyTopicPipelineTests(unittest.TestCase):
         cache.set.assert_called_once()
         payload = cache.set.call_args.args[0]
         self.assertEqual(cache.set.call_args.kwargs["operation"], "prewarm")
-        self.assertEqual(payload["items"], [row])
+        self.assertEqual(payload["items"][0]["id"], row["id"])
         self.assertEqual(payload["week_start"], date(2026, 7, 6))
         self.assertEqual(payload["week_end"], date(2026, 7, 12))
+        self.assertEqual(payload["period_start"], date(2026, 7, 6))
+        self.assertEqual(payload["period_end"], date(2026, 7, 13))
+        self.assertEqual(payload["items"][0]["period_start"], date(2026, 7, 6))
+        self.assertEqual(payload["items"][0]["period_end"], date(2026, 7, 13))
         self.assertIn("generated_at", payload)
         self.assertEqual(
             connection.execute.call_args.args[1],

@@ -1,4 +1,10 @@
-"""Topic summary input, provider, and report helpers."""
+"""Topic Summary 입력, provider 호출과 보고서 생성을 지원한다.
+
+기사 원문을 길이 제한된 provider 입력으로 만들고 Responses API의 JSON 출력을
+구조적으로 검증한다. Daily Summary prompt에는 내용 중심 제목 계약을 포함한다.
+저장 전 제목 신뢰 경계는 `app.utils.topic_title`이 담당하며 이 모듈은 DB나 파일을
+직접 변경하지 않는다.
+"""
 
 import hashlib
 import json
@@ -335,9 +341,13 @@ def _summary_input_priority(topic_input: dict) -> tuple:
 
 
 def _provider_prompt(topic_input: dict) -> str:
+    """Daily Summary 입력과 날짜·기간을 제외한 제목 계약을 prompt로 만든다."""
+
     return (
         "다음 뉴스 원문을 바탕으로 한국어 topic summary를 작성하세요. "
-        "사실을 추가하지 말고 JSON schema에 맞춰 응답하세요.\n"
+        "사실을 추가하지 말고 JSON schema에 맞춰 응답하세요. "
+        "제목에는 날짜, 연도, 월, 일, 요일, 기간과 시간 범위를 포함하지 않는다. "
+        "제목은 뉴스 내용과 핵심 주제만 표현한다.\n"
         + json.dumps(topic_input, ensure_ascii=False, default=str)
     )
 

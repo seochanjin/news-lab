@@ -7,6 +7,7 @@ HomeTopicsCache이며, 출력은 기존 Home API response schema와 같은 dict�
 효과는 수행하지 않는다.
 """
 
+import logging
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import ContextManager
@@ -16,8 +17,14 @@ from sqlalchemy.engine import Connection
 
 from app.home_topics_cache import HomeTopicsCache
 from app.services.weekly_topic_pipeline import PUBLISHABLE_TOPIC_STATUSES
+from app.utils.topic_period import (
+    with_three_day_topic_period,
+    with_weekly_topic_period,
+)
+from app.utils.topic_title import with_sanitized_topic_title
 
 HOME_TOPICS_LIMIT = 10
+logger = logging.getLogger(__name__)
 
 
 def get_home_topics_payload(
@@ -142,7 +149,7 @@ def fetch_home_topics_from_database(connection: Connection):
         """),
         {"limit": HOME_TOPICS_LIMIT},
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = [with_sanitized_topic_title(row) for row in rows]
     return {
         "generated_at": datetime.now(timezone.utc),
         "topic_date": items[0]["topic_date"] if items else None,
@@ -151,7 +158,12 @@ def fetch_home_topics_from_database(connection: Connection):
 
 
 def fetch_three_day_home_topics_from_database(connection: Connection):
-    """PostgreSQL source of truth에서 3일 Home topic card payload를 생성한다."""
+    """유효한 PostgreSQL row에 KST 기간을 더해 3일 Home payload를 생성한다.
+
+    저장 period metadata가 잘못된 row는 topic type과 ID만 warning으로 남기고
+    제외한다. 유효 row가 하나도 없으면 기존 null metadata의 빈 payload를
+    반환하며 DB row나 cache 설정은 수정하지 않는다.
+    """
 
     rows = connection.execute(
         text("""
@@ -185,7 +197,17 @@ def fetch_three_day_home_topics_from_database(connection: Connection):
         """),
         {"limit": HOME_TOPICS_LIMIT},
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        try:
+            item = with_three_day_topic_period(with_sanitized_topic_title(row))
+        except ValueError:
+            logger.warning(
+                "topic_period_invalid topic_type=three_day topic_id=%s",
+                row.get("id"),
+            )
+            continue
+        items.append(item)
     latest = items[0] if items else None
 
     return {
@@ -193,12 +215,19 @@ def fetch_three_day_home_topics_from_database(connection: Connection):
         "reference_date": latest["reference_date"] if latest else None,
         "window_start": latest["window_start"] if latest else None,
         "window_end": latest["window_end"] if latest else None,
+        "period_start": latest["period_start"] if latest else None,
+        "period_end": latest["period_end"] if latest else None,
         "items": items,
     }
 
 
 def fetch_weekly_home_topics_from_database(connection: Connection):
-    """PostgreSQL source of truth에서 Weekly Home topic card payload를 생성한다."""
+    """유효한 PostgreSQL row에 KST 기간을 더해 Weekly Home payload를 생성한다.
+
+    저장 period metadata가 잘못된 row는 topic type과 ID만 warning으로 남기고
+    제외한다. 유효 row가 하나도 없으면 기존 null metadata의 빈 payload를
+    반환하며 DB row나 cache 설정은 수정하지 않는다.
+    """
 
     rows = connection.execute(
         text("""
@@ -238,7 +267,17 @@ def fetch_weekly_home_topics_from_database(connection: Connection):
             "publishable_status": next(iter(PUBLISHABLE_TOPIC_STATUSES)),
         },
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = []
+    for row in rows:
+        try:
+            item = with_weekly_topic_period(with_sanitized_topic_title(row))
+        except ValueError:
+            logger.warning(
+                "topic_period_invalid topic_type=weekly topic_id=%s",
+                row.get("id"),
+            )
+            continue
+        items.append(item)
     latest = items[0] if items else None
 
     return {
@@ -247,5 +286,7 @@ def fetch_weekly_home_topics_from_database(connection: Connection):
         "week_end": latest["week_end"] if latest else None,
         "window_start": latest["window_start"] if latest else None,
         "window_end": latest["window_end"] if latest else None,
+        "period_start": latest["period_start"] if latest else None,
+        "period_end": latest["period_end"] if latest else None,
         "items": items,
     }

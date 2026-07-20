@@ -1,3 +1,9 @@
+"""Daily Topic Summary 저장 계획과 transaction adapter 계약을 검증한다.
+
+가짜 connection을 사용해 실제 DB 쓰기 없이 dry-run, upsert parameter, 기사 관계,
+저장 전 제목 sanitizer와 fallback 적용을 확인한다.
+"""
+
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,6 +20,8 @@ from app.utils.topic_summary import build_summary_input_hash
 
 
 def summary(topic_id="topic-0001", status="ready"):
+    """저장 가능 상태 또는 원문 부족 상태의 Summary fixture를 만든다."""
+
     return {
         "topic_candidate_id": topic_id,
         "status": status,
@@ -43,6 +51,8 @@ def summary(topic_id="topic-0001", status="ready"):
 
 
 def generation_result():
+    """저장 대상 한 건과 skip 대상 한 건을 포함한 생성 결과를 반환한다."""
+
     return {
         "analysis": {
             "provider": "deterministic",
@@ -53,6 +63,8 @@ def generation_result():
 
 
 class ScalarResult:
+    """SQLAlchemy scalar result의 테스트용 최소 동작을 제공한다."""
+
     def __init__(self, value):
         self.value = value
 
@@ -61,6 +73,8 @@ class ScalarResult:
 
 
 class FakeConnection:
+    """실행 query와 parameter를 기록하고 고정 Topic ID를 반환한다."""
+
     def __init__(self):
         self.calls = []
 
@@ -72,6 +86,8 @@ class FakeConnection:
 
 
 class RecordingContext:
+    """가짜 connection context 진입·종료 순서를 기록한다."""
+
     def __init__(self, events, name):
         self.events = events
         self.name = name
@@ -86,6 +102,8 @@ class RecordingContext:
 
 
 class RecordingEngine:
+    """read와 write context를 분리해 transaction 순서를 검증한다."""
+
     def __init__(self, events):
         self.events = events
 
@@ -97,6 +115,8 @@ class RecordingEngine:
 
 
 class SaveTopicSummariesTests(unittest.TestCase):
+    """Daily Summary 저장 계획과 실행 경계의 회귀를 검증한다."""
+
     def test_upsert_conflict_target_matches_composite_unique_constraint(self):
         query = " ".join(str(UPSERT_TOPIC_QUERY).lower().split())
 
@@ -122,6 +142,19 @@ class SaveTopicSummariesTests(unittest.TestCase):
         self.assertEqual(plan["analysis"]["save_candidate_count"], 1)
         self.assertEqual(plan["analysis"]["skipped_topic_count"], 1)
         self.assertEqual(plan["topics"][0]["articles"][0]["article_id"], 10)
+
+    def test_build_save_plan_sanitizes_title_and_uses_article_fallback(self):
+        """날짜뿐인 provider 제목과 기간 keyword 대신 대표 기사 제목을 저장한다."""
+
+        result = generation_result()
+        ready = result["topic_summaries"][0]
+        ready["title_ko"] = "(월~일)"
+        ready["keywords"] = ["최근 3일"]
+        ready["used_articles"][0]["title"] = "2026-07-12 AI 반도체 투자"
+
+        plan = build_save_plan(result, SimpleNamespace(execute=False))
+
+        self.assertEqual(plan["topics"][0]["title_ko"], "AI 반도체 투자")
 
     def test_summary_input_hash_is_order_insensitive_and_input_sensitive(self):
         first = {

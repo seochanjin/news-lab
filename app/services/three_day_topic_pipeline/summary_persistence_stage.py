@@ -18,6 +18,7 @@ from app.utils.topic_summary import (
     SUPPORTED_SUMMARY_MODELS,
     parse_provider_response,
 )
+from app.utils.topic_title import sanitize_topic_title
 
 from .models import (
     ThreeDayPipelineContext,
@@ -29,7 +30,7 @@ from .models import (
 )
 
 
-PROMPT_VERSION = "three-day-flow-v1"
+PROMPT_VERSION = "three-day-flow-v2"
 LOGGER = logging.getLogger(__name__)
 
 
@@ -231,7 +232,9 @@ def build_three_day_summary_prompt(summary_input: dict) -> str:
         "아래 기사 원문만 근거로 3일 뉴스 흐름을 작성하세요. "
         "단일 시점 설명에 머물지 말고 시간 순서의 변화와 진행 상황을 설명하고, "
         "여러 출처가 공통으로 확인한 내용과 불확실한 내용을 구분하세요. "
-        "근거에 없는 사실은 추가하지 마세요.\n"
+        "근거에 없는 사실은 추가하지 마세요. "
+        "제목에는 날짜, 연도, 월, 일, 요일, 기간과 시간 범위를 포함하지 않는다. "
+        "제목은 뉴스 내용과 핵심 주제만 표현한다.\n"
         + json.dumps(summary_input, ensure_ascii=False)
     )
 
@@ -292,7 +295,11 @@ def _build_topic_record(
         reference_date=pipeline_context.reference_date,
         window_start=pipeline_context.window_start,
         window_end=pipeline_context.window_end,
-        title_ko=summary["title_ko"],
+        title_ko=sanitize_topic_title(
+            summary["title_ko"],
+            keywords=summary["keywords"],
+            article_titles=_fallback_article_titles(summary_input),
+        ),
         summary_ko=summary["summary_ko"],
         key_points=list(summary["key_points"]),
         keywords=list(summary["keywords"]),
@@ -311,6 +318,24 @@ def _build_topic_record(
         summary_input_hash=build_three_day_summary_input_hash(summary_input),
         articles=records,
     )
+
+
+def _fallback_article_titles(summary_input: dict) -> list[object]:
+    """대표 기사를 우선한 결정적 title fallback 후보 순서를 반환한다."""
+
+    representative_id = summary_input.get("representative_article_id")
+    if representative_id is not None:
+        representative_id = int(representative_id)
+    return [
+        article.get("title")
+        for article in sorted(
+            summary_input["used_articles"],
+            key=lambda article: (
+                int(article["article_id"]) != representative_id,
+                int(article["article_id"]),
+            ),
+        )
+    ]
 
 
 def _run_status(topics, failures) -> str:

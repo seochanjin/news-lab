@@ -7,6 +7,7 @@ API와 pipeline prewarm이 같은 DB builder를 쓰도록 `app.home_topics_paylo
 위임한다.
 """
 
+import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,9 +17,12 @@ from sqlalchemy.engine import Connection
 from app.database import engine, get_connection
 from app.home_topics_cache import HomeTopicsCache, get_three_day_home_topics_cache
 from app.home_topics_payload import get_three_day_home_topics_payload
+from app.utils.topic_period import with_three_day_topic_period
+from app.utils.topic_title import with_sanitized_topic_title
 
 
 router = APIRouter(prefix="/three-day-topics", tags=["three_day_topics"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("")
@@ -32,7 +36,12 @@ def get_three_day_topics(
     status: str | None = None,
     connection: Connection = Depends(get_connection),
 ):
-    """조건에 맞는 3일 Topic archive를 최신순 pagination으로 반환한다."""
+    """조건에 맞는 유효 3일 Topic과 계산된 KST 기간을 pagination으로 반환한다.
+
+    저장 period metadata가 잘못된 row는 topic type과 ID만 warning으로 남기고
+    현재 page의 items에서 제외한다. Count query 기반 pagination metadata는
+    기존 계약을 유지한다.
+    """
 
     where_clauses = []
     params = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -83,12 +92,24 @@ def get_three_day_topics(
         params,
     ).mappings().all()
 
+    items = []
+    for row in rows:
+        try:
+            item = with_three_day_topic_period(with_sanitized_topic_title(row))
+        except ValueError:
+            logger.warning(
+                "topic_period_invalid topic_type=three_day topic_id=%s",
+                row.get("id"),
+            )
+            continue
+        items.append(item)
+
     return {
         "page": page,
         "page_size": page_size,
         "total": total,
         "has_next": page * page_size < total,
-        "items": [dict(row) for row in rows],
+        "items": items,
     }
 
 
@@ -109,7 +130,11 @@ def get_three_day_topic(
     topic_id: int,
     connection: Connection = Depends(get_connection),
 ):
-    """단일 3일 Topic, 핵심 포인트와 순위가 지정된 관련 기사 전체를 반환한다."""
+    """단일 3일 Topic의 KST 기간, 핵심 포인트와 관련 기사 전체를 반환한다.
+
+    저장 period metadata가 잘못됐으면 내부 값은 노출하지 않고 고정 detail의
+    HTTP 500을 발생시킨다. DB row를 보정하거나 수정하지 않는다.
+    """
 
     row = connection.execute(
         text("""
@@ -137,7 +162,17 @@ def get_three_day_topic(
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Three-day topic not found")
-    topic = dict(row)
+    try:
+        topic = with_three_day_topic_period(with_sanitized_topic_title(row))
+    except ValueError:
+        logger.warning(
+            "topic_period_invalid topic_type=three_day topic_id=%s",
+            row.get("id"),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail="Invalid three-day topic period metadata",
+        ) from None
     topic["key_points"] = topic.get("key_points") or []
 
     article_rows = connection.execute(

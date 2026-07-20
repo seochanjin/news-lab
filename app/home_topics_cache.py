@@ -25,6 +25,8 @@ except ImportError:  # pragma: no cover - dependency 설치 전 local import 보
 
 from fastapi.encoders import jsonable_encoder
 
+from app.utils.topic_title import with_sanitized_topic_title
+
 logger = logging.getLogger(__name__)
 
 HOME_TOPICS_CACHE_KEY = "topics:home:v1"
@@ -142,15 +144,27 @@ def _is_valid_home_topics_payload(payload: Any) -> bool:
         "source_count",
         "article_count",
     }
-    return all(isinstance(item, dict) and required_item_keys <= set(item) for item in items)
+    return all(
+        isinstance(item, dict)
+        and required_item_keys <= set(item)
+        and item["title_ko"] == with_sanitized_topic_title(item)["title_ko"]
+        for item in items
+    )
 
 
 def _is_valid_three_day_home_topics_payload(payload: Any) -> bool:
-    """Cache payload가 `/three-day-topics/home` 응답 최소 구조를 갖췄는지 검사한다."""
+    """3일 cache payload가 계산된 period field까지 갖췄는지 검사한다."""
 
     if not isinstance(payload, dict):
         return False
-    for key in ("generated_at", "reference_date", "window_start", "window_end"):
+    for key in (
+        "generated_at",
+        "reference_date",
+        "window_start",
+        "window_end",
+        "period_start",
+        "period_end",
+    ):
         if key not in payload:
             return False
     items = payload.get("items")
@@ -162,21 +176,36 @@ def _is_valid_three_day_home_topics_payload(payload: Any) -> bool:
         "reference_date",
         "window_start",
         "window_end",
+        "period_start",
+        "period_end",
         "title_ko",
         "summary_ko",
         "keywords",
         "source_count",
         "article_count",
     }
-    return all(isinstance(item, dict) and required_item_keys <= set(item) for item in items)
+    return all(
+        isinstance(item, dict)
+        and required_item_keys <= set(item)
+        and item["title_ko"] == with_sanitized_topic_title(item)["title_ko"]
+        for item in items
+    )
 
 
 def _is_valid_weekly_home_topics_payload(payload: Any) -> bool:
-    """Cache payload가 `/weekly-topics/home` 응답 최소 구조를 갖췄는지 검사한다."""
+    """Weekly cache payload가 계산된 period field까지 갖췄는지 검사한다."""
 
     if not isinstance(payload, dict):
         return False
-    for key in ("generated_at", "week_start", "week_end", "window_start", "window_end"):
+    for key in (
+        "generated_at",
+        "week_start",
+        "week_end",
+        "window_start",
+        "window_end",
+        "period_start",
+        "period_end",
+    ):
         if key not in payload:
             return False
     items = payload.get("items")
@@ -189,13 +218,20 @@ def _is_valid_weekly_home_topics_payload(payload: Any) -> bool:
         "week_end",
         "window_start",
         "window_end",
+        "period_start",
+        "period_end",
         "title_ko",
         "summary_ko",
         "keywords",
         "source_count",
         "article_count",
     }
-    return all(isinstance(item, dict) and required_item_keys <= set(item) for item in items)
+    return all(
+        isinstance(item, dict)
+        and required_item_keys <= set(item)
+        and item["title_ko"] == with_sanitized_topic_title(item)["title_ko"]
+        for item in items
+    )
 
 
 def _payload_validator_for_key(key: str) -> Callable[[Any], bool]:
