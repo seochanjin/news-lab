@@ -16,6 +16,8 @@ from sqlalchemy.engine import Connection
 from app.database import engine, get_connection
 from app.home_topics_cache import HomeTopicsCache, get_three_day_home_topics_cache
 from app.home_topics_payload import get_three_day_home_topics_payload
+from app.utils.topic_period import with_three_day_topic_period
+from app.utils.topic_title import with_sanitized_topic_title
 
 
 router = APIRouter(prefix="/three-day-topics", tags=["three_day_topics"])
@@ -32,7 +34,7 @@ def get_three_day_topics(
     status: str | None = None,
     connection: Connection = Depends(get_connection),
 ):
-    """조건에 맞는 3일 Topic archive를 최신순 pagination으로 반환한다."""
+    """조건에 맞는 3일 Topic과 계산된 KST 기간을 pagination으로 반환한다."""
 
     where_clauses = []
     params = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -88,7 +90,10 @@ def get_three_day_topics(
         "page_size": page_size,
         "total": total,
         "has_next": page * page_size < total,
-        "items": [dict(row) for row in rows],
+        "items": [
+            with_three_day_topic_period(with_sanitized_topic_title(row))
+            for row in rows
+        ],
     }
 
 
@@ -109,7 +114,7 @@ def get_three_day_topic(
     topic_id: int,
     connection: Connection = Depends(get_connection),
 ):
-    """단일 3일 Topic, 핵심 포인트와 순위가 지정된 관련 기사 전체를 반환한다."""
+    """단일 3일 Topic의 KST 기간, 핵심 포인트와 관련 기사 전체를 반환한다."""
 
     row = connection.execute(
         text("""
@@ -137,7 +142,7 @@ def get_three_day_topic(
     ).mappings().first()
     if not row:
         raise HTTPException(status_code=404, detail="Three-day topic not found")
-    topic = dict(row)
+    topic = with_three_day_topic_period(with_sanitized_topic_title(row))
     topic["key_points"] = topic.get("key_points") or []
 
     article_rows = connection.execute(

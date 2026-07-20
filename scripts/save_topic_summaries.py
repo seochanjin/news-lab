@@ -1,3 +1,11 @@
+"""Daily Topic Summary의 저장 계획과 DB transaction adapter를 제공한다.
+
+생성 결과 중 저장 가능한 Topic을 선별하고 제목을 공통 sanitizer로 검증한 뒤
+기존 `topics`와 기사 관계 upsert parameter로 변환한다. dry-run에서는 계획만
+반환하며 execute 경로의 실제 DB 쓰기는 호출자가 제공한 transaction 안에서만
+수행한다.
+"""
+
 import json
 import sys
 from datetime import date
@@ -7,6 +15,7 @@ from sqlalchemy import text
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
+from app.utils.topic_title import sanitize_topic_title
 from scripts.generate_topic_summary_report import (
     create_database_engine,
     create_argument_parser,
@@ -62,6 +71,8 @@ def parse_args(argv=None):
 
 
 def build_save_plan(generation_result: dict, args, *, topic_date=None) -> dict:
+    """생성 결과를 제목 정제까지 마친 Daily Topic 저장 계획으로 변환한다."""
+
     topic_date = topic_date or date.today()
     topics = []
     skipped = []
@@ -86,7 +97,13 @@ def build_save_plan(generation_result: dict, args, *, topic_date=None) -> dict:
             {
                 "topic_date": topic_date,
                 "topic_candidate_id": summary["topic_candidate_id"],
-                "title_ko": summary["title_ko"],
+                "title_ko": sanitize_topic_title(
+                    summary["title_ko"],
+                    keywords=summary["keywords"],
+                    article_titles=(
+                        article.get("title") for article in summary["used_articles"]
+                    ),
+                ),
                 "summary_ko": summary["summary_ko"],
                 "key_points": summary["key_points"],
                 "keywords": summary["keywords"],

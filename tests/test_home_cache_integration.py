@@ -56,7 +56,7 @@ def daily_payload():
             {
                 "id": 1,
                 "topic_date": "2026-07-14",
-                "title_ko": "오늘의 이슈",
+                "title_ko": "경제 정책 변화",
                 "summary_ko": "일간 요약",
                 "keywords": ["경제"],
                 "source_count": 3,
@@ -67,20 +67,24 @@ def daily_payload():
 
 
 def three_day_payload():
-    """3-day Home API schema와 같은 가짜 payload를 반환한다."""
+    """계산된 end-exclusive 기간을 포함한 3-day Home payload를 반환한다."""
 
     return {
         "generated_at": "2026-07-14T00:00:00Z",
         "reference_date": "2026-07-14",
         "window_start": "2026-07-11T00:00:00Z",
         "window_end": "2026-07-14T00:00:00Z",
+        "period_start": "2026-07-11",
+        "period_end": "2026-07-14",
         "items": [
             {
                 "id": 31,
                 "reference_date": "2026-07-14",
                 "window_start": "2026-07-11T00:00:00Z",
                 "window_end": "2026-07-14T00:00:00Z",
-                "title_ko": "3일 이슈",
+                "period_start": "2026-07-11",
+                "period_end": "2026-07-14",
+                "title_ko": "정책 시장 변화",
                 "summary_ko": "3일 요약",
                 "keywords": ["정책"],
                 "source_count": 4,
@@ -91,7 +95,7 @@ def three_day_payload():
 
 
 def weekly_payload():
-    """Weekly Home API schema와 같은 가짜 payload를 반환한다."""
+    """계산된 end-exclusive 기간을 포함한 Weekly Home payload를 반환한다."""
 
     return {
         "generated_at": "2026-07-14T00:00:00Z",
@@ -99,6 +103,8 @@ def weekly_payload():
         "week_end": "2026-07-12",
         "window_start": "2026-07-05T15:00:00Z",
         "window_end": "2026-07-12T15:00:00Z",
+        "period_start": "2026-07-06",
+        "period_end": "2026-07-13",
         "items": [
             {
                 "id": 71,
@@ -106,7 +112,9 @@ def weekly_payload():
                 "week_end": "2026-07-12",
                 "window_start": "2026-07-05T15:00:00Z",
                 "window_end": "2026-07-12T15:00:00Z",
-                "title_ko": "주간 이슈",
+                "period_start": "2026-07-06",
+                "period_end": "2026-07-13",
+                "title_ko": "시장 공급 변화",
                 "summary_ko": "주간 요약",
                 "keywords": ["시장"],
                 "source_count": 5,
@@ -120,7 +128,7 @@ class HomeCacheIntegrationTests(unittest.TestCase):
     """Daily, 3-day, Weekly cache가 서로 독립된 운영 계약을 갖는지 검증한다."""
 
     def test_three_home_caches_use_distinct_keys_ttls_and_validators(self):
-        """세 Home payload가 한 Redis client에서 key와 TTL을 섞지 않는지 확인한다."""
+        """세 Home payload가 key·TTL·새 period validator를 섞지 않는지 확인한다."""
 
         client = SharedFakeRedisClient()
         caches = [
@@ -174,6 +182,67 @@ class HomeCacheIntegrationTests(unittest.TestCase):
         )
 
         self.assertIsNone(caches[1].get())
+
+    def test_legacy_periodless_cache_payloads_are_invalidated(self):
+        """새 API field가 없는 3-day·Weekly cache를 miss로 처리해 재생성하게 한다."""
+
+        client = SharedFakeRedisClient()
+        payloads_and_caches = (
+            (
+                three_day_payload(),
+                HomeTopicsCache(
+                    client=client,
+                    key=THREE_DAY_HOME_TOPICS_CACHE_KEY,
+                    ttl_seconds=DEFAULT_THREE_DAY_HOME_TOPICS_CACHE_TTL_SECONDS,
+                ),
+            ),
+            (
+                weekly_payload(),
+                HomeTopicsCache(
+                    client=client,
+                    key=WEEKLY_HOME_TOPICS_CACHE_KEY,
+                    ttl_seconds=DEFAULT_WEEKLY_HOME_TOPICS_CACHE_TTL_SECONDS,
+                ),
+            ),
+        )
+
+        for payload, cache in payloads_and_caches:
+            with self.subTest(cache_key=cache.key):
+                payload.pop("period_start")
+                payload.pop("period_end")
+                cache.set(payload)
+                self.assertIsNone(cache.get())
+
+    def test_cached_unsanitized_titles_are_invalidated_for_all_home_payloads(self):
+        """날짜·기간 제목이 남은 기존 cache는 hit로 노출하지 않고 miss 처리한다."""
+
+        client = SharedFakeRedisClient()
+        payloads_and_caches = (
+            (daily_payload(), HomeTopicsCache(client=client)),
+            (
+                three_day_payload(),
+                HomeTopicsCache(client=client, key=THREE_DAY_HOME_TOPICS_CACHE_KEY),
+            ),
+            (
+                weekly_payload(),
+                HomeTopicsCache(client=client, key=WEEKLY_HOME_TOPICS_CACHE_KEY),
+            ),
+        )
+        invalid_titles = (
+            "2026-07-14 경제 정책",
+            "최근 3일 정책 변화",
+            "(월요일~일요일) 시장 변화",
+        )
+
+        for (payload, cache), invalid_title in zip(
+            payloads_and_caches,
+            invalid_titles,
+            strict=True,
+        ):
+            with self.subTest(cache_key=cache.key):
+                payload["items"][0]["title_ko"] = invalid_title
+                cache.set(payload)
+                self.assertIsNone(cache.get())
 
 
 if __name__ == "__main__":

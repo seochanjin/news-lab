@@ -14,6 +14,8 @@ from sqlalchemy.engine import Connection
 from app.database import engine, get_connection
 from app.home_topics_cache import HomeTopicsCache, get_weekly_home_topics_cache
 from app.home_topics_payload import get_weekly_home_topics_payload
+from app.utils.topic_period import with_weekly_topic_period
+from app.utils.topic_title import with_sanitized_topic_title
 
 router = APIRouter(prefix="/weekly-topics", tags=["weekly_topics"])
 
@@ -29,7 +31,7 @@ def get_weekly_topics(
     status: str | None = None,
     connection: Connection = Depends(get_connection),
 ):
-    """조건에 맞는 7일 Topic archive를 최신순 pagination으로 반환한다."""
+    """조건에 맞는 7일 Topic과 계산된 KST 기간을 pagination으로 반환한다."""
 
     where_clauses = []
     params = {"limit": page_size, "offset": (page - 1) * page_size}
@@ -86,7 +88,10 @@ def get_weekly_topics(
         "page_size": page_size,
         "total": total,
         "has_next": page * page_size < total,
-        "items": [dict(row) for row in rows],
+        "items": [
+            with_weekly_topic_period(with_sanitized_topic_title(row))
+            for row in rows
+        ],
     }
 
 
@@ -107,7 +112,7 @@ def get_weekly_topic(
     topic_id: int,
     connection: Connection = Depends(get_connection),
 ):
-    """단일 7일 Topic과 순위가 지정된 관련 기사 전체를 반환한다."""
+    """단일 7일 Topic의 KST 기간과 순위가 지정된 관련 기사 전체를 반환한다."""
 
     row = connection.execute(
         text("""
@@ -160,4 +165,5 @@ def get_weekly_topic(
         {"topic_id": topic_id},
     ).mappings().all()
 
-    return {**dict(row), "articles": [dict(article) for article in article_rows]}
+    topic = with_weekly_topic_period(with_sanitized_topic_title(row))
+    return {**topic, "articles": [dict(article) for article in article_rows]}

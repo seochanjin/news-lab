@@ -1,0 +1,30 @@
+{
+  "topics": [
+    {
+      "id": 1,
+      "title_ko": "2026-07-12 AI 반도체 경쟁",
+      "keywords": ["반도체"]
+    }
+  ],
+  "three_day_topics": [
+    {
+      "id": 31,
+      "title_ko": "(월요일~일요일)",
+      "keywords": ["정책 변화"],
+      "reference_date": "2026-07-14",
+      "window_start": "2026-07-10T20:00:00Z",
+      "window_end": "2026-07-13T20:00:00Z"
+    }
+  ],
+  "weekly_topics": [
+    {
+      "id": 71,
+      "title_ko": "시장 공급 변화",
+      "keywords": ["시장"],
+      "week_start": "2026-07-06",
+      "week_end": "2026-07-12",
+      "window_start": "2026-07-05T15:00:00Z",
+      "window_end": "2026-07-12T15:00:00Z"
+    }
+  ]
+}

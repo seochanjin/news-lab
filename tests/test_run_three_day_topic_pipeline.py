@@ -305,7 +305,7 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
         self.assertEqual(completion.failed_topic_count, 1)
 
     def test_execute_saved_topics_prewarm_reads_three_day_home_payload(self):
-        """3일 Topic 저장 성공 결과에서 Home payload를 조회해 prewarm 저장한다."""
+        """3일 저장 성공 뒤 계산된 기간을 포함한 Home payload를 prewarm한다."""
 
         row = {
             "id": 31,
@@ -335,8 +335,12 @@ class RunThreeDayTopicPipelineTests(unittest.TestCase):
         cache.set.assert_called_once()
         payload = cache.set.call_args.args[0]
         self.assertEqual(cache.set.call_args.kwargs["operation"], "prewarm")
-        self.assertEqual(payload["items"], [row])
+        self.assertEqual(payload["items"][0]["id"], row["id"])
         self.assertEqual(payload["reference_date"], date(2026, 7, 14))
+        self.assertEqual(payload["period_start"], date(2026, 7, 11))
+        self.assertEqual(payload["period_end"], date(2026, 7, 14))
+        self.assertEqual(payload["items"][0]["period_start"], date(2026, 7, 11))
+        self.assertEqual(payload["items"][0]["period_end"], date(2026, 7, 14))
         self.assertIn("generated_at", payload)
         self.assertEqual(connection.execute.call_args.args[1], {"limit": 10})
 

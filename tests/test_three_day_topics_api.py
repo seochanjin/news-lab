@@ -116,7 +116,7 @@ def three_day_topic_row():
         "reference_date": date(2026, 6, 23),
         "window_start": datetime(2026, 6, 20, tzinfo=timezone.utc),
         "window_end": datetime(2026, 6, 23, tzinfo=timezone.utc),
-        "title_ko": "3일 이슈",
+        "title_ko": "정책 시장 변화",
         "summary_ko": "3일 동안의 변화",
         "keywords": ["정책", "시장"],
         "article_count": 5,
@@ -175,7 +175,7 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         )
 
     def test_archive_returns_pagination_and_bound_filters(self):
-        """Archive가 모든 지원 filter를 bind하고 최신순 page를 반환하는지 확인한다."""
+        """Archive가 filter와 기존 field를 유지하며 계산된 기간을 반환하는지 확인한다."""
 
         connection = FakeConnection(
             [FakeResult(scalar=3), FakeResult(rows=[three_day_topic_row()])]
@@ -195,6 +195,9 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         self.assertEqual(result["total"], 3)
         self.assertTrue(result["has_next"])
         self.assertEqual(result["items"][0]["id"], 31)
+        self.assertEqual(result["items"][0]["period_start"], date(2026, 6, 20))
+        self.assertEqual(result["items"][0]["period_end"], date(2026, 6, 23))
+        self.assertIn("created_at", result["items"][0])
         count_sql, params = connection.calls[0]
         self.assertEqual(params["reference_date"], date(2026, 6, 23))
         self.assertEqual(params["keyword"], "%시장%")
@@ -206,8 +209,44 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
             connection.calls[1][0].lower(),
         )
 
+    def test_existing_titles_are_sanitized_in_archive_home_and_detail(self):
+        """3일 Topic의 모든 DB read 응답이 기존 기간 제목을 정제하는지 확인한다."""
+
+        stored_row = three_day_topic_row()
+        stored_row["title_ko"] = "최근 3일 반도체 경쟁"
+        archive_connection = FakeConnection(
+            [FakeResult(scalar=1), FakeResult(rows=[stored_row])]
+        )
+        home_connection = FakeConnection(
+            [FakeResult(rows=[{**home_topic_row(), "title_ko": stored_row["title_ko"]}])]
+        )
+        detail_connection = FakeConnection(
+            [
+                FakeResult(first={**stored_row, "key_points": []}),
+                FakeResult(rows=[]),
+            ]
+        )
+
+        archive = get_three_day_topics(
+            page=1,
+            page_size=20,
+            reference_date=None,
+            date_from=None,
+            date_to=None,
+            keyword=None,
+            status=None,
+            connection=archive_connection,
+        )
+        home = fetch_three_day_home_topics_from_database(home_connection)
+        detail = get_three_day_topic(31, connection=detail_connection)
+
+        self.assertEqual(archive["items"][0]["title_ko"], "반도체 경쟁")
+        self.assertEqual(home["items"][0]["title_ko"], "반도체 경쟁")
+        self.assertEqual(detail["title_ko"], "반도체 경쟁")
+        self.assertEqual(stored_row["title_ko"], "최근 3일 반도체 경쟁")
+
     def test_home_returns_latest_publishable_window_cards_only(self):
-        """Home이 최신 publishable window의 경량 card와 공통 window를 반환하는지 확인한다."""
+        """Home이 최신 publishable card와 공통 window·KST 기간을 반환하는지 확인한다."""
 
         connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
 
@@ -217,6 +256,8 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         self.assertEqual(result["reference_date"], item["reference_date"])
         self.assertEqual(result["window_start"], item["window_start"])
         self.assertEqual(result["window_end"], item["window_end"])
+        self.assertEqual(result["period_start"], item["period_start"])
+        self.assertEqual(result["period_end"], item["period_end"])
         self.assertIn("generated_at", result)
         self.assertEqual(connection.calls[0][1]["limit"], 10)
         sql = connection.calls[0][0].lower()
@@ -237,6 +278,8 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
         self.assertIsNone(result["reference_date"])
         self.assertIsNone(result["window_start"])
         self.assertIsNone(result["window_end"])
+        self.assertIsNone(result["period_start"])
+        self.assertIsNone(result["period_end"])
         self.assertEqual(result["items"], [])
 
     def test_home_cache_miss_reads_database_and_stores_payload(self):
@@ -269,13 +312,17 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
             "reference_date": "2026-07-13",
             "window_start": "2026-07-10T00:00:00Z",
             "window_end": "2026-07-13T00:00:00Z",
+            "period_start": "2026-07-10",
+            "period_end": "2026-07-13",
             "items": [
                 {
                     "id": 31,
                     "reference_date": "2026-07-13",
                     "window_start": "2026-07-10T00:00:00Z",
                     "window_end": "2026-07-13T00:00:00Z",
-                    "title_ko": "3일 이슈",
+                    "period_start": "2026-07-10",
+                    "period_end": "2026-07-13",
+                    "title_ko": "정책 시장 변화",
                     "summary_ko": "3일 요약",
                     "keywords": ["정책"],
                     "article_count": 5,
@@ -372,6 +419,8 @@ class ThreeDayTopicsApiTests(unittest.TestCase):
 
         self.assertEqual(result["article_count"], 5)
         self.assertEqual(result["source_count"], 4)
+        self.assertEqual(result["period_start"], date(2026, 6, 20))
+        self.assertEqual(result["period_end"], date(2026, 6, 23))
         self.assertEqual(
             result["key_points"],
             ["첫 번째 핵심 포인트", "두 번째 핵심 포인트"],

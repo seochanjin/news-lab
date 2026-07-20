@@ -15,6 +15,7 @@ from sqlalchemy.engine import Connection
 from app.database import engine, get_connection
 from app.home_topics_cache import HomeTopicsCache, get_home_topics_cache
 from app.home_topics_payload import get_home_topics_payload
+from app.utils.topic_title import with_sanitized_topic_title
 
 router = APIRouter(prefix="/topics", tags=["topics"])
 
@@ -29,6 +30,8 @@ def get_topics(
     keyword: str | None = None,
     connection: Connection = Depends(get_connection),
 ):
+    """조건에 맞는 Daily Topic을 read-time 정제한 제목과 함께 반환한다."""
+
     where_clauses = []
     params = {"limit": page_size, "offset": (page - 1) * page_size}
     if status:
@@ -65,7 +68,7 @@ def get_topics(
         """),
         params,
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = [with_sanitized_topic_title(row) for row in rows]
     return {
         "items": items,
         "page": page,
@@ -89,6 +92,8 @@ def get_topic(
     topic_id: int,
     connection: Connection = Depends(get_connection),
 ):
+    """단일 Daily Topic과 관련 기사를 read-time 정제한 제목으로 반환한다."""
+
     row = connection.execute(
         text("""
             select
@@ -116,4 +121,5 @@ def get_topic(
         """),
         {"topic_id": topic_id},
     ).mappings().all()
-    return {**dict(row), "articles": [dict(article) for article in article_rows]}
+    topic = with_sanitized_topic_title(row)
+    return {**topic, "articles": [dict(article) for article in article_rows]}

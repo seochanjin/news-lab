@@ -118,7 +118,7 @@ def weekly_topic_row():
         "week_end": date(2026, 6, 21),
         "window_start": datetime(2026, 6, 14, 15, tzinfo=timezone.utc),
         "window_end": datetime(2026, 6, 21, 15, tzinfo=timezone.utc),
-        "title_ko": "주간 이슈",
+        "title_ko": "시장 정책 변화",
         "summary_ko": "지난주 흐름 요약",
         "key_points": ["월요일부터 일요일까지 이어진 변화"],
         "keywords": ["정책", "시장"],
@@ -173,7 +173,7 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         )
 
     def test_archive_returns_pagination_and_bound_filters(self):
-        """Archive가 모든 지원 filter를 bind하고 최신 주간순 page를 반환하는지 확인한다."""
+        """Archive가 filter와 기존 field를 유지하며 계산된 주간 기간을 반환한다."""
 
         connection = FakeConnection(
             [FakeResult(scalar=3), FakeResult(rows=[weekly_topic_row()])]
@@ -193,6 +193,9 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         self.assertEqual(result["total"], 3)
         self.assertTrue(result["has_next"])
         self.assertEqual(result["items"][0]["id"], 71)
+        self.assertEqual(result["items"][0]["period_start"], date(2026, 6, 15))
+        self.assertEqual(result["items"][0]["period_end"], date(2026, 6, 22))
+        self.assertIn("created_at", result["items"][0])
         count_sql, params = connection.calls[0]
         self.assertEqual(params["week_start"], date(2026, 6, 15))
         self.assertEqual(params["keyword"], "%시장%")
@@ -204,8 +207,41 @@ class WeeklyTopicsApiTests(unittest.TestCase):
             connection.calls[1][0].lower(),
         )
 
+    def test_existing_titles_are_sanitized_in_archive_home_and_detail(self):
+        """Weekly의 세 DB read 응답이 기존 요일 범위 제목을 정제하는지 확인한다."""
+
+        stored_row = weekly_topic_row()
+        stored_row["title_ko"] = "(월요일~일요일) 정책 변화"
+        archive_connection = FakeConnection(
+            [FakeResult(scalar=1), FakeResult(rows=[stored_row])]
+        )
+        home_connection = FakeConnection(
+            [FakeResult(rows=[{**home_topic_row(), "title_ko": stored_row["title_ko"]}])]
+        )
+        detail_connection = FakeConnection(
+            [FakeResult(first=stored_row), FakeResult(rows=[])]
+        )
+
+        archive = get_weekly_topics(
+            page=1,
+            page_size=20,
+            week_start=None,
+            date_from=None,
+            date_to=None,
+            keyword=None,
+            status=None,
+            connection=archive_connection,
+        )
+        home = fetch_weekly_home_topics_from_database(home_connection)
+        detail = get_weekly_topic(71, connection=detail_connection)
+
+        self.assertEqual(archive["items"][0]["title_ko"], "정책 변화")
+        self.assertEqual(home["items"][0]["title_ko"], "정책 변화")
+        self.assertEqual(detail["title_ko"], "정책 변화")
+        self.assertEqual(stored_row["title_ko"], "(월요일~일요일) 정책 변화")
+
     def test_home_returns_latest_publishable_window_cards_only(self):
-        """Home이 최신 publishable 주간 window의 경량 card와 공통 window를 반환하는지 확인한다."""
+        """Home이 최신 publishable card와 공통 주간 window·기간을 반환하는지 확인한다."""
 
         connection = FakeConnection([FakeResult(rows=[home_topic_row()])])
 
@@ -216,6 +252,8 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         self.assertEqual(result["week_end"], item["week_end"])
         self.assertEqual(result["window_start"], item["window_start"])
         self.assertEqual(result["window_end"], item["window_end"])
+        self.assertEqual(result["period_start"], item["period_start"])
+        self.assertEqual(result["period_end"], item["period_end"])
         self.assertIn("generated_at", result)
         self.assertEqual(connection.calls[0][1]["limit"], 10)
         sql = connection.calls[0][0].lower()
@@ -253,6 +291,8 @@ class WeeklyTopicsApiTests(unittest.TestCase):
         self.assertIsNone(result["week_end"])
         self.assertIsNone(result["window_start"])
         self.assertIsNone(result["window_end"])
+        self.assertIsNone(result["period_start"])
+        self.assertIsNone(result["period_end"])
         self.assertEqual(result["items"], [])
 
     def test_home_cache_miss_reads_database_and_stores_payload(self):
@@ -286,6 +326,8 @@ class WeeklyTopicsApiTests(unittest.TestCase):
             "week_end": "2026-07-12",
             "window_start": "2026-07-05T15:00:00Z",
             "window_end": "2026-07-12T15:00:00Z",
+            "period_start": "2026-07-06",
+            "period_end": "2026-07-13",
             "items": [
                 {
                     "id": 71,
@@ -293,7 +335,9 @@ class WeeklyTopicsApiTests(unittest.TestCase):
                     "week_end": "2026-07-12",
                     "window_start": "2026-07-05T15:00:00Z",
                     "window_end": "2026-07-12T15:00:00Z",
-                    "title_ko": "주간 이슈",
+                    "period_start": "2026-07-06",
+                    "period_end": "2026-07-13",
+                    "title_ko": "시장 정책 변화",
                     "summary_ko": "주간 요약",
                     "keywords": ["정책"],
                     "article_count": 8,
@@ -386,6 +430,8 @@ class WeeklyTopicsApiTests(unittest.TestCase):
 
         self.assertEqual(result["week_start"], date(2026, 6, 15))
         self.assertEqual(result["week_end"], date(2026, 6, 21))
+        self.assertEqual(result["period_start"], date(2026, 6, 15))
+        self.assertEqual(result["period_end"], date(2026, 6, 22))
         self.assertEqual(result["article_count"], 8)
         self.assertEqual(result["source_count"], 4)
         self.assertEqual(result["prompt_version"], "weekly-flow-v1")

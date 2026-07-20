@@ -16,6 +16,11 @@ from sqlalchemy.engine import Connection
 
 from app.home_topics_cache import HomeTopicsCache
 from app.services.weekly_topic_pipeline import PUBLISHABLE_TOPIC_STATUSES
+from app.utils.topic_period import (
+    with_three_day_topic_period,
+    with_weekly_topic_period,
+)
+from app.utils.topic_title import with_sanitized_topic_title
 
 HOME_TOPICS_LIMIT = 10
 
@@ -142,7 +147,7 @@ def fetch_home_topics_from_database(connection: Connection):
         """),
         {"limit": HOME_TOPICS_LIMIT},
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = [with_sanitized_topic_title(row) for row in rows]
     return {
         "generated_at": datetime.now(timezone.utc),
         "topic_date": items[0]["topic_date"] if items else None,
@@ -151,7 +156,7 @@ def fetch_home_topics_from_database(connection: Connection):
 
 
 def fetch_three_day_home_topics_from_database(connection: Connection):
-    """PostgreSQL source of truth에서 3일 Home topic card payload를 생성한다."""
+    """PostgreSQL row에 KST 기간을 더해 3일 Home card payload를 생성한다."""
 
     rows = connection.execute(
         text("""
@@ -185,7 +190,9 @@ def fetch_three_day_home_topics_from_database(connection: Connection):
         """),
         {"limit": HOME_TOPICS_LIMIT},
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = [
+        with_three_day_topic_period(with_sanitized_topic_title(row)) for row in rows
+    ]
     latest = items[0] if items else None
 
     return {
@@ -193,12 +200,14 @@ def fetch_three_day_home_topics_from_database(connection: Connection):
         "reference_date": latest["reference_date"] if latest else None,
         "window_start": latest["window_start"] if latest else None,
         "window_end": latest["window_end"] if latest else None,
+        "period_start": latest["period_start"] if latest else None,
+        "period_end": latest["period_end"] if latest else None,
         "items": items,
     }
 
 
 def fetch_weekly_home_topics_from_database(connection: Connection):
-    """PostgreSQL source of truth에서 Weekly Home topic card payload를 생성한다."""
+    """PostgreSQL row에 KST 기간을 더해 Weekly Home card payload를 생성한다."""
 
     rows = connection.execute(
         text("""
@@ -238,7 +247,9 @@ def fetch_weekly_home_topics_from_database(connection: Connection):
             "publishable_status": next(iter(PUBLISHABLE_TOPIC_STATUSES)),
         },
     ).mappings().all()
-    items = [dict(row) for row in rows]
+    items = [
+        with_weekly_topic_period(with_sanitized_topic_title(row)) for row in rows
+    ]
     latest = items[0] if items else None
 
     return {
@@ -247,5 +258,7 @@ def fetch_weekly_home_topics_from_database(connection: Connection):
         "week_end": latest["week_end"] if latest else None,
         "window_start": latest["window_start"] if latest else None,
         "window_end": latest["window_end"] if latest else None,
+        "period_start": latest["period_start"] if latest else None,
+        "period_end": latest["period_end"] if latest else None,
         "items": items,
     }
