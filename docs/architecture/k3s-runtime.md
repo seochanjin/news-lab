@@ -61,7 +61,9 @@ Prometheus Operator와 kube-state-metrics에 `observability: "true"` selector를
 node-exporter는 control-plane/master taint와
 `node-role=news-edge-worker:NoSchedule` taint를 toleration하므로 application을
 Pi worker에 허용하지 않고도 세 노드의 node metric을 수집할 수 있다. Prometheus
-retention은 `1d`이며 Alertmanager는 현재 values에서 비활성화되어 있다.
+retention은 `1d`이다. Alertmanager는 활성화되어 있으며, `alertmanagerSpec`은
+`observability: "true"` nodeSelector와 `news-lab-alertmanager-telegram` secret
+마운트를 지정하고 `news-lab-telegram` receiver로 alert를 라우팅한다.
 Repository에는 custom Dashboard artifact나 provider override가 없지만 chart
 `86.2.0` 기본 Grafana sidecar가 `grafana_dashboard: "1"` ConfigMap을 감시한다.
 Prometheus `storageSpec`도 없으므로 local render에는 PVC template이 생성되지

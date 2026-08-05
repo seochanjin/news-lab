@@ -206,7 +206,7 @@ monitoring baseline은 kube-prometheus-stack을 사용합니다.
 
 - Prometheus, Grafana, Prometheus Operator, kube-state-metrics는 `observability=true` node를 대상으로 구성됩니다.
 - node-exporter는 control-plane/master node와 Raspberry Pi worker taint에 대한 toleration을 포함합니다.
-- Alertmanager는 현재 values file에서 비활성화되어 있습니다.
+- Alertmanager는 활성화되어 있으며, `news-lab-telegram` receiver로 alert를 Telegram에 전달하도록 구성됩니다.
 - Grafana 접근과 운영 상태 확인은 runbook과 operator-controlled access path를 통해 처리합니다.
 
 현재 manifest와 기존 운영 검증에서 monitoring core는 `arm-worker-node`,
