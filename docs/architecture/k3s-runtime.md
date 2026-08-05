@@ -32,11 +32,11 @@ merge 후 Argo CD Manual Sync로 사람이 수행한다.
 
 ## Node topology와 workload placement
 
-| Node | 역할 | 현재 placement 기준 |
-| --- | --- | --- |
-| `arm-master-node` | Oracle Cloud A1 control plane | K3s control-plane component와 node-exporter. 일반 application workload는 배치하지 않음 |
-| `arm-worker-node` | Oracle Cloud A1 application worker | Frontend·Backend, Redis, scheduled pipeline, monitoring core, node-exporter |
-| `pi-worker-node` | Raspberry Pi edge worker | node-exporter. `node-role=news-edge-worker:NoSchedule` taint로 일반 application 미배치 |
+| Node              | 역할                               | 현재 placement 기준                                                                    |
+| ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------- |
+| `arm-master-node` | Oracle Cloud A1 control plane      | K3s control-plane component와 node-exporter. 일반 application workload는 배치하지 않음 |
+| `arm-worker-node` | Oracle Cloud A1 application worker | Frontend·Backend, Redis, scheduled pipeline, monitoring core, node-exporter            |
+| `pi-worker-node`  | Raspberry Pi edge worker           | node-exporter. `node-role=news-edge-worker:NoSchedule` taint로 일반 application 미배치 |
 
 Backend API, Redis와 네 CronJob은 `workload: app` selector를 사용한다.
 Monitoring core는 `observability: "true"` selector를 사용하고, node-exporter는
@@ -61,7 +61,11 @@ Prometheus Operator와 kube-state-metrics에 `observability: "true"` selector를
 node-exporter는 control-plane/master taint와
 `node-role=news-edge-worker:NoSchedule` taint를 toleration하므로 application을
 Pi worker에 허용하지 않고도 세 노드의 node metric을 수집할 수 있다. Prometheus
-retention은 `1d`이며 Alertmanager는 현재 values에서 비활성화되어 있다.
+retention은 `1d`이다. Alertmanager는 활성화되어 있으며, root receiver는 `null`이고
+`alert_scope = "news-lab"` matcher에 해당하는 alert만 `news-lab-telegram`
+receiver로 라우팅되어 Telegram으로 전달된다. `alertmanagerSpec`은
+`observability: "true"` nodeSelector와 `news-lab-alertmanager-telegram` secret
+마운트를 지정한다.
 Repository에는 custom Dashboard artifact나 provider override가 없지만 chart
 `86.2.0` 기본 Grafana sidecar가 `grafana_dashboard: "1"` ConfigMap을 감시한다.
 Prometheus `storageSpec`도 없으므로 local render에는 PVC template이 생성되지
