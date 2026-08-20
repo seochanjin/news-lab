@@ -6,6 +6,13 @@ configMapGenerator:
   - name: news-lab-pipeline-operations-dashboard
     files:
       - news-lab-pipeline-operations.json
+  # 인프라 Dashboard와 분리한다.
+  # 위쪽은 kube-state-metrics/node-exporter가 주는 인프라 지표,
+  # 아래쪽은 news-lab-exporter가 DB에서 뽑아 주는 업무 지표다.
+  # 출처가 다르므로 ConfigMap도 분리해 하나가 깨져도 다른 하나가 살아 있게 한다.
+  - name: news-lab-business-metrics-dashboard
+    files:
+      - news-lab-business-metrics.json
 
 generatorOptions:
   disableNameSuffixHash: true
