@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 
 import requests
 
+from app.services.topic_pipeline import (
+    pick_summary_representative_article_id,
+)
 from app.utils.topic_summary import (
     DEFAULT_SUMMARY_MODEL,
     SUPPORTED_SUMMARY_MODELS,
@@ -182,17 +185,14 @@ def build_three_day_summary_input(
             article["article_id"],
         )
     )
-    representative_ids = [
-        int(article["id"])
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") == 1
-    ]
+    representative_article_id = pick_summary_representative_article_id(
+        topic["articles"],
+        used_articles,
+    )
     return {
         "topic_candidate_id": topic["topic_candidate_id"],
         "prompt_version": PROMPT_VERSION,
-        "representative_article_id": (
-            representative_ids[0] if representative_ids else None
-        ),
+        "representative_article_id": representative_article_id,
         "instruction": (
             "최근 72시간 동안 사건이 어떻게 변했는지 시간 흐름, 진행 상황, "
             "여러 출처가 공통으로 확인한 사실과 남은 불확실성을 구분해 "

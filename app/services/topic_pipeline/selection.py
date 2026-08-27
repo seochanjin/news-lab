@@ -92,6 +92,57 @@ def summary_topic_article_ids(
     return list(dict.fromkeys(selected_ids))
 
 
+def pick_summary_representative_article_id(topic_articles, used_articles):
+    """Summary 근거로 실제 사용된 기사 중에서 대표 기사를 고른다.
+
+    개념이 둘로 나뉜다.
+
+    - clustering 대표(``representative_candidate_rank`` 1)는 기사 유사도로 정해진다.
+      원문 확보 여부와 무관하다.
+    - Summary 대표는 요약의 근거가 되므로 원문이 반드시 있어야 한다.
+
+    기존 구현은 후자에 전자를 그대로 사용했다. 그 결과 rank 1 기사의 원문 추출이
+    실패하면 같은 Topic의 다른 근거 기사에 원문이 남아 있어도 Topic 전체가 폐기됐다.
+    실제로 폐기 원인의 대부분은 본문이 없는 영상 포스트가 rank 1로 선정된 경우였다.
+    영상 포스트에는 뽑을 본문이 없으므로 추출은 앞으로도 계속 실패한다.
+
+    따라서 rank 순서를 존중하되 ``used_articles``에 포함된 첫 기사를 선택한다.
+
+    ``used_articles``가 비어 있으면 None을 반환한다. 이때는 근거가 하나도 없으므로
+    호출부의 검증이 Topic을 실패로 처리한다. 근거 없이 요약하지 않는다는 계약은
+    그대로 유지된다.
+    """
+
+    used_ids = set()
+    for article in used_articles:
+        used_ids.add(int(article["article_id"]))
+
+    if not used_ids:
+        return None
+
+    ranked_articles = []
+    for article in topic_articles:
+        if article.get("representative_candidate_rank") is None:
+            continue
+        ranked_articles.append(article)
+
+    ranked_articles.sort(
+        key=lambda article: (
+            article["representative_candidate_rank"],
+            article["id"],
+        )
+    )
+
+    for article in ranked_articles:
+        article_id = int(article["id"])
+        if article_id in used_ids:
+            return article_id
+
+    # rank가 없는 기사만 원문을 갖고 있는 경우다. used_articles는 호출부에서
+    # 이미 시간순으로 정렬되므로 가장 이른 기사를 대표로 사용한다.
+    return int(used_articles[0]["article_id"])
+
+
 def _summary_article_ids_for_topic(
     topic: dict[str, Any],
     *,

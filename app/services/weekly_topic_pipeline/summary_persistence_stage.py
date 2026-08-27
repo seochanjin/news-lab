@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 
 import requests
 
+from app.services.topic_pipeline import (
+    pick_summary_representative_article_id,
+)
 from app.utils.topic_summary import (
     DEFAULT_SUMMARY_MODEL,
     SUPPORTED_SUMMARY_MODELS,
@@ -165,11 +168,6 @@ def build_weekly_summary_input(
 
     if max_raw_chars_per_article < 1:
         raise ValueError("max_raw_chars_per_article must be positive")
-    representative_ids = [
-        int(article["id"])
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") == 1
-    ]
     evidence_articles = _summary_evidence_articles_with_fallback(topic, raw_texts)
     used_articles = []
     for article in evidence_articles:
@@ -191,14 +189,16 @@ def build_weekly_summary_input(
             article["article_id"],
         )
     )
+    representative_article_id = pick_summary_representative_article_id(
+        topic["articles"],
+        used_articles,
+    )
     return {
         "topic_candidate_id": topic["topic_candidate_id"],
         "prompt_version": PROMPT_VERSION,
         "week_start": topic.get("week_start"),
         "week_end": topic.get("week_end"),
-        "representative_article_id": (
-            representative_ids[0] if representative_ids else None
-        ),
+        "representative_article_id": representative_article_id,
         "instruction": (
             "지난 월요일부터 일요일까지 이 이슈가 어떻게 전개됐는지 시간 흐름, "
             "반복해서 등장한 쟁점, 여러 출처가 공통으로 확인한 내용과 남은 "
