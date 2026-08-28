@@ -29,7 +29,11 @@ review 방식은 "구현자가 아닌 관점에서 버그를 찾는다"였다. �
 - `db/migrations/008_create_weekly_topic_tables.sql:79`
   — `check (not is_representative or is_summary_evidence)`
 
-즉 **schema가 이미 "대표는 반드시 Summary 근거여야 한다"고 못박고 있었다.**
+즉 **기존 계약이 이미 "대표는 반드시 Summary 근거여야 한다"고 못박고 있었다.**
+
+DB CHECK는 `weekly_topic_articles`에만 있고 `three_day_topic_articles`에는 없다.
+3일 pipeline은 Python model 계약만으로 막힌다. **두 table의 제약이 다르다는 점 자체가
+별도 후속 후보다.**
 
 ### 재현
 
@@ -165,7 +169,7 @@ None임을 확인하도록 갱신했다. docstring의 반환 계약도 실제 �
 ## NIT-01. `failures.py`의 주석이 사실과 다르다 (수정 보류)
 
 `app/services/topic_pipeline/failures.py`의 마지막 주석이
-"생략 표시의 자릿수가 늘어나 상한을 1\~2자 넘길 수 있으므로"라고 적혀 있으나 거짓이다.
+"생략 표시의 자릿수가 늘어나 상한을 1~2자 넘길 수 있으므로"라고 적혀 있으나 거짓이다.
 루프 안 guard가 계산하는 `remaining`이 최종값과 같으므로 자릿수는 늘지 않는다.
 
 review에서 무작위 20만 회 실행으로 확인했다. 길이 위반 0건, 잘린 `(+N more)` 0건.

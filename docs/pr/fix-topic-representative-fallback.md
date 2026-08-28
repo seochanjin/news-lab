@@ -84,9 +84,11 @@ ValueError: representative article raw text is required x2; ValueError: insuffic
 독립 subagent 적대적 review에서 **blocker 2건**이 나왔고 이 branch에서 수정했습니다.
 
 **BLOCKER-01** — 최초 구현은 `is_representative`를 clustering rank로 두었고,
-그 판단이 틀렸습니다. `models.py`의 `representative article must be summary evidence`와
-DB CHECK `not is_representative or is_summary_evidence`가 이미 둘을 묶어두고 있어,
-Topic이 LLM 호출 후 저장 직전에 폐기됐습니다. **저장 Topic이 0건 늘어난 상태였습니다.**
+그 판단이 틀렸습니다. 양쪽 `models.py`의 `__post_init__`이
+`representative article must be summary evidence`로 둘을 이미 묶어두고 있었고,
+`weekly_topic_articles`에는 DB CHECK `not is_representative or is_summary_evidence`도
+있습니다. 그 결과 Topic이 LLM 호출 후 저장 직전에 폐기됐습니다.
+**저장 Topic이 0건 늘어난 상태였습니다.**
 
 **BLOCKER-02** — 신규 test 전부가 `build_*_summary_input`에서 멈춰 저장을 확인하지
 않았습니다. 그래서 BLOCKER-01 위에서 `498 passed`가 나왔습니다.
@@ -101,7 +103,7 @@ Topic이 LLM 호출 후 저장 직전에 폐기됐습니다. **저장 Topic이 0
 - schema 변경 없음
 - **저장 값 의미 변경 1건**: `three_day_topic_articles.is_representative`,
   `weekly_topic_articles.is_representative`가 clustering rank 1이 아니라
-  Summary 근거 대표를 가리킵니다. 기존 DB CHECK를 만족하는 방향의 변경이며
+  Summary 근거 대표를 가리킵니다. 기존 제약을 만족하는 방향의 변경이며
   마이그레이션은 필요하지 않습니다.
 
 ## README 영향
@@ -157,7 +159,7 @@ group by status;
 - `three_day` Topic 저장 성공률이 91.3%에서 상승
 - `three_day` 부분 실패 비율이 38.3%에서 하락
 
-예상치는 Topic 실패율 1\~2%, run 부분 실패 5\~10%입니다.
+예상치는 Topic 실패율 1~2%, run 부분 실패 5~10%입니다.
 **예상과 다르면 예상이 틀린 것이므로 원인을 다시 조사합니다.**
 
 ## 범위 밖 (후속 작업 후보)
@@ -170,3 +172,6 @@ group by status;
 - Hacker News 추출 실패 — 외부 도메인이 매번 달라 단일 parser로 덮을 수 없습니다
 - 대표 후보 선정 단계에서 `extraction_status = 'failed'` 기사 제외 (UNIT-03 후보)
 - `_build_analysis`부터 태우는 통합 test (review SHOULD-FIX-02)
+- **`three_day_topic_articles`에 DB CHECK 부재** — `weekly_topic_articles`에는
+  `check (not is_representative or is_summary_evidence)`가 있으나 3일 table에는 없습니다.
+  현재는 Python model 계약이 막고 있어 문제가 없지만 두 table의 제약이 다릅니다.
