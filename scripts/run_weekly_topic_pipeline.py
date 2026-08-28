@@ -36,6 +36,7 @@ from app.services.weekly_topic_pipeline import (
     resolve_weekly_pipeline_context,
     summarize_and_persist_weekly_topics,
 )
+from app.services.topic_pipeline import summarize_topic_failure_reasons
 from app.utils.topic_summary import (
     DEFAULT_SUMMARY_MODEL,
     SUPPORTED_SUMMARY_MODELS,
@@ -279,6 +280,9 @@ def _build_analysis(
         "raw_missing_count": len(raw_result.missing_article_ids),
         "saved_topic_count": processing_result.saved_topic_count,
         "failed_topic_count": processing_result.failed_topic_count,
+        "topic_failure_reasons": summarize_topic_failure_reasons(
+            processing_result.failures
+        ),
         "run_status": processing_result.run_status,
         "run_id": run_id if args.execute else None,
         "pipeline_elapsed_seconds": round(
@@ -348,6 +352,7 @@ def _completion_from_analysis(analysis):
         selected_topic_count=analysis["selected_topic_count"],
         saved_topic_count=analysis["saved_topic_count"],
         failed_topic_count=analysis["failed_topic_count"],
+        error_message=analysis["topic_failure_reasons"],
     )
 
 

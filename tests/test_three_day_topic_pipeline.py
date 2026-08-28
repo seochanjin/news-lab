@@ -742,15 +742,21 @@ class ThreeDayRawAndSummaryStageTests(unittest.TestCase):
         )
 
     def test_all_topic_failures_preserve_existing_window_results(self):
-        """성공 Topic이 없는 실패 실행은 repository 교체를 호출하지 않는다."""
+        """성공 Topic이 없는 실패 실행은 repository 교체를 호출하지 않는다.
+
+        이전에는 대표 기사(rank 1)의 원문만 없으면 Topic이 폐기됐으므로
+        "지원 기사에만 원문이 있는" 상태로 전체 실패를 만들었다. 지금은 그 상황에서
+        Topic이 정상 저장되므로, 원문이 하나도 없는 상태로 전체 실패를 만든다.
+        검증 대상은 그대로 "성공 Topic이 0건이면 window를 교체하지 않는다"이다.
+        """
 
         repository = RecordingThreeDayRepository()
         raw_result = ThreeDayRawAcquisitionResult(
-            article_raw_texts={2: "support only", 5: "support only"},
-            reused_article_ids=[2, 5],
+            article_raw_texts={},
+            reused_article_ids=[],
             extracted_article_ids=[],
             failed_article_ids=[],
-            missing_article_ids=[1, 4],
+            missing_article_ids=[1, 2, 3, 4, 5],
             extraction_results=[],
         )
 
@@ -797,6 +803,94 @@ class ThreeDayRawAndSummaryStageTests(unittest.TestCase):
         self.assertEqual(result.saved_topic_count, 0)
         self.assertEqual(len(repository.calls), 1)
         self.assertEqual(repository.calls[0]["topics"], [])
+
+    def test_대표_기사_원문이_없어도_Topic이_실제로_저장된다(self):
+        """이 검증이 없어서 저장 단계 계약 위반을 놓쳤다.
+
+        Summary 입력 구성까지만 확인하면 대표 기사가 바뀐 것으로 보이지만,
+        record 계약(``representative article must be summary evidence``)에서
+        Topic이 다시 폐기된다. 따라서 저장까지 태워서 확인한다.
+
+        topic-one은 rank 1(id 1)의 원문이 없고 rank 2, 3에만 있다.
+        topic-two는 rank 1(id 4)의 원문이 없고 rank 2(id 5)에만 있다.
+        운영에서 관측된 실패(대표 기사가 본문 없는 영상 포스트)와 같은 상황이다.
+        """
+
+        repository = RecordingThreeDayRepository()
+        provider = RecordingThreeDaySummaryProvider()
+        raw_result = ThreeDayRawAcquisitionResult(
+            article_raw_texts={2: "raw two", 3: "raw three", 5: "raw five"},
+            reused_article_ids=[2, 3, 5],
+            extracted_article_ids=[],
+            failed_article_ids=[],
+            missing_article_ids=[1, 4],
+            extraction_results=[],
+        )
+
+        result = summarize_and_persist_three_day_topics(
+            self.topic_result,
+            raw_result,
+            pipeline_context=self.context,
+            summary_provider=provider,
+            repository=repository,
+            run_id=88,
+            execute=True,
+            max_raw_chars_per_article=1000,
+        )
+
+        self.assertEqual(result.run_status, "success")
+        self.assertEqual(result.saved_topic_count, 2)
+        self.assertEqual(result.failed_topic_count, 0)
+        self.assertEqual(result.failures, [])
+
+        saved_topics = repository.calls[0]["topics"]
+        representatives = {}
+        for topic in saved_topics:
+            for article in topic.articles:
+                if article.is_representative:
+                    representatives[topic.topic_candidate_id] = article.article_id
+
+        # rank 1이 아니라 원문이 있는 가장 높은 rank가 대표가 된다.
+        self.assertEqual(representatives["topic-one"], 2)
+        self.assertEqual(representatives["topic-two"], 5)
+
+        # 원문이 없는 기사는 대표도 근거도 아니다.
+        for topic in saved_topics:
+            for article in topic.articles:
+                if article.article_id in (1, 4):
+                    self.assertFalse(article.is_representative)
+                    self.assertFalse(article.is_summary_evidence)
+
+    def test_원문이_하나도_없는_Topic은_여전히_폐기된다(self):
+        """근거 없이 요약하지 않는다는 계약은 그대로다."""
+
+        repository = RecordingThreeDayRepository()
+        provider = RecordingThreeDaySummaryProvider()
+        raw_result = ThreeDayRawAcquisitionResult(
+            article_raw_texts={4: "raw four"},
+            reused_article_ids=[4],
+            extracted_article_ids=[],
+            failed_article_ids=[],
+            missing_article_ids=[1, 2, 3],
+            extraction_results=[],
+        )
+
+        result = summarize_and_persist_three_day_topics(
+            self.topic_result,
+            raw_result,
+            pipeline_context=self.context,
+            summary_provider=provider,
+            repository=repository,
+            run_id=89,
+            execute=True,
+            max_raw_chars_per_article=1000,
+        )
+
+        self.assertEqual(result.run_status, "partial_success")
+        self.assertEqual(result.saved_topic_count, 1)
+        self.assertEqual(result.failed_topic_count, 1)
+        self.assertEqual(result.failures[0]["topic_candidate_id"], "topic-one")
+        self.assertIn("insufficient raw text", result.failures[0]["error"])
 
     def _topic(self, topic_candidate_id, article_ids):
         """대표 rank와 기사 시각을 가진 3일 Topic fixture를 만든다."""

@@ -951,15 +951,21 @@ class WeeklyRawAndSummaryStageTests(unittest.TestCase):
         )
 
     def test_all_topic_failures_preserve_existing_window_results(self):
-        """성공 Topic이 없는 실패 실행은 repository 교체를 호출하지 않는다."""
+        """성공 Topic이 없는 실패 실행은 repository 교체를 호출하지 않는다.
+
+        이전에는 대표 기사(rank 1)의 원문만 없으면 Topic이 폐기됐으므로
+        "지원 기사에만 원문이 있는" 상태로 전체 실패를 만들었다. 지금은 그 상황에서
+        Topic이 정상 저장되므로, 원문이 하나도 없는 상태로 전체 실패를 만든다.
+        검증 대상은 그대로 "성공 Topic이 0건이면 window를 교체하지 않는다"이다.
+        """
 
         repository = RecordingWeeklyRepository()
         raw_result = WeeklyRawAcquisitionResult(
-            article_raw_texts={2: "support only", 8: "support only"},
-            reused_article_ids=[2, 8],
+            article_raw_texts={},
+            reused_article_ids=[],
             extracted_article_ids=[],
             failed_article_ids=[],
-            missing_article_ids=[1, 7],
+            missing_article_ids=[1, 2, 7, 8],
             extraction_results=[],
         )
 
@@ -1101,6 +1107,51 @@ class WeeklyRawAndSummaryStageTests(unittest.TestCase):
                     WeeklyTopicProcessingResult(**kwargs).run_status,
                     kwargs["run_status"],
                 )
+
+    def test_대표_기사_원문이_없어도_Topic이_실제로_저장된다(self):
+        """Summary 입력 구성이 아니라 저장까지 태워서 확인한다.
+
+        record 계약(``representative article must be summary evidence``)과
+        DB CHECK가 대표 기사와 Summary 근거를 묶어두고 있으므로, 입력 단계만
+        확인하면 저장 단계에서 다시 폐기되는 것을 놓친다.
+
+        weekly-one은 rank 1(id 1)의 원문이 없고, weekly-two는 rank 1(id 7)의
+        원문이 없다. 운영에서 관측된 실패와 같은 상황이다.
+        """
+
+        repository = RecordingWeeklyRepository()
+        raw_result = WeeklyRawAcquisitionResult(
+            article_raw_texts={2: "raw two", 3: "raw three", 8: "raw eight"},
+            reused_article_ids=[2, 3, 8],
+            extracted_article_ids=[],
+            failed_article_ids=[],
+            missing_article_ids=[1, 7],
+            extraction_results=[],
+        )
+
+        result = summarize_and_persist_weekly_topics(
+            self.topic_result,
+            raw_result,
+            pipeline_context=self.context,
+            summary_provider=RecordingWeeklySummaryProvider(),
+            repository=repository,
+            run_id=88,
+            execute=True,
+            max_raw_chars_per_article=1000,
+        )
+
+        self.assertEqual(result.run_status, "success")
+        self.assertEqual(result.saved_topic_count, 2)
+        self.assertEqual(result.failed_topic_count, 0)
+
+        representatives = {}
+        for topic in repository.calls[0]["topics"]:
+            for article in topic.articles:
+                if article.is_representative:
+                    representatives[topic.topic_candidate_id] = article.article_id
+
+        self.assertEqual(representatives["weekly-one"], 2)
+        self.assertEqual(representatives["weekly-two"], 8)
 
     def _topic_result(self):
         """두 개의 주간 Topic fixture를 포함한 선정 결과를 만든다."""

@@ -6,8 +6,10 @@
 provider 호출, clustering, DB 쓰기, migration 적용은 수행하지 않는다.
 """
 
+from .failures import summarize_topic_failure_reasons
 from .selection import (
     attach_article_urls,
+    pick_summary_representative_article_id,
     selected_topic_article_ids,
     summary_topic_article_ids,
     topic_selection_key,
@@ -15,7 +17,9 @@ from .selection import (
 
 __all__ = [
     "attach_article_urls",
+    "pick_summary_representative_article_id",
     "selected_topic_article_ids",
+    "summarize_topic_failure_reasons",
     "summary_topic_article_ids",
     "topic_selection_key",
 ]

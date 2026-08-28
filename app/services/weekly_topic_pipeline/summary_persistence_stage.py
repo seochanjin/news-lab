@@ -13,6 +13,9 @@ from datetime import datetime, timezone
 
 import requests
 
+from app.services.topic_pipeline import (
+    pick_summary_representative_article_id,
+)
 from app.utils.topic_summary import (
     DEFAULT_SUMMARY_MODEL,
     SUPPORTED_SUMMARY_MODELS,
@@ -165,11 +168,6 @@ def build_weekly_summary_input(
 
     if max_raw_chars_per_article < 1:
         raise ValueError("max_raw_chars_per_article must be positive")
-    representative_ids = [
-        int(article["id"])
-        for article in topic["articles"]
-        if article.get("representative_candidate_rank") == 1
-    ]
     evidence_articles = _summary_evidence_articles_with_fallback(topic, raw_texts)
     used_articles = []
     for article in evidence_articles:
@@ -191,14 +189,16 @@ def build_weekly_summary_input(
             article["article_id"],
         )
     )
+    representative_article_id = pick_summary_representative_article_id(
+        topic["articles"],
+        used_articles,
+    )
     return {
         "topic_candidate_id": topic["topic_candidate_id"],
         "prompt_version": PROMPT_VERSION,
         "week_start": topic.get("week_start"),
         "week_end": topic.get("week_end"),
-        "representative_article_id": (
-            representative_ids[0] if representative_ids else None
-        ),
+        "representative_article_id": representative_article_id,
         "instruction": (
             "지난 월요일부터 일요일까지 이 이슈가 어떻게 전개됐는지 시간 흐름, "
             "반복해서 등장한 쟁점, 여러 출처가 공통으로 확인한 내용과 남은 "
@@ -304,6 +304,11 @@ def _build_topic_record(
     used_ids = {
         int(article["article_id"]) for article in summary_input["used_articles"]
     }
+    # 대표 기사는 clustering rank가 아니라 Summary 입력이 실제로 고른 대표를 따른다.
+    # record 계약(``representative article must be summary evidence``)과 DB CHECK
+    # ``not is_representative or is_summary_evidence``가 둘을 이미 묶어두고 있다.
+    # rank 1을 그대로 쓰면 그 기사의 원문이 없을 때 저장 단계에서 Topic이 깨진다.
+    representative_article_id = summary_input["representative_article_id"]
     related_articles = [
         article
         for article in topic["articles"]
@@ -320,7 +325,7 @@ def _build_topic_record(
             article_id=int(article["id"]),
             rank=rank,
             similarity=article.get("similarity_to_seed"),
-            is_representative=article.get("representative_candidate_rank") == 1,
+            is_representative=int(article["id"]) == representative_article_id,
             is_summary_evidence=int(article["id"]) in used_ids,
         )
         for rank, article in enumerate(related_articles, start=1)
