@@ -304,6 +304,11 @@ def _build_topic_record(
     used_ids = {
         int(article["article_id"]) for article in summary_input["used_articles"]
     }
+    # 대표 기사는 clustering rank가 아니라 Summary 입력이 실제로 고른 대표를 따른다.
+    # record 계약(``representative article must be summary evidence``)과 DB CHECK
+    # ``not is_representative or is_summary_evidence``가 둘을 이미 묶어두고 있다.
+    # rank 1을 그대로 쓰면 그 기사의 원문이 없을 때 저장 단계에서 Topic이 깨진다.
+    representative_article_id = summary_input["representative_article_id"]
     related_articles = [
         article
         for article in topic["articles"]
@@ -320,7 +325,7 @@ def _build_topic_record(
             article_id=int(article["id"]),
             rank=rank,
             similarity=article.get("similarity_to_seed"),
-            is_representative=article.get("representative_candidate_rank") == 1,
+            is_representative=int(article["id"]) == representative_article_id,
             is_summary_evidence=int(article["id"]) in used_ids,
         )
         for rank, article in enumerate(related_articles, start=1)

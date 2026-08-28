@@ -18,6 +18,8 @@ from app.services.weekly_topic_pipeline.summary_persistence_stage import (
 
 
 def make_article(article_id, rank, published_at="2026-08-20T00:00:00+00:00"):
+    """clustering rank를 가진 Topic 관련 기사 fixture를 만든다."""
+
     return {
         "id": article_id,
         "title": f"title {article_id}",
@@ -28,6 +30,8 @@ def make_article(article_id, rank, published_at="2026-08-20T00:00:00+00:00"):
 
 
 def make_used(article_id):
+    """Summary 근거로 실제 사용된 기사 항목을 만든다."""
+
     return {"article_id": article_id}
 
 
@@ -35,6 +39,8 @@ class PickSummaryRepresentativeTests(unittest.TestCase):
     """공유 선정 함수의 rank 우선순위와 경계 동작을 고정한다."""
 
     def setUp(self):
+        """rank 1~3을 가진 Topic 관련 기사 세 건을 준비한다."""
+
         self.topic_articles = [
             make_article(11, 1),
             make_article(22, 2),
@@ -84,21 +90,28 @@ class PickSummaryRepresentativeTests(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_rank가_없는_기사만_원문을_가지면_그_기사를_쓴다(self):
-        """rank 부여 대상이 아니어도 근거로 쓰였다면 대표가 될 수 있다."""
+    def test_rank가_없는_기사만_원문을_가지면_None을_반환한다(self):
+        """rank 없는 기사를 대표로 쓰면 저장 단계에서 깨진다.
+
+        Topic record의 관련 기사 목록은 rank가 있는 기사만 담으므로, 대표가 그
+        목록에 없으면 "topic must have exactly one representative article"에 걸린다.
+        여기서 None을 반환해 호출부가 정직하게 실패하게 둔다.
+        """
 
         topic_articles = [make_article(11, 1), make_article(44, None)]
         used_articles = [make_used(44)]
 
         result = pick_summary_representative_article_id(topic_articles, used_articles)
 
-        self.assertEqual(result, 44)
+        self.assertIsNone(result)
 
 
 class ThreeDaySummaryInputRepresentativeTests(unittest.TestCase):
     """3일 pipeline의 Summary 입력 구성에서 폴백이 실제로 동작하는지 확인한다."""
 
     def setUp(self):
+        """rank 1과 rank 2 기사 두 건을 가진 Topic을 준비한다."""
+
         self.topic = {
             "topic_candidate_id": "topic-1",
             "articles": [
@@ -139,6 +152,8 @@ class WeeklySummaryInputRepresentativeTests(unittest.TestCase):
     """7일 pipeline도 같은 폴백을 사용하는지 확인한다."""
 
     def setUp(self):
+        """주간 기간 정보를 포함한 동일 구조의 Topic을 준비한다."""
+
         self.topic = {
             "topic_candidate_id": "topic-1",
             "week_start": "2026-08-17",
@@ -150,6 +165,8 @@ class WeeklySummaryInputRepresentativeTests(unittest.TestCase):
         }
 
     def test_대표_기사_원문이_없어도_다른_근거로_대표를_정한다(self):
+        """3일 pipeline과 같은 폴백이 적용되는지 확인한다."""
+
         summary_input = build_weekly_summary_input(
             self.topic,
             {22: "raw two"},
@@ -159,6 +176,8 @@ class WeeklySummaryInputRepresentativeTests(unittest.TestCase):
         self.assertEqual(summary_input["representative_article_id"], 22)
 
     def test_원문이_하나도_없으면_대표가_없다(self):
+        """근거가 전무하면 대표도 없다."""
+
         summary_input = build_weekly_summary_input(
             self.topic,
             {},

@@ -108,9 +108,11 @@ def pick_summary_representative_article_id(topic_articles, used_articles):
 
     따라서 rank 순서를 존중하되 ``used_articles``에 포함된 첫 기사를 선택한다.
 
-    ``used_articles``가 비어 있으면 None을 반환한다. 이때는 근거가 하나도 없으므로
-    호출부의 검증이 Topic을 실패로 처리한다. 근거 없이 요약하지 않는다는 계약은
-    그대로 유지된다.
+    다음 두 경우에 None을 반환하며, 호출부의 검증이 Topic을 실패로 처리한다.
+    근거 없이 요약하지 않는다는 계약은 그대로 유지된다.
+
+    - ``used_articles``가 비어 있다 (근거가 하나도 없다)
+    - rank가 있는 기사 중 원문을 가진 기사가 하나도 없다
     """
 
     used_ids = set()
@@ -138,9 +140,12 @@ def pick_summary_representative_article_id(topic_articles, used_articles):
         if article_id in used_ids:
             return article_id
 
-    # rank가 없는 기사만 원문을 갖고 있는 경우다. used_articles는 호출부에서
-    # 이미 시간순으로 정렬되므로 가장 이른 기사를 대표로 사용한다.
-    return int(used_articles[0]["article_id"])
+    # rank가 없는 기사만 원문을 갖고 있는 경우다. 이때 그 기사를 대표로 쓰면
+    # 저장 단계에서 깨진다. Topic record의 관련 기사 목록은 rank가 있는 기사만
+    # 담으므로 대표가 목록에 없게 되고, "topic must have exactly one
+    # representative article" 검증에 걸린다. None을 반환해 호출부가 정직하게
+    # 실패하게 둔다.
+    return None
 
 
 def _summary_article_ids_for_topic(

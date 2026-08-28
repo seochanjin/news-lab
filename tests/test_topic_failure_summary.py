@@ -14,6 +14,8 @@ from app.services.topic_pipeline.failures import (
 
 
 def make_failure(error, topic_candidate_id="topic-1"):
+    """Topic 처리 단계가 기록하는 실패 항목 형태를 만든다."""
+
     return {"topic_candidate_id": topic_candidate_id, "error": error}
 
 
@@ -27,6 +29,8 @@ class SummarizeTopicFailureReasonsTests(unittest.TestCase):
         self.assertIsNone(summarize_topic_failure_reasons(None))
 
     def test_같은_사유를_건수로_묶는다(self):
+        """유형별 건수만 남기므로 같은 사유는 하나로 합쳐진다."""
+
         failures = [
             make_failure("ValueError: representative article raw text is required"),
             make_failure("ValueError: representative article raw text is required"),
@@ -60,6 +64,8 @@ class SummarizeTopicFailureReasonsTests(unittest.TestCase):
         self.assertEqual(result, "line one line two x1")
 
     def test_사유가_없으면_unknown_error로_적는다(self):
+        """error 키가 비어 있어도 건수는 남긴다."""
+
         failures = [{"topic_candidate_id": "topic-1"}]
 
         result = summarize_topic_failure_reasons(failures)

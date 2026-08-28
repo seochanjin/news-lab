@@ -107,15 +107,20 @@ Status: passed — parser 수정은 불필요하다. **문제는 본문이 없�
 
 ### 설계 판단
 
-개념 두 개가 한 값에 섞여 있었다.
+`representative_article_id`가 clustering rank 1을 원문 확인 없이 사용했다.
 
-| 개념 | 기준 | 원문 필요 |
-| --- | --- | --- |
-| `is_representative` (topic_articles 저장) | clustering 대표, 기사 유사도 | 무관 |
-| `representative_article_id` (Summary 입력) | 요약 근거의 대표 | 필요 |
+**최초 구현은 `is_representative`를 변경하지 않았고, 그 판단이 틀렸다.**
+두 개념을 분리해도 된다고 보았으나 기존 계약이 이미 둘을 묶어두고 있었다.
 
-후자가 전자의 rank 1을 원문 확인 없이 사용했다. **`is_representative`는 변경하지
-않았다.** clustering 대표는 유사도 기준으로 그대로 두고, Summary 대표만 분리했다.
+- `models.py` — `representative article must be summary evidence`
+- `db/migrations/008_...sql:79` — `check (not is_representative or is_summary_evidence)`
+
+그 결과 Topic이 `_validate_summary_input`은 통과하고 **LLM 호출까지 마친 뒤** 저장
+직전에 죽었다. 저장되는 Topic은 하나도 늘지 않았다. 상세는
+`docs/reviews/fix-topic-representative-fallback-review.md` BLOCKER-01 참조.
+
+review 후 `_build_topic_record`가 `summary_input["representative_article_id"]`에서
+`is_representative`를 파생하도록 수정했다. `rank`는 clustering 순서 그대로 둔다.
 
 `used_articles`의 구성과 정렬은 변경하지 않았다. 따라서 LLM에 전달되는 근거와
 `summary_input_hash` 계약은 영향받지 않는다.
@@ -128,7 +133,9 @@ Status: passed — parser 수정은 불필요하다. **문제는 본문이 없�
 ```text
 rank 1의 원문이 있다           → rank 1을 그대로 사용 (기존 동작 유지)
 rank 1의 원문이 없다           → 원문이 있는 다음 rank로 승격
-rank 있는 기사에 원문이 없다    → 원문이 있는 첫 used_article 사용
+                                 저장 record의 is_representative도 함께 따라간다
+rank 있는 기사에 원문이 없다    → None (review에서 수정. 이전에는 rank 없는 기사를
+                                 대표로 썼고 저장 단계에서 깨졌다)
 원문이 하나도 없다             → None. 호출부가 insufficient raw text로 실패
 ```
 
@@ -296,6 +303,77 @@ Status: passed (UNIT-01 시점 488 + 신규 8 + 갱신 2)
 
 - 운영 반영 후 `partial_success` run의 `error_message`가 실제로 채워지는지 확인
   — 사람 수행
+
+---
+
+## Review 반영
+
+`docs/reviews/fix-topic-representative-fallback-review.md` 참조.
+독립 subagent 적대적 review에서 **blocker 2건**이 나왔고 이 branch에서 수정했다.
+
+### BLOCKER-01 — UNIT-01이 효과가 없었다
+
+`_build_topic_record`가 `is_representative`를 clustering rank로 계산해, 폴백으로
+선정된 대표가 record 계약 `representative article must be summary evidence`에 걸렸다.
+Topic은 LLM 호출 후 저장 직전에 폐기됐다. **저장 Topic이 0건 늘어난 상태였다.**
+
+조치: `summary_input["representative_article_id"]`에서 파생하도록 수정 (양쪽 pipeline).
+
+### BLOCKER-02 — test가 저장을 보지 않았다
+
+신규 test 전부가 `build_*_summary_input`에서 멈춰 "Topic이 실제로 저장되는가"를
+확인하지 않았다. 그래서 BLOCKER-01 위에서 `498 passed`가 나왔다.
+
+조치: 저장까지 태우는 end-to-end test 3건 추가.
+
+### SHOULD-FIX — rank 없는 기사 폴백 제거
+
+도달 불가이면서 도달 시 반드시 깨지는 분기였다. `None` 반환으로 변경.
+
+### 되돌림 검증
+
+`is_representative` 수정만 되돌려 실행했다.
+
+Command:
+
+```bash
+python -m pytest -q
+```
+
+Result:
+
+```text
+FAILED tests/test_three_day_topic_pipeline.py::...::test_대표_기사_원문이_없어도_Topic이_실제로_저장된다
+FAILED tests/test_weekly_topic_pipeline.py::...::test_대표_기사_원문이_없어도_Topic이_실제로_저장된다
+2 failed, 499 passed, 122 subtests passed
+```
+
+Status: passed — 새 test가 의도한 지점을 정확히 잡는다.
+
+### 기존 test 갱신
+
+`test_all_topic_failures_preserve_existing_window_results` (3일·주간 양쪽)가
+"지원 기사에만 원문이 있는" 상태로 전체 실패를 만들고 있었다. 그 상황이 이제
+정상 저장되므로 원문이 전무한 상태로 fixture를 바꿨다. **검증 의도는 그대로다.**
+
+`raw_result` fixture에서 `failed_article_ids`와 `missing_article_ids`에 같은 ID를
+넣어 weekly model의 상호배타 계약에 걸렸다. 양쪽 모두 분리했다.
+
+### 최종 test
+
+Command:
+
+```bash
+python -m pytest -q
+```
+
+Result:
+
+```text
+501 passed, 122 subtests passed in 3.94s
+```
+
+Status: passed
 
 ---
 
