@@ -127,10 +127,10 @@ UNIT-01·02 완료 후 재평가한다. UNIT-01로 충분하면 후속 작업 �
 
 - [x] UNIT-01 구현
 - [x] UNIT-01 단위 test
-- [ ] UNIT-02 구현
-- [ ] UNIT-02 단위 test
-- [ ] 전체 test 통과
-- [ ] verification 문서 작성
+- [x] UNIT-02 구현
+- [x] UNIT-02 단위 test
+- [x] 전체 test 통과 (498 passed)
+- [x] verification 문서 작성
 - [ ] 운영 반영 후 지표 재확인 (사람 수행)
 
 ## 완료 판정

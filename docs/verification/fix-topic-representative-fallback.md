@@ -194,7 +194,108 @@ AttributeError: '_IncludedRouter' object has no attribute 'path'
 
 ## UNIT-02. 실패 사유 영속화
 
-Status: 미착수
+### 구현 범위
+
+- `app/services/topic_pipeline/failures.py`
+  — `summarize_topic_failure_reasons()` 신규
+- `app/services/topic_pipeline/__init__.py` — export 추가
+- `scripts/run_three_day_topic_pipeline.py`,
+  `scripts/run_weekly_topic_pipeline.py`
+  — `_build_analysis`가 `topic_failure_reasons`를 산출하고
+    `_completion_from_analysis`가 이를 `error_message`로 전달
+- `tests/test_topic_failure_summary.py` 신규 (8 케이스)
+- `tests/test_run_three_day_topic_pipeline.py`,
+  `tests/test_run_weekly_topic_pipeline.py` — 케이스 갱신·추가
+
+### 설계 판단
+
+**개별 사유를 모두 남기지 않고 사유별 건수만 집계한다.** run 이력 table의
+`error_message`는 1000자 상한이 있고, 필요한 정보는 "어떤 유형이 지배적인가"이지
+"어느 Topic이 실패했는가"가 아니다. Topic 단위 추적이 필요해지면 별도 table을
+만들어야 하며 이번 범위가 아니다.
+
+**성공한 run은 `error_message`를 None으로 유지한다.** 빈 문자열로 채우면
+"사유가 없다"와 "사유를 기록하지 않았다"를 구분할 수 없다. 이번 조사에서
+NULL 26건이 후자였고, 그 구분이 원인 추적의 출발점이었다.
+
+`_completion_from_analysis`는 `analysis["topic_failure_reasons"]`를
+`.get()` 없이 직접 읽는다. `_build_analysis`가 키를 빠뜨리면 즉시 실패해야 한다.
+`.get()`으로 무르게 두면 사유가 다시 조용히 사라진다.
+
+### 고정한 동작
+
+```text
+실패 없음                → None
+같은 사유 여러 건         → "사유 xN" 으로 묶는다
+사유 여러 유형           → 건수 내림차순, "; " 로 연결
+사유 문자열이 길다        → 200자로 자른다 (provider 응답 본문 방어)
+전체가 1000자를 넘는다    → 건수 많은 유형부터 남기고 "(+N more)" 표시
+사유 하나가 상한을 넘는다  → 잘라서라도 남긴다
+줄바꿈·연속 공백         → 한 칸으로 정규화
+```
+
+### 실제 출력 확인
+
+Command:
+
+```bash
+python -c "from app.services.topic_pipeline import summarize_topic_failure_reasons; ..."
+```
+
+Result:
+
+```text
+'ValueError: representative article raw text is required x2; ValueError: insufficient raw text x1'
+length: 96
+none on success: None
+```
+
+Status: passed
+
+### 단위 test
+
+Command:
+
+```bash
+python -m pytest -q tests/test_topic_failure_summary.py
+```
+
+Result:
+
+```text
+8 passed in 0.02s
+```
+
+Status: passed
+
+### 기존 test 갱신
+
+`test_completion_uses_actual_analysis_counts`가 `analysis` dict를 직접 구성하므로
+새 키가 없어 `KeyError`로 실패했다. `.get()`으로 무르게 만들지 않고 **test를
+갱신했다.** 이번 변경의 계약이 그 키이기 때문이다.
+
+`test_completion_keeps_error_message_none_on_success`를 두 runner test에 추가했다.
+
+### 전체 test
+
+Command:
+
+```bash
+python -m pytest -q
+```
+
+Result:
+
+```text
+498 passed, 122 subtests passed in 3.53s
+```
+
+Status: passed (UNIT-01 시점 488 + 신규 8 + 갱신 2)
+
+### 미수행
+
+- 운영 반영 후 `partial_success` run의 `error_message`가 실제로 채워지는지 확인
+  — 사람 수행
 
 ---
 

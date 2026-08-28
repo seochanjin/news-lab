@@ -307,6 +307,9 @@ class RunWeeklyTopicPipelineTests(unittest.TestCase):
             "selected_topic_count": 3,
             "saved_topic_count": 2,
             "failed_topic_count": 1,
+            "topic_failure_reasons": (
+                "ValueError: representative article raw text is required x1"
+            ),
         }
 
         completion = _completion_from_analysis(analysis)
@@ -315,6 +318,33 @@ class RunWeeklyTopicPipelineTests(unittest.TestCase):
         self.assertEqual(completion.candidate_count, 10)
         self.assertEqual(completion.saved_topic_count, 2)
         self.assertEqual(completion.failed_topic_count, 1)
+        self.assertEqual(
+            completion.error_message,
+            "ValueError: representative article raw text is required x1",
+        )
+
+    def test_completion_keeps_error_message_none_on_success(self):
+        """성공한 run은 error_message를 남기지 않는다.
+
+        빈 문자열로 채우면 "사유가 없다"와 "사유를 기록하지 않았다"를 구분할 수 없다.
+        """
+
+        analysis = {
+            "run_status": "success",
+            "candidate_count": 10,
+            "embedding_count": 8,
+            "missing_embedding_count": 2,
+            "cluster_count": 4,
+            "selected_topic_count": 3,
+            "saved_topic_count": 3,
+            "failed_topic_count": 0,
+            "topic_failure_reasons": None,
+        }
+
+        completion = _completion_from_analysis(analysis)
+
+        self.assertEqual(completion.status, "success")
+        self.assertIsNone(completion.error_message)
 
     def test_successful_weekly_save_prewarms_home_cache(self):
         """Weekly 저장 성공 뒤 계산된 기간을 포함한 Home payload를 prewarm한다."""
