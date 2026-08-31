@@ -149,18 +149,19 @@ TTL은 최신성을 결정하는 주기가 아니라 오래된 cache의 장기 �
 
 ## 인프라와 배포
 
-NewsLab은 hybrid 3-node K3s cluster에서 운영됩니다.
+NewsLab은 Oracle Cloud A1 2-node K3s cluster에서 운영됩니다.
 
 - `arm-master-node`: Oracle Cloud A1 control-plane node
 - `arm-worker-node`: application과 monitoring core workload를 담당하는 Oracle Cloud A1 worker
-- `pi-worker-node`: Tailscale로 연결된 Raspberry Pi worker이며, 일반 application이 실수로 scheduling되지 않도록 taint가 설정됨
 
 `arm-master-node`에는 일반 application workload를 배치하지 않습니다.
 `arm-worker-node`는 Frontend·Backend, Redis, scheduled pipeline과 monitoring
-core의 현재 application node입니다. `pi-worker-node`는
-`node-role=news-edge-worker:NoSchedule` taint로 일반 application을 받지
-않고 node-exporter만 실행하며, 향후 explicit toleration을 갖춘 edge/batch
-workload 후보로 남겨 둡니다.
+core의 현재 application node입니다.
+
+이전에는 Tailscale로 연결한 Raspberry Pi worker를 포함한 hybrid 3-node 구성이었으나,
+전용 workload 없이 노드 공통 DaemonSet만 돌아 홈 네트워크 의존이라는 운영 변수만
+남았습니다. 판단 근거는 [ADR 0001](docs/adr/0001-remove-pi-worker-node.md)에 있습니다.
+node 간 통신의 `--flannel-iface tailscale0` 구성은 그대로 유지합니다.
 
 외부 운영 경로는 public request path와 분리됩니다. GitHub Actions와
 Docker Hub는 ARM64 image 발행을, Argo CD는 Git desired state와 cluster의
@@ -205,7 +206,7 @@ diff를 승인하고 Manual Sync와 운영 검증을 수행해야 합니다. Rol
 monitoring baseline은 kube-prometheus-stack을 사용합니다.
 
 - Prometheus, Grafana, Prometheus Operator, kube-state-metrics는 `observability=true` node를 대상으로 구성됩니다.
-- node-exporter는 control-plane/master node와 Raspberry Pi worker taint에 대한 toleration을 포함합니다.
+- node-exporter는 control-plane/master node taint에 대한 toleration을 포함합니다.
 - Alertmanager는 활성화되어 있으며, root receiver는 `null`이고 `alert_scope = "news-lab"` matcher에 해당하는 alert만 `news-lab-telegram` receiver를 통해 Telegram으로 전달됩니다.
 - Grafana 접근과 운영 상태 확인은 runbook과 operator-controlled access path를 통해 처리합니다.
 
@@ -232,7 +233,7 @@ operator 접근은 Tailscale 경로를 사용하고 public application ingress�
 - 일간, 3일, 주간 토픽 pipeline은 서로를 rollup하지 않는 별도 result model입니다. 각 window는 독립적인 candidate limit, clustering threshold, persistence contract를 사용할 수 있습니다.
 - 3일과 주간 pipeline은 해당 job에서 새 embedding을 생성하지 않고 기존 `article_embeddings`를 재사용해 provider coupling을 줄이고 누락된 embedding을 명시적으로 드러냅니다.
 - Raw article extraction은 선택된 Summary evidence가 필요할 때까지 지연해, 토픽 선정 전 광범위한 article body fetching을 피합니다.
-- Raspberry Pi worker는 cluster network와 monitoring target에 포함되지만, 일반 application scheduling은 taint와 node selector로 제한합니다.
+- Cluster node는 가용성을 약속해야 하는 구성 요소이므로 통제 가능한 환경에만 둡니다. 홈 네트워크에 있던 Raspberry Pi worker는 전용 workload가 없어 정리했습니다.
 - GitHub Actions의 image 발행, manifest PR merge, Argo CD Manual Sync와 운영
   검증을 분리해 각 단계에서 사람이 변경 내용을 승인합니다.
 
@@ -252,8 +253,9 @@ operator 접근은 Tailscale 경로를 사용하고 public application ingress�
 - 작업 workflow: [Backend agent workflow](docs/agent/backend-workflow.md),
   [현재 Task](docs/tasks/docs-readme-architecture-refresh.md),
   [현재 Verification](docs/verification/docs-readme-architecture-refresh.md)
-- 운영 근거: [Raspberry Pi worker join verification](docs/verification/infra-pi-worker-join.md),
-  [Monitoring baseline verification](docs/verification/infra-monitoring-baseline.md)
+- 운영 근거: [Monitoring baseline verification](docs/verification/infra-monitoring-baseline.md)
+- 설계 결정: [ADR 0001 — Raspberry Pi worker node 제거](docs/adr/0001-remove-pi-worker-node.md)
+- 과거 구성 이력: [Raspberry Pi worker join verification](docs/verification/infra-pi-worker-join.md)
 
 `docs/tasks/`는 branch 요구사항, `docs/verification/`은 실제 실행 결과를
 보관합니다. Review, 승인된 Fix, PR과 Devlog 기록은 각각 `docs/reviews/`,

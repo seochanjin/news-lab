@@ -48,10 +48,9 @@ Oracle Public IP 연결은 외부 인프라이므로 manifest의 host만으로 �
   배치하지 않으며 node-exporter는 taint toleration으로 실행할 수 있다.
 - `arm-worker-node`: Oracle Cloud A1 application worker. Frontend·Backend,
   Redis, scheduled pipeline과 monitoring core를 실행한다.
-- `pi-worker-node`: Tailscale로 cluster에 연결된 Raspberry Pi worker.
-  `node-role=news-edge-worker:NoSchedule` taint로 일반 application을 막고
-  node-exporter를 실행하며, explicit toleration을 갖춘 향후 edge/batch
-  workload 후보다.
+
+이전에는 Tailscale로 연결한 `pi-worker-node`(Raspberry Pi)를 포함한 3-node
+구성이었으나 정리했다. 근거는 [ADR 0001](adr/0001-remove-pi-worker-node.md)에 있다.
 
 이 placement는 manifest의 `workload: app`, `observability: "true"` selector와
 node-exporter toleration, 그리고 기존의 사람 제공 Production Verification에
