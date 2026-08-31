@@ -76,7 +76,7 @@ spec:
             kube_node_status_condition{
               condition="Ready",
               status="true",
-              node=~"arm-master-node|arm-worker-node|pi-worker-node"
+              node=~"arm-master-node|arm-worker-node"
             } == 0
           for: 10m
           labels:

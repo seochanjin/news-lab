@@ -36,17 +36,17 @@ merge 후 Argo CD Manual Sync로 사람이 수행한다.
 | ----------------- | ---------------------------------- | -------------------------------------------------------------------------------------- |
 | `arm-master-node` | Oracle Cloud A1 control plane      | K3s control-plane component와 node-exporter. 일반 application workload는 배치하지 않음 |
 | `arm-worker-node` | Oracle Cloud A1 application worker | Frontend·Backend, Redis, scheduled pipeline, monitoring core, node-exporter            |
-| `pi-worker-node`  | Raspberry Pi edge worker           | node-exporter. `node-role=news-edge-worker:NoSchedule` taint로 일반 application 미배치 |
 
 Backend API, Redis와 네 CronJob은 `workload: app` selector를 사용한다.
 Monitoring core는 `observability: "true"` selector를 사용하고, node-exporter는
-control-plane과 Pi worker의 `NoSchedule` taint toleration을 갖춘다. Frontend
+control-plane의 `NoSchedule` taint toleration을 갖춘다. Frontend
 resource는 별도 `news-lab-web` 저장소에서 관리한다.
 Traefik, cert-manager, Ingress, Service와 TLS Secret은 cluster 공통 add-on·resource로
 보며 특정 application node에 고정된 구성으로 설명하지 않는다.
 
-`pi-worker-node`는 현재 일반 application node가 아니며, 향후
-explicit toleration을 명시한 edge/batch workload만 배치하는 후보다.
+이전에는 Tailscale로 연결한 `pi-worker-node`(Raspberry Pi)를 포함한 3-node
+구성이었다. 전용 workload가 node-exporter뿐이어서 정리했으며 근거는
+[ADR 0001](../adr/0001-remove-pi-worker-node.md)에 있다.
 Manifest는 selector와 toleration을 증명하지만 live node label·taint·Pod
 placement는 사람이 제공한 운영 log로만 현재 상태를 재검증한다.
 
@@ -56,11 +56,10 @@ placement는 사람이 제공한 운영 log로만 현재 상태를 재검증한�
 Prometheus Operator와 kube-state-metrics에 `observability: "true"` selector를
 적용한다. 기존의 사람 제공 Production Verification에서는 이 monitoring core가
 `arm-worker-node`에서 실행되었고, DaemonSet인 node-exporter는
-`arm-master-node`, `arm-worker-node`, `pi-worker-node` 세 노드에 배치되었다.
+`arm-master-node`, `arm-worker-node` 두 노드에 배치된다.
 
-node-exporter는 control-plane/master taint와
-`node-role=news-edge-worker:NoSchedule` taint를 toleration하므로 application을
-Pi worker에 허용하지 않고도 세 노드의 node metric을 수집할 수 있다. Prometheus
+node-exporter는 control-plane/master taint를 toleration하므로 control plane을
+포함한 두 노드의 node metric을 수집할 수 있다. Prometheus
 retention은 `1d`이다. Alertmanager는 활성화되어 있으며, root receiver는 `null`이고
 `alert_scope = "news-lab"` matcher에 해당하는 alert만 `news-lab-telegram`
 receiver로 라우팅되어 Telegram으로 전달된다. `alertmanagerSpec`은
@@ -88,8 +87,9 @@ Tailscale network를 통한 SSH tunnel을 열고 별도 terminal에서 `kubectl`
 실행한다. Private address, kubeconfig 내용, SSH key 경로의 실제 값은 문서와
 verification log에 기록하지 않는다.
 
-Tailscale overlay는 Oracle node와 Raspberry Pi node 간 cluster network와
-operator 접근을 위한다. 사용자 HTTPS 요청은 Tailscale이 아니라
+Tailscale overlay는 Oracle node 간 cluster network(`--flannel-iface tailscale0`)와
+operator 접근을 위한다. Raspberry Pi worker를 join하며 표준화한 구성이며,
+Pi 제거 후에도 Oracle node 사이 통신과 operator 경로로 계속 사용하므로 유지한다. 사용자 HTTPS 요청은 Tailscale이 아니라
 Public DNS와 Oracle Public IP를 거쳐 Traefik Ingress로 진입한다.
 
 ## 운영 경계
