@@ -377,6 +377,115 @@ Status: passed
 
 ---
 
+## 운영 반영 (사람 수행)
+
+### 배포
+
+```text
+519c51a  fix/topic representative fallback (#70)      코드
+ea8cd08  Update news-api image to 519c51aa... (#71)   manifest
+```
+
+Argo CD Application `news-api` sync. out of sync 5건이 이미지를 참조하는 manifest와
+정확히 일치했다.
+
+```text
+out of sync  Deployment/news-api, CronJob/news-daily-topic-pipeline,
+             CronJob/news-rss-collector, CronJob/news-three-day-topic-pipeline,
+             CronJob/news-weekly-topic-pipeline
+in sync      Service/news-api, Service/news-redis, Deployment/news-redis,
+             Ingress/news-api-ingress
+```
+
+PRUNE, DRY RUN, APPLY ONLY, FORCE 모두 사용하지 않았다.
+
+Command:
+
+```bash
+kubectl get cronjob news-three-day-topic-pipeline \
+  -o jsonpath='{.spec.jobTemplate.spec.template.spec.containers[0].image}'
+```
+
+Result:
+
+```text
+seocj/news-api:519c51aa258941f169e023422a625402c86aa3d1
+```
+
+Status: passed — CronJob이 새 이미지를 참조한다.
+
+### 배포 후 첫 실행 (2026-08-31 확인)
+
+image manifest merge는 `ea8cd08` 기준 **2026-08-30 14:08 UTC**다.
+`three_day` CronJob은 매일 20:00 UTC에 실행된다.
+
+Command:
+
+```bash
+kubectl get jobs -o custom-columns='JOB:.metadata.name,\
+IMAGE:.spec.template.spec.containers[0].image,AGE:.metadata.creationTimestamp' | grep three-day
+```
+
+Result:
+
+```text
+...29799120   seocj/news-api:980a2375...   2026-08-28T20:00:00Z   수정 전
+...29800560   seocj/news-api:980a2375...   2026-08-29T20:00:00Z   수정 전
+...29802000   seocj/news-api:519c51aa...   2026-08-30T20:00:00Z   수정 후
+```
+
+Status: passed — **run 71이 새 이미지로 실행됐다.** 경계가 merge 시각과 일치한다.
+
+run 결과:
+
+| id | status | 선정 | 저장 | 실패 | error_message |
+| --- | --- | --- | --- | --- | --- |
+| 71 | success | 5 | 5 | 0 | NULL |
+| 70 | partial_success | 5 | 4 | 1 | NULL |
+
+run 70의 `error_message`가 NULL인 것은 **수정 전 실행이므로 정상**이다.
+
+### 판정: 아직 불가 — 표본 부족
+
+수정 후 실행이 1건이고 무실패로 끝났으나 **이것은 증거가 아니다.**
+
+```text
+수정 전 Topic 실패율 = 30 / 345 = 8.7%
+수정 전에도 run 한 번이 무실패일 확률 = (1 - 0.087)^5 = 63%
+```
+
+폴백은 rank 1 기사의 원문이 없을 때만 발동하며, 그것은 수정 전이라면 Topic이
+폐기됐을 상황과 같은 사건이다. **63% 확률로 이번 run에는 발동 기회 자체가 없다.**
+
+폴백 발동 여부 직접 확인:
+
+```sql
+select t.run_id, a.article_id, a.rank
+from three_day_topic_articles a
+join three_day_topics t on t.id = a.three_day_topic_id
+where a.is_representative and a.rank <> 1;
+```
+
+Result: `No rows returned`
+
+수정 전 코드에서는 구조적으로 나올 수 없는 행이므로, **행이 등장하면 폴백 발동이
+확정된다.** 현재는 기회가 없었을 뿐인지 구분되지 않으나, 위 Job image 확인으로
+새 코드가 실행됐다는 사실은 별도로 확정됐다.
+
+### 미수행 — 다음 확인 시점
+
+- **UNIT-02 검증**: 수정 후 `partial_success`가 아직 발생하지 않아 `error_message`가
+  실제로 채워지는지 확인하지 못했다. 발생 즉시 확인한다.
+- **UNIT-01 발동 확인**: 위 SQL에 행이 등장하는 시점.
+- **비율 판정**: 2026-09-07경(약 35 Topic) 방향, 2026-09-21경(약 100 Topic) 확정.
+  기존 8.7%라면 100 Topic에서 약 9건이 실패한다. 2건 이하면 명확한 개선이다.
+
+**주의 — 누적 비교 쿼리의 cutoff**: `finished_at >= timestamptz '2026-08-30 14:08+00'`을
+사용한다. KST 자정 기준으로 자르면 run 70(수정 전)이 수정 후로 분류되어 결과가
+실제보다 나쁘게 나온다. 최초 확인에서 실제로 이 오류가 있었다.
+
+---
+
 ## 남은 작업 (사람 수행)
 
 - 운영 반영 후 Grafana `NewsLab Business Metrics` 재확인

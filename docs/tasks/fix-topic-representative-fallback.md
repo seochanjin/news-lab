@@ -131,7 +131,11 @@ UNIT-01·02 완료 후 재평가한다. UNIT-01로 충분하면 후속 작업 �
 - [x] UNIT-02 단위 test
 - [x] 전체 test 통과 (498 passed)
 - [x] verification 문서 작성
-- [ ] 운영 반영 후 지표 재확인 (사람 수행)
+- [x] 운영 반영 (Argo CD sync, CronJob 이미지 확인)
+- [x] 배포 후 첫 실행이 새 이미지로 돌았는지 확인 (2026-08-31)
+- [ ] UNIT-01 폴백 발동 확인 (수정 후 partial 발생 시)
+- [ ] UNIT-02 error_message 기록 확인 (수정 후 partial 발생 시)
+- [ ] 비율 판정 (2026-09-21경, 약 100 Topic)
 
 ## 완료 판정
 
