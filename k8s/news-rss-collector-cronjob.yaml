@@ -3,6 +3,8 @@ kind: CronJob
 metadata:
   name: news-rss-collector
 spec:
+  # 뉴스랩 정기 수집·분석 중지. 이미 실행 중인 Job은 별도로 확인한다.
+  suspend: true
   schedule: "0 3 * * *"
   timeZone: "Asia/Seoul"
   concurrencyPolicy: Forbid
