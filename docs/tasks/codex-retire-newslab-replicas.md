@@ -50,3 +50,10 @@
 - 결과: API 2→0, Redis 1→0 외 설정 동일; CronJob 4개 suspend=true, HPA 없음.
 - 미수행: 운영 적용, merge, 외부 리뷰. 후속 승인 범위는 로컬 검증을 마친 변경의 커밋, push, PR 생성이다.
 - 주의: replicas=0은 Deployment Pod만 중지하며 Service/Ingress 생성이나 별도 Helm 설치를 차단하지 않는다.
+
+## PR
+
+- 사용자 추가 승인에 따라 커밋과 push를 완료했다.
+- main 대상 PR: https://github.com/seochanjin/news-lab/pull/75
+- 최초 설정 커밋: `d7fc72c8ef8c3742f683779e5d59490df517b6a0`.
+- 병합과 운영 적용은 수행하지 않았다.
